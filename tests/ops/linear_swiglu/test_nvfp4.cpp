@@ -78,7 +78,12 @@ int main() {
     using namespace ninfer::test::linear_swiglu;
 
     try {
-        constexpr std::array<std::int32_t, 4> kA16Cases{1, 4, 8, 16};
+        // Every A16 extent is fused: decode at 1, the small-T family to 16, a sliced instance to 32,
+        // then the A16 MMA schedules. The extents straddle each boundary, and 128 is the drafter's
+        // own worst case at k=15, batch=8.
+        constexpr std::array<std::int32_t, 19> kA16Cases{
+            1,  2,  4,  5,  8,  9,  16, 17, 24, 25,
+            32, 33, 64, 65, 96, 97, 128, 129, 1024};
         // Exercise both sides of the native MMA/TMA boundary, including the partial TMA tile.
         constexpr std::array<std::int32_t, 17> kA4Cases{2,   4,   5,   16,  56,  64,  65,  96,  97,
                                                         112, 128, 129, 255, 256, 257, 512, 1024};

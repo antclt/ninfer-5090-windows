@@ -226,6 +226,15 @@ every decode step, and it has not been measured. A fused wide-T A16 SwiGLU is th
 follow-up; it was not written because restoring the proven path is the lower-risk change and the
 alternative is new numerics with no oracle of its own.
 
+**2026-10-11: the follow-up is written, and the reason it was deferred no longer holds.** The oracle
+it lacked now exists — the A16 profile in `tests/ops/linear_swiglu/test_nvfp4.cpp`, whose extent list
+this route's own failure reproduction extended to 17/32/64/129 and which failed at 8.1e-3 against a
+6.3e-3 tail bound. `nvfp4_linear_swiglu_matrix.cu` covers every extent fused (a sliced instance to
+T=32, then the A16 MMA schedules with the row-major epilogue), `LinearA16Post` and its `[34816,T]`
+workspace are deleted, and the profile passes at 19 extents. The paragraph above is left as written
+because it was true when it was written; the traffic it describes is gone, and its replacement's cost
+is not measured.
+
 **Coverage gap, stated rather than implied:** there is no dedicated NVFP4 SwiGLU oracle. This route
 is covered only by `ninfer_qwen3_5_dflash2_real_test` reaching T=128 on the real artifact.
 

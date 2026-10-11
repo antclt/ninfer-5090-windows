@@ -2987,7 +2987,7 @@ Each of these was investigated and settled. They look like open work and are not
   build under a live filename is a measurement waiting to go wrong". `C:\AI\models` now holds only
   the five shipping lanes.
 
-## 2026-10-10 - the A16 SwiGLU decomposition above T=16 exceeds its profile's criterion (open)
+## 2026-10-10 - the A16 SwiGLU decomposition above T=16 exceeds its profile's criterion (FIXED 2026-10-11)
 
 Found by a blast-radius review of the port's own divergence, and confirmed by measurement the same day.
 `src/ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_plan.cpp:40` routes every A16/AllowA8 call with T>16
@@ -3010,6 +3010,25 @@ Reachability: the drafter calls SwiGLU with T=(k+1)*batch, so batch 1 keeps T<=1
 15-column tree; the decomposition needs batch>=2, i.e. `--max-concurrency > 1`, which every shipped lane
 leaves at 1. Fix: a fused A16 kernel above T=16, or a route-aware criterion if the contract is meant to
 allow the decomposition's accuracy - the second is a contract change and was not taken.
+
+**FIXED 2026-10-11: the fused route covers every extent, and the decomposition is deleted.**
+`src/ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_matrix.cu` adds the wide-T A16 arm: a sliced-K instance
+to T=32, then the same A16 MMA schedules the registered `[34816,5120]` Linear selects
+(`<32,64,128,16,16,1,3>`, `<64,96,128,64,16,1,2>`, `<64,128,64,64,16,2,2>`) paired with
+`SwiGluRowMajorMmaEpilogue` and `SwiGluRowMajorMmaRows`, which is the epilogue every A16 MMA family here
+uses (the A4/A8 families use the token-major one). The plan's `LinearA16Post` route, its `silu_mul` pass
+and its `[34816,T]` workspace are gone, so `nvfp4_linear_swiglu_workspace_capacity_bytes` returns 0 for
+the A16 interval exactly as the FP8 family's does.
+
+Evidence: the A16 profile in `tests/ops/linear_swiglu/test_nvfp4.cpp` now runs 19 extents
+(`1,2,4,5,8,9,16,17,24,25,32,33,64,65,96,97,128,129,1024`) and passes at every one -
+`ninfer_linear_swiglu_nvfp4_test.exe` prints `OK LinearSwiGLU NVFP4 correctness` and exits 0 - against
+the same profile and the same 6.3e-3 tail bound this entry's reproduction failed at 8.1e-3. The full
+suite is 154/156 with the two baselined by-construction failures and the baseline gate passes, so the
+real-model drafter routes are unaffected at batch 1, which is every shipped lane; the mutation gate
+passes on the rebuilt tree. The citations above describe the pre-fix tree. The removed route's cost was
+never measured, and its replacement's is not measured either: what is established is the same GEMM with
+no materialized buffer and no second pass, not a speedup figure.
 ## 2026-10-11 - every open item, consolidated, after the review and the v1.2.0 cut
 
 Written because a release went out with one of these disclosed and the question was fair: what else is
@@ -3017,10 +3036,11 @@ open, and why ship with any of it. Each item names its home; none of them is a d
 configuration unless it says so.
 
 **A research pass over every item below is recorded in
-[open-items-research-2026-10-11.md](research/open-items-research-2026-10-11.md).** Three of its outcomes
-change this list. Item 1's fix is a larger-capacity `Nvfp4SlicedInstance` on the route that already
-fuses, not a new kernel. Item 2's signature has a *deliberate* producer — the perturbation seam, which
-the suite recipe itself runs — and its falsifier is the failure message. Item 3's formula and corpus
+[open-items-research-2026-10-11.md](research/open-items-research-2026-10-11.md).** Item 1's fix is now
+landed: a fused wide-T A16 arm (`nvfp4_linear_swiglu_matrix.cu`) plus the deletion of the materializing
+fallback. Item 2's signature has a *deliberate* producer — the perturbation seam, which
+the suite recipe itself runs and which the mutation gate asserts turns the suite red — and its falsifier
+is the failure message. Item 3's formula and corpus
 are the fork's exactly, leaving the weight realization as the difference, which this port has already
 measured as worth 2.2 % / 0.45 % against borrowing. The same note checks upstream's #320 (a GPU falling
 off the bus on this artifact class) and finds the mechanism closed here by construction, with the
@@ -3028,10 +3048,10 @@ scoped evidence.
 
 **Disclosed in the release, with a reproduction in this file**
 
-1. **The A16 SwiGLU decomposition above T=16 exceeds its profile's criterion.** 8.1e-3 against 6.3e-3,
-   systematic at 17/32/64/129. Reachable only when the draft batch exceeds one, i.e.
-   `--max-concurrency > 1`; every shipped lane runs 1. The fix is a fused A16 kernel above T=16, not a
-   wider criterion. See the entry below and RELEASE_NOTES.md's known limitations.
+1. **The A16 SwiGLU decomposition above T=16 exceeds its profile's criterion.** **FIXED 2026-10-11:**
+   the fused route now covers every extent and the decomposition is deleted; the oracle passes at 19
+   extents including 17/32/64/128/129/1024, and the suite is green. See the entry below for the
+   evidence and for what is deliberately not claimed.
 2. **ninfer_topk_logprobs_test is order-dependent.** It failed once inside the full suite and passes 1/1
    and 5/5 under `--repeat until-fail:5`. Cause unattributed. The op is on the scoring route
    (`Engine::score_topk`, `apps/perplexity --topk-record`), so a recurrence is worth attributing.
@@ -3089,6 +3109,9 @@ reproducible from this file; no shipped configuration reaches it; the fix is a f
 patch; widening the criterion is forbidden by this repository's own rules; and reverting the route would
 restore a fallback that violated its compute policy. The publish is still pending, so the decision to
 ship with it is still open.
+**2026-10-11, later the same day: the fix has landed on `dev`, so the tagged cut carries the limitation
+and `dev` does not.** Re-cutting `v1.2.0` before publishing would ship the fused route and drop the
+limitation; publishing the tag as it stands would ship it. That choice is the release owner's.
 **Two of the review's warnings were false positives, and both are recorded here so they are not
 re-raised.** The FP8 MMA split-K block is unreachable in this tree -- every schedule with
 `kSplitWaveCtas > 0` is a TMA one and takes the other launcher, and no shape file carries a

@@ -7,7 +7,6 @@
 #include "ops/linear/nvfp4/nvfp4_a4_plan.h"
 #include "ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_a4_tma_launch.h"
 #include "ninfer/ops/linear.h"
-#include "ninfer/ops/silu_mul.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -19,7 +18,7 @@ namespace {
 enum class Nvfp4LinearSwiGluRoute {
     DecodeFusedA16,
     SmallTFusedA16,
-    LinearA16Post,
+    MatrixFusedA16,
     FusedA4,
     TmaFusedA4,
 };
@@ -32,12 +31,12 @@ Nvfp4LinearSwiGluRoute resolve_route(LinearPolicy policy, std::int32_t tokens) {
     if (policy == LinearPolicy::A16Only || policy == LinearPolicy::AllowA8) {
         if (tokens == 1) { return Nvfp4LinearSwiGluRoute::DecodeFusedA16; }
         if (tokens <= 16) { return Nvfp4LinearSwiGluRoute::SmallTFusedA16; }
-        // Above the fused small-T family the gate/up projection goes through the registered
-        // [34816,5120] NVFP4 Linear shape and SwiGLU is applied as an elementwise pass over the
-        // projected rows. The drafter needs this: it calls SwiGLU with T = (k+1) * batch, which
-        // exceeds the fused family for any multi-token draft. It materializes a [34816,T] BF16
-        // buffer, so it trades that traffic for serving the extent at all.
-        return Nvfp4LinearSwiGluRoute::LinearA16Post;
+        // Above the fused small-T family the projection runs fused: a sliced-K A16 instance to
+        // T=32, then the A16 MMA schedules the registered [34816,5120] Linear selects at the same
+        // extents. The drafter needs this: it calls SwiGLU with T = (k+1) * batch, which at k=15 and
+        // batch=8 is 128. Applying the nonlinearity to FP32 accumulators is what holds the profile's
+        // A16 tail bound at every extent.
+        return Nvfp4LinearSwiGluRoute::MatrixFusedA16;
     }
     if (tokens == 1) { return Nvfp4LinearSwiGluRoute::DecodeFusedA16; }
     if (tokens <= 4) { return Nvfp4LinearSwiGluRoute::SmallTFusedA16; }
@@ -68,14 +67,8 @@ std::size_t nvfp4_linear_swiglu_workspace_capacity_bytes(LinearPolicy policy,
     }
     (void)resolve_route(policy, min_tokens);
     (void)resolve_route(policy, max_tokens);
-    if (policy == LinearPolicy::A16Only || policy == LinearPolicy::AllowA8) {
-        // The A16 routes above the fused small-T family project into a [34816,T] BF16 buffer.
-        if (resolve_route(policy, max_tokens) != Nvfp4LinearSwiGluRoute::LinearA16Post) {
-            return 0;
-        }
-        return static_cast<std::size_t>(Nvfp4N34816K5120::kOutputRows) *
-               static_cast<std::size_t>(max_tokens) * sizeof(std::uint16_t);
-    }
+    // Every A16 route is fused and needs no workspace.
+    if (policy == LinearPolicy::A16Only || policy == LinearPolicy::AllowA8) { return 0; }
     if (max_tokens <= 4) {
         return 0;
     }
@@ -93,16 +86,9 @@ void nvfp4_linear_swiglu_dispatch(const Tensor& x, const Weight& weight, Tensor&
     case Nvfp4LinearSwiGluRoute::SmallTFusedA16:
         nvfp4_linear_swiglu_small_t_launch(x, weight, out, stream);
         return;
-    case Nvfp4LinearSwiGluRoute::LinearA16Post: {
-        auto scope = workspace.scope();
-        Tensor projected =
-            workspace.alloc(DType::BF16, {Nvfp4N34816K5120::kOutputRows, x.ne[1]}, 256);
-        linear(x, weight, projected, LinearPolicy::A16Only, workspace, stream);
-        constexpr std::int32_t kIntermediate = Nvfp4N34816K5120::kOutputRows / 2;
-        silu_mul(projected.slice(0, 0, kIntermediate),
-                 projected.slice(0, kIntermediate, kIntermediate), out, stream);
+    case Nvfp4LinearSwiGluRoute::MatrixFusedA16:
+        nvfp4_linear_swiglu_matrix_launch(x, weight, out, stream);
         return;
-    }
     case Nvfp4LinearSwiGluRoute::FusedA4:
         nvfp4_linear_swiglu_a4_launch(x, weight, out, workspace, stream);
         return;

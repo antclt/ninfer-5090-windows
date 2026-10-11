@@ -23,6 +23,16 @@ So extending the family above T=16 is a larger-capacity instance, a dispatch arm
 `tests/ops/linear_swiglu/test_nvfp4.cpp:81` currently stops short of. The estimate this note replaces
 was "a day of kernel work"; that estimate was wrong in the expensive direction.
 
+**Resolved 2026-10-11, and the resolution is wider than the instance this section proposed.** The
+landed fix adds `nvfp4_linear_swiglu_matrix.cu` — a sliced instance to T=32 and then the A16 MMA
+schedules with `SwiGluRowMajorMmaEpilogue`, the pairing the FP8 and Q8 A16 families already use — and
+**deletes** the materializing fallback and its workspace, so every extent is fused. The oracle runs 19
+extents (`1,2,4,5,8,9,16,17,24,25,32,33,64,65,96,97,128,129,1024`) and passes at all of them, against
+the same 6.3e-3 tail bound that failed at 8.1e-3 before the change; the suite is 154/156 with the two
+baselined failures and the baseline gate passes. The `dflash2-nvfp4-cluster-merge-findings.md` note that
+called this "the obvious follow-up ... not written because the alternative is new numerics with no
+oracle of its own" is answered by the oracle this item's own reproduction produced.
+
 **What the field does, read in its own source: it materializes the intermediate.** *Reported*: TensorRT-LLM — "The GEMM + SwiGLU
 fusion in Gated-MLP combines two Matmul operations and one SwiGLU operation into a single kernel.
 Currently this is only supported for FP8"
