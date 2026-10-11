@@ -3016,6 +3016,16 @@ Written because a release went out with one of these disclosed and the question 
 open, and why ship with any of it. Each item names its home; none of them is a defect in a shipped
 configuration unless it says so.
 
+**A research pass over every item below is recorded in
+[open-items-research-2026-10-11.md](research/open-items-research-2026-10-11.md).** Three of its outcomes
+change this list. Item 1's fix is a larger-capacity `Nvfp4SlicedInstance` on the route that already
+fuses, not a new kernel. Item 2's signature has a *deliberate* producer — the perturbation seam, which
+the suite recipe itself runs — and its falsifier is the failure message. Item 3's formula and corpus
+are the fork's exactly, leaving the weight realization as the difference, which this port has already
+measured as worth 2.2 % / 0.45 % against borrowing. The same note checks upstream's #320 (a GPU falling
+off the bus on this artifact class) and finds the mechanism closed here by construction, with the
+scoped evidence.
+
 **Disclosed in the release, with a reproduction in this file**
 
 1. **The A16 SwiGLU decomposition above T=16 exceeds its profile's criterion.** 8.1e-3 against 6.3e-3,
