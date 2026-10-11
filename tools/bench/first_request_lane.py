@@ -53,9 +53,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
-import signal
-import subprocess
 import sys
 import time
 import urllib.error
@@ -64,6 +61,15 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+sys.path.insert(0, str(REPO_ROOT / "tools" / "release"))
+from engine import (  # noqa: E402
+    LANE_QUASAR_DFLASH2,
+    lane_command,
+    start_lane,
+    stop_engine,
+    wait_ready,
+)
 
 # One fixed prompt, fixed output budget. Sampling is a parameter, not a constant: the first-request
 # transient this harness was written for is invisible at temperature 0 and visible at a sampling
@@ -78,7 +84,9 @@ MAX_TOKENS = 256
 
 def request_body(temperature: float, seed: int) -> dict[str, Any]:
     return {
-        "model": "qwen3.8-27b-quasar-v3-dflash2-vision",
+        # The lane's own id, from the profile the command is built from: it used to be typed here as
+        # well, so the request body and the flags could name different lanes.
+        "model": LANE_QUASAR_DFLASH2["model_id"],
         "messages": [{"role": "user", "content": PROMPT}],
         "max_tokens": MAX_TOKENS,
         # Temperature and seed are parameters rather than constants because the two questions this
@@ -97,92 +105,6 @@ def request_body(temperature: float, seed: int) -> dict[str, Any]:
         "enable_thinking": False,
         "stream": False,
     }
-
-
-def stop_lane(process: subprocess.Popen[bytes], timeout_s: float = 30.0) -> None:
-    """Stop a lane so its final `throughput` record is written.
-
-    `Popen.terminate()` sends SIGTERM on POSIX, which the engine handles (`apps/serve/main.cpp:84`
-    registers SIGINT and SIGTERM). On Windows `terminate()` calls TerminateProcess, which kills the
-    process outright, and the shutdown tail record -- the one carrying the context-cache selection
-    counters -- is never flushed. The lane therefore has to be asked, not killed.
-
-    CTRL_BREAK_EVENT is the Windows console signal that reaches a handler registered by
-    `SetConsoleCtrlHandler`, which is what `std::signal` compiles to here. It needs the child in its
-    own process group so the event is not delivered to this shell as well, which is why
-    `creationflags` is set where `serve_command` spawns it. If the graceful stop times out the
-    process is killed anyway, so this cannot hang a harness.
-    """
-    graceful = False
-    if os.name == "nt":
-        try:
-            os.kill(process.pid, signal.CTRL_BREAK_EVENT)
-            graceful = True
-        except (OSError, ValueError):
-            graceful = False
-    if not graceful:
-        process.terminate()
-    try:
-        process.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=timeout_s)
-
-
-def serve_command(
-    exe: Path, artifact: Path, port: int, no_reuse: bool, request_log: Path
-) -> list[str]:
-    """The shipped QUASAR dflash2 lane, verbatim from tools/release/profiles.py, plus one flag.
-
-    Regenerating the flags from profiles.py rather than transcribing them is the point: a hand-typed
-    serve line is how a lane stops being the shipped one without anything noticing.
-
-    Exactly one flag differs between the arms. It used to be two: the engine refused
-    --no-prefix-reuse alongside the context-cache capacity options, so those were dropped for the
-    no-reuse arm. Upstream's b9114396 replaced the cache and that refusal with it, so they are kept in
-    both arms now -- which is what this harness's own rule asks for, because a second difference is a
-    confound rather than a controlled comparison.
-    """
-    sys.path.insert(0, str(REPO_ROOT / "tools" / "release"))
-    import profiles  # noqa: PLC0415
-
-    profile = next(
-        item for item in profiles.PROFILES if str(item["file"]).startswith("start_quasar_v3_dflash2")
-    )
-    args = profiles.launcher_args(profile, port=port)
-    # The artifact is positional: `ninfer-serve <model.ninfer> [flags]`. Passing it as --artifact
-    # would have been a guess from the CLI's other tools, and the usage line is the authority.
-    command = [
-        str(exe),
-        str(artifact),
-        *args,
-        "--request-log-jsonl",
-        str(request_log),
-    ]
-    if no_reuse:
-        command.append("--no-prefix-reuse")
-    return command
-
-
-def wait_until_ready(port: int, process: subprocess.Popen[bytes], timeout_s: float) -> bool:
-    """Poll the model list until the engine answers, or give up.
-
-    The engine loads 17.6 GiB of weights before it serves, and readiness is the only reliable signal
-    that the lane is measurable. A fixed sleep is a guess; a poll against the server's own endpoint is
-    not.
-    """
-    deadline = time.monotonic() + timeout_s
-    url = f"http://127.0.0.1:{port}/v1/models"
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            return False
-        try:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                if response.status == 200:
-                    return True
-        except (urllib.error.URLError, OSError):
-            time.sleep(2.0)
-    return False
 
 
 def post_completion(port: int, timeout_s: float, temperature: float, seed: int) -> tuple[float, str, int]:
@@ -222,22 +144,22 @@ def run_arm(
     if request_log.exists():
         request_log.unlink()
 
-    command = serve_command(exe, artifact, port, no_reuse, request_log)
+    # Exactly one flag differs between the arms. It used to be two: the engine refused
+    # --no-prefix-reuse alongside the context-cache capacity options, so those were dropped for the
+    # no-reuse arm. Upstream's b9114396 replaced the cache and that refusal with it, so they are kept
+    # in both arms now -- which is what this harness's own rule asks for, because a second difference
+    # is a confound rather than a controlled comparison.
+    extra_flags = ["--request-log-jsonl", str(request_log)]
+    if no_reuse:
+        extra_flags.append("--no-prefix-reuse")
+    command = lane_command(LANE_QUASAR_DFLASH2, exe, artifact, port=port, extra_flags=extra_flags)
     print(f"  [{label}] starting on port {port} (log: {log_path.name})", flush=True)
-    with log_path.open("wb") as stream:
-        process = subprocess.Popen(  # noqa: S603
-            command,
-            stdout=stream,
-            stderr=subprocess.STDOUT,
-            env={**os.environ},
-            # Its own console process group, so stop_lane's CTRL_BREAK reaches the lane and not this
-            # shell. Without it the event goes to the whole group and the harness takes the break too.
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        )
+    process, handle = start_lane(LANE_QUASAR_DFLASH2, exe, artifact, port, log_path,
+                                 extra_flags=extra_flags)
 
     samples: list[dict[str, Any]] = []
     try:
-        if not wait_until_ready(port, process, timeout_s=900.0):
+        if not wait_ready(port, process, timeout=900):
             raise RuntimeError(f"[{label}] the lane never became ready; see {log_path}")
         print(f"  [{label}] ready; sending {repeats} identical requests", flush=True)
         for index in range(repeats):
@@ -271,7 +193,7 @@ def run_arm(
                 flush=True,
             )
     finally:
-        stop_lane(process)
+        stop_engine(process, handle)
 
     return {
         "arm": label,

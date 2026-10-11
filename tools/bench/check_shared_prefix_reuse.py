@@ -40,8 +40,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -49,12 +47,14 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from first_request_lane import (  # noqa: E402
-    REPO_ROOT,
-    serve_command,
-    stop_lane,
-    wait_until_ready,
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+from engine import (  # noqa: E402
+    LANE_QUASAR_DFLASH2,
+    start_lane,
+    stop_engine,
+    wait_ready,
 )
+from first_request_lane import REPO_ROOT  # noqa: E402
 
 BODY_WORDS = 400
 MESSAGES = 6
@@ -257,23 +257,17 @@ def main() -> int:
     if request_log.exists():
         request_log.unlink()
 
-    command = serve_command(arguments.exe, arguments.artifact, arguments.port, False, request_log)
     # A throughput record is the ONLY place the context-cache selection counters are written, and it
     # is emitted either on the --log-stats-interval timer or in the shutdown tail. The tail alone is
     # not enough in practice: the periodic record keeps the counters available even if the graceful
     # stop is skipped, and it makes them land mid-run rather than only at the end. Measured without
     # this flag: 0 throughput records, the counters absent, and a wrong conclusion drawn from it.
-    command += ["--log-stats-interval-ms", str(arguments.stats_interval_ms)]
-    handle = server_log.open("wb")
-    process = subprocess.Popen(
-        command,
-        stdout=handle,
-        stderr=subprocess.STDOUT,
-        # Its own console process group, so stop_lane's CTRL_BREAK reaches the lane alone.
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-    )
+    extra_flags = ["--request-log-jsonl", str(request_log),
+                   "--log-stats-interval-ms", str(arguments.stats_interval_ms)]
+    process, handle = start_lane(LANE_QUASAR_DFLASH2, arguments.exe, arguments.artifact,
+                                 arguments.port, server_log, extra_flags=extra_flags)
     try:
-        if not wait_until_ready(arguments.port, process, arguments.timeout):
+        if not wait_ready(arguments.port, process, arguments.timeout):
             print(f"  FAIL: lane never became ready; see {server_log}")
             return 1
         base = conversation(MESSAGES)
@@ -339,10 +333,10 @@ def main() -> int:
               f"{error.read().decode('utf-8', 'replace')[:200]}")
         return 1
     finally:
-        # stop_lane, not terminate(): the context-cache selection counters this loop exists to read
-        # are flushed in the shutdown throughput record, and TerminateProcess on Windows skips it.
-        stop_lane(process)
-        handle.close()
+        # stop_engine asks the lane to stop rather than killing it: the context-cache selection
+        # counters this loop exists to read are flushed in the shutdown throughput record, and
+        # TerminateProcess on Windows skips it. It closes the log handle as well.
+        stop_engine(process, handle)
 
     if not request_log.is_file():
         print(f"  FAIL: no request log at {request_log}")

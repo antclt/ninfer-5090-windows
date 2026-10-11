@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import statistics
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -37,12 +35,14 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from first_request_lane import (  # noqa: E402
-    REPO_ROOT,
-    serve_command,
-    stop_lane,
-    wait_until_ready,
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+from engine import (  # noqa: E402
+    LANE_QUASAR_DFLASH2,
+    start_lane,
+    stop_engine,
+    wait_ready,
 )
+from first_request_lane import REPO_ROOT  # noqa: E402
 
 FILLER = "The quick brown fox jumps over the lazy dog. " * 4
 
@@ -101,21 +101,13 @@ def main() -> int:
     if request_log.exists():
         request_log.unlink()
 
-    command = serve_command(
-        arguments.exe, arguments.artifact, arguments.port, False, request_log
-    )
+    extra_flags = ["--request-log-jsonl", str(request_log)]
 
     print(f"  starting one lane on port {arguments.port}", flush=True)
-    handle = server_log.open("wb")
-    process = subprocess.Popen(
-        command,
-        stdout=handle,
-        stderr=subprocess.STDOUT,
-        # Its own console process group, so stop_lane's CTRL_BREAK reaches the lane alone.
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-    )
+    process, handle = start_lane(LANE_QUASAR_DFLASH2, arguments.exe, arguments.artifact,
+                                 arguments.port, server_log, extra_flags=extra_flags)
     try:
-        if not wait_until_ready(arguments.port, process, arguments.timeout):
+        if not wait_ready(arguments.port, process, arguments.timeout):
             print(f"  FAIL: lane never became ready; see {server_log}")
             return 1
         print("  lane ready", flush=True)
@@ -151,10 +143,10 @@ def main() -> int:
                     break
             print(f"  {messages:4d} message(s): prefix seeded, then the reported request", flush=True)
     finally:
-        # stop_lane, not terminate(): on Windows terminate() kills the process, so the shutdown
-        # throughput record carrying the cache-selection counters is never flushed.
-        stop_lane(process)
-        handle.close()
+        # stop_engine asks the lane to stop rather than killing it: on Windows terminate() kills the
+        # process, so the shutdown throughput record carrying the cache-selection counters is never
+        # flushed. It closes the log handle as well.
+        stop_engine(process, handle)
 
     if not request_log.is_file():
         print(f"  FAIL: no request log at {request_log}")
