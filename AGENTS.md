@@ -229,6 +229,8 @@ at all", which the run six hours late falsified.
 | situation | skill |
 |---|---|
 | a C++/CUDA change on its way in | `cpp-cuda-review` |
+| a whole subsystem, or this port's own divergence, needing a review whose **coverage is checkable** | `c-review` — vendored from Trail of Bits (`github.com/trailofbits/skills`, `plugins/c-review` v2.0.3, CC-BY-SA 4.0; licence and upstream README travel in the skill). tree-sitter enumerates every reviewable unit and a ledger must account for each, so "no findings" arrives with its denominator. Upstream drives its phases through Claude Code's `Workflow` tool, which opencode does not have: the scripts under `scripts/` are unmodified and the phases run as subagents, which is what the vendored SKILL.md says |
+| a suspected bug that has to be confirmed or discarded **before** it is reported | `fp-check` — vendored from the same source and licence. Produces a TRUE/FALSE POSITIVE verdict with the evidence for it, which is the same rule this repo states as "attribute it, or say unattributed" |
 | a hard bug, or a belief about the code that might be wrong | `diagnosing-bugs` |
 | before claiming a fix works | `principle-prove-it-works` |
 | "how does X work", or an unfamiliar subsystem | `how` |
