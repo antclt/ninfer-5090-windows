@@ -66,6 +66,57 @@ and uses no `__builtin_ctz` anywhere under `src/` (checked tree-wide), so there 
 **6. A host-only `.ninfer` inspector and JSON identity commands.** This tree already has
 `tools/artifact/inspect.py` *and* `inspect_diff.py`; theirs is not more.
 
+## The conversion method, compared (the question that matters)
+
+Asked afterwards, and it deserves its own section, because the first survey looked at provenance and
+peripheral changes and not at the quantizer.
+
+**Their core quantizer is the same code.** Three-way sizes, and the equality is exact rather than close:
+
+| module | upstream | this tree | theirs |
+|---|---|---|---|
+| `quantization/groupwise.py` | 4,298 B | **4,298 B** | 11,354 B |
+| `methods.py` | 11,522 | **11,522** | 14,253 |
+| `proposal.py` | 3,483 | **3,483** | 4,847 |
+| `quantization/fp8_row.py` | 4,704 | 4,704 | 4,704 |
+
+So `groupwise.py`, `methods.py` and `proposal.py` are upstream's, unchanged, in this tree; the only
+modules that differ are the ones this port added (`quantization/nvfp4.py`, `calibration.py`,
+`verify_artifact.py`, `sources/quant_scheme.py`) and the ones that fork added.
+
+**Their one addition to the method set is an MSE scale search** - `grouped_mse` in their `methods.py`,
+`_mse_scale_candidates` and `quantize_matrix_mse` in their `groupwise.py`. It is not in their own
+documented method table, which lists `nvfp4` from floating-point input as "Supply a custom quantizer".
+**This tree built that method and measured it as a regression** (`docs/active-work.md` item 2, the
+instrument recoverable from `900a0f78`, reverted `b891e1e9`): wired into the 128 object groups the NVIDIA
+artifact re-encodes locally and measured paired against the shipping artifact in one window on the full
+corpus, **max-abs 4.915181334 against searched 4.925917194 - +0.218 %, the wrong way**. Weight
+reconstruction error fell 40-66 % while perplexity rose, and the mechanism is the finding: per-weight MSE
+and output perplexity are decoupled, because the blocks a search improves are the ones it clips, and the
+clipped value carries signal. Scope, stated: that covers the sites this port re-encodes (the
+`self_attn`/`linear_attn` groups the producer quantised as FP8); a GGUF or ternary source has a different
+input distribution and is untested here, and this tree has no such source. What survives is "max-abs is
+the right default for weights with no producer evidence behind them".
+
+**Their QUASAR driver reaches the same conclusion as this tree's QAT recipe, by a slightly worse route.**
+`quasar_nvfp4.py` says the public mixed recipe does not match the QUASAR checkpoint and imports every
+quantised projection verbatim through `import_encoded`, and that the GDN `a`/`b` projections cannot be
+imported as NVFP4 because the layout needs 128-row tiles - which is this tree's recipe's own analysis,
+word for word in substance. The difference is one step: theirs **dequantises those two from the NVFP4
+source** ("an upcast, not a re-quantisation"), where this tree's recipe takes them from the **BF16 base
+checkpoint**, so ours carries the original values and theirs carries the source's quantization error.
+
+**The activation axis, where this tree is ahead on a measured result.** Their converter has no
+calibration at all: no `calibration.py`, no corpus, and no `amax` or `2688` anywhere in its recipes. This
+tree computes a per-site divisor from a fixed corpus and has measured the choice - `max` is the best
+measured point (shipped 4.724219 against ÷2 4.730689 and a constant 4.729511), which is item 10 of the
+consolidated list.
+
+**Verdict: not better.** Same core quantizer, older base, one extra method that this tree measured as a
+regression, one import step that loses information this tree keeps, and no calibration on the axis this
+tree has measured. What it has that this tree does not is GGUF and ternary *sources* - capabilities, not
+methods, and neither a requirement here.
+
 ## What is worth knowing
 
 The lineage, not the code: `iamwavecut/ninfer-all` consolidates `Neroued/ninfer` with the 3090 forks,
