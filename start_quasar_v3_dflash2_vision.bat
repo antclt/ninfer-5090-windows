@@ -2,7 +2,7 @@
 REM ============================================================================
 REM  QUASAR QAT + DFlash2 + Vision
 REM
-REM  Measured on this machine (32 GB RTX 5090), fp8 KV at the ceiling below:
+REM  Measured on this machine (32 GB RTX 5090), k8v4 KV at the ceiling below:
 REM      context 262,144   decode 367.9 tok/s   draft acceptance 58.0%
 REM      runtime 8.83 GiB   free VRAM 4.09 GiB
 REM

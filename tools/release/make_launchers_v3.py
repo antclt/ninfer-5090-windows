@@ -22,7 +22,7 @@ TEMPLATE = """@echo off
 REM ============================================================================
 REM  {label}
 REM
-REM  Measured on this machine (32 GB RTX 5090), fp8 KV at the ceiling below:
+REM  Measured on this machine (32 GB RTX 5090), {kv} KV at the ceiling below:
 REM      context {ctx_h}   decode {tok} tok/s   draft acceptance {acc}
 REM      runtime {runtime}   free VRAM {free}
 REM
@@ -193,6 +193,7 @@ def render(profile: dict) -> str:
         ctx_h=f"{profile['ctx']:,}", tok=profile["tok"], acc=profile["acc"],
         runtime=profile["runtime"], free=profile["free"], models=MODELS,
         art=profile["art"], flags=flags, port=profile["port"], env=render_env(profile),
+        kv=profile["kv_dtype"],
     )
     return text.replace("\n", "\r\n")
 

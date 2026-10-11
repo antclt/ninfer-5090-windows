@@ -2,7 +2,7 @@
 REM ============================================================================
 REM  Swift 1.5 + MTP4 + Vision
 REM
-REM  Measured on this machine (32 GB RTX 5090), fp8 KV at the ceiling below:
+REM  Measured on this machine (32 GB RTX 5090), k8v4 KV at the ceiling below:
 REM      context 262,144   decode 194.7 tok/s   draft acceptance 50.9%
 REM      runtime 8.07 GiB   free VRAM 5.16 GiB
 REM

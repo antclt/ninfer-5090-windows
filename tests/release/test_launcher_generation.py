@@ -21,6 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "release"))
 
 from profiles import INVARIANT_FLAGS, cli_args, launcher_args, ordered_flags, varying_flags  # noqa: E402
+from make_launchers_v3 import render  # noqa: E402
 
 failures: list[str] = []
 
@@ -85,6 +86,13 @@ cli = cli_args(profile(vision=True, spec="mtp", draft=4, lm_head=True))
 expect(not (set(cli) & server_only), "the CLI flag set names no server-only flag")
 expect("--lm-head-draft" in cli, "the CLI flag set includes the proposal head it accepts")
 expect("--vision" in cli and "--spec" in cli, "the CLI flag set includes what both interfaces share")
+
+# The header states the lane's KV format, and that word is rendered from the row rather than fixed in
+# the template: five of the eight shipped lanes run k8v4, and the template said "fp8 KV" for all of
+# them until this assertion existed to catch it.
+for kv in ("fp8", "k8v4"):
+    expect(f"), {kv} KV at the ceiling" in render(profile(kv_dtype=kv)),
+           f"the launcher header does not state the row's KV format ({kv})")
 
 if failures:
     for failure in failures:

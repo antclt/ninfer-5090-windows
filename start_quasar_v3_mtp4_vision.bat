@@ -2,7 +2,7 @@
 REM ============================================================================
 REM  QUASAR QAT + MTP4 + Vision
 REM
-REM  Measured on this machine (32 GB RTX 5090), fp8 KV at the ceiling below:
+REM  Measured on this machine (32 GB RTX 5090), k8v4 KV at the ceiling below:
 REM      context 262,144   decode 216.6 tok/s   draft acceptance 64.0%
 REM      runtime 8.07 GiB   free VRAM 5.17 GiB
 REM
