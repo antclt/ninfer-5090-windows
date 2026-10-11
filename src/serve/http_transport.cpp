@@ -119,6 +119,8 @@ void configure_http_server_socket(socket_t socket) noexcept {
     // with netstat, alongside a FIN_WAIT_2 from the still-open client), a new listener bound it in
     // 0.5 s and answered a request. The caveat did not apply to this loopback bind; why is not
     // established, and the measurement is what the comment can honestly carry.
+    // `tools/bench/probe_listener_restart.py` is the instrument, and it prints the port's state at
+    // rebind time so a pass cannot be read against an empty port table.
     const BOOL enabled  = TRUE;
     const BOOL disabled = FALSE;
     set_socket_option(socket, SOL_SOCKET, SO_REUSEADDR, disabled);
