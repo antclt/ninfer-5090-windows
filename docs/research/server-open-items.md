@@ -436,13 +436,21 @@ prefill) in the same run, with an idle floor of 0.08 s. Cancellation is therefor
 prefill chunks. The guard the issue names covers an open context transaction, which on this port is a
 checkpoint capture rather than the whole prefill.
 
-**Disposition:** Closed as not-reproducing, with one window named and unmeasured: a client lost while a
-checkpoint capture is open. Its bound here is the capture rather than a prefill, and it was not
-measured. Raw evidence: `profiles/bench/cancellation/requests-qat-dflash2-r2.jsonl`.
+**Disposition:** Closed as not-reproducing. The window this entry named as unmeasured - a client lost
+while a checkpoint capture is open - was measured on 2026-10-11 by the probe's capture arm: a marked
+prompt abandoned mid-prefill leaves `capture_pending` and `terminal_pending` at 0 with the follower
+released early (0.68 s against 25.45 s), and the run's captures read 3 completed / 0 aborted, because a
+capture opens only when a turn completes. What that leaves is the sliver where the client closes on the
+final streamed chunk: it was not attempted, and its consequence is what the two-sided finalisation in
+`src/runtime/engine/engine_core.h:1498-1508` covers. Raw evidence:
+`profiles/bench/cancellation/requests-qat-dflash2-r2.jsonl` and `requests-item6.jsonl`.
 
 **Confirmed with the corrected instrument 2026-10-10.** The probe's second run reports the abandoned
 subject as *never completed* (32,768 of 158,447 prompt tokens computed, `prefix_cache_hit_tokens` 0) with
 a follower wait of **0.87 s** against **25.82 s** behind a live prefill of the same size, idle floor
-0.08 s — verdict `released early`. Its generation arm reported **VOID** both times, because the subject
-finished on its own before the socket closed; that half of the case is upstream's own verified fix
-(`ce09aee5`) rather than a measurement taken here.
+0.08 s — verdict `released early`. Its generation arm reported **VOID** both times, and on 2026-10-11
+both causes were found to be harness defects rather than engine facts: the prompt finished inside the
+window even when it asked for a long answer, and the guard judged that arm with a *prefill* invariant
+that is true by construction for a generation subject. With both fixed the arm measures the release —
+"the follower waited 0.07 s against 25.02 s behind live work -> released early" — so that half of the
+case is now a measurement here as well as upstream's verified fix (`ce09aee5`).

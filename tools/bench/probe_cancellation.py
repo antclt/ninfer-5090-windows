@@ -127,9 +127,18 @@ def post(port: int, model_id: str, prompt: str, max_tokens: int, timeout: float 
     return {"status": response.status, "seconds": time.time() - started}
 
 
-def post_and_abandon(port: int, model_id: str, prompt: str, max_tokens: int, kill_after: float) -> None:
-    """Send the request, read nothing, then close with RST so the server sees the peer disappear."""
-    body = json.dumps({"model": model_id, "messages": [{"role": "user", "content": prompt}],
+def post_and_abandon(port: int, model_id: str, prompt: str, max_tokens: int, kill_after: float,
+                     marked: bool = False) -> None:
+    """Send the request, read nothing, then close with RST so the server sees the peer disappear.
+
+    `marked` declares a cache breakpoint, which is what opens a checkpoint capture. It has to be a
+    content PART: this route sets allow_engine_automatic_shared_prefixes = false, and a plain string
+    content carries no marker, so without one no capture is opened at all -- the plain arms leave
+    `context_cache.captures` at zero, which is the baseline the capture arm is read against.
+    """
+    content = ([{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
+               if marked else prompt)
+    body = json.dumps({"model": model_id, "messages": [{"role": "user", "content": content}],
                        "max_tokens": max_tokens, "temperature": 0}).encode("utf-8")
     head = (f"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
             f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n"
@@ -190,6 +199,28 @@ def queue_wait(record: dict) -> float | None:
 
 def cold_hit(record: dict) -> int | None:
     return (record.get("result") or {}).get("prefix_cache_hit_tokens")
+
+
+def capture_state() -> dict:
+    """The run's capture totals and the scheduler's pending gauges.
+
+    The throughput record's counters are per-interval deltas, so the run's total is their sum; a capture
+    that aborted and one that published are both evidence the guard ran, and `capture_pending` is what
+    says nothing was left open behind a cancelled client.
+    """
+    completed = aborted = 0
+    pending = terminal = None
+    for record in completions(request_log):
+        if record.get("event") != "throughput":
+            continue
+        captures = (record.get("context_cache") or {}).get("captures") or {}
+        completed += captures.get("completed", 0)
+        aborted += captures.get("aborted", 0)
+        scheduler = record.get("scheduler") or {}
+        pending = scheduler.get("capture_pending")
+        terminal = scheduler.get("terminal_pending")
+    return {"completed": completed, "aborted": aborted, "capture_pending": pending,
+            "terminal_pending": terminal}
 
 
 with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
@@ -277,6 +308,14 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
         post_and_abandon(args.port, model_id, LONG_ANSWER, args.generation_tokens, args.kill_after)
         followup("generation", post(args.port, model_id, FOLLOWER, args.followup_tokens), before)
 
+        # capture: the other window a client can be lost in -- a checkpoint capture open. The marked
+        # prompt is what opens one; the plain arms above leave the counters at zero, which is why the
+        # arm is read against that baseline rather than against nothing.
+        print("\n=== abandoned capture (checkpoint) ===", flush=True)
+        before = ids_now()
+        post_and_abandon(args.port, model_id, prompt_a, 1, args.kill_after, marked=True)
+        followup("capture", post(args.port, model_id, FOLLOWER, args.followup_tokens), before)
+
         print("\n=== verdict ===", flush=True)
         print("  the follower's own work is ~0.06 s, so its wall time is the wait it spent queued",
               flush=True)
@@ -313,6 +352,19 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
         if arms.get("live", {}).get("subject_cold") is False:
             print("  VOID: the live reference's prefill was served from cache, so it held the slot for "
                   "no work at all", flush=True)
+
+        captures = capture_state()
+        print(f"  capture     {captures['completed']} completed, {captures['aborted']} aborted, "
+              f"capture_pending {captures['capture_pending']}, "
+              f"terminal_pending {captures['terminal_pending']}", flush=True)
+        if captures["completed"] or captures["aborted"]:
+            print("  capture: the marked arm opened a transaction and the guard recorded its outcome; "
+                  "pending counts at zero mean nothing was left open behind the cancelled client",
+                  flush=True)
+        else:
+            print("  capture: VOID -- the marked arm opened no capture, so this run says nothing about "
+                  "the window. Check that the marker resolved to a frontier.", flush=True)
+        print()
 
         summary = {"lane": profile["file"], "artifact": args.artifact, "prompt_chars": len(prompt_a),
                    "kill_after_seconds": args.kill_after, "arms": arms}

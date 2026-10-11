@@ -3109,8 +3109,20 @@ scoped evidence.
    with the mechanism's absence. Upstream #339 stays open against upstream's tree; the residual is that
    removing the guard means an over-subtraction would no longer throw, so this closes "the mechanism is
    absent", not "the accounting is proven correct".
-6. **Cancellation during a checkpoint capture** - the one window the engine's transaction guard covers.
-   Bounded by a capture rather than a prefill; not measured. Serving doc and server-open-items section 8.
+6. **Cancellation during a checkpoint capture** - **CLOSED 2026-10-11: measured at the reachable scope,
+   and the window is narrower than this item assumed.** `probe_cancellation.py` now carries a capture
+   arm: a marked prompt (a content-part `cache_control`, which is what opens a transaction on this
+   route) at the #184 size, abandoned mid-prefill. Measured: the subject was cancelled at 32,768 of
+   158,447 tokens, the follower was released early (0.68 s against 25.45 s behind live work), and the
+   run's counters read **3 completed, 0 aborted, `capture_pending` 0, `terminal_pending` 0**. The three
+   are the requests that *completed* their turns - a capture opens only when a turn does, so a client
+   lost before that point never opens one and the guard has nothing to unwind. What this item names - a
+   client lost *while* the capture runs - needs the client to close on the final streamed chunk, which
+   was not attempted; its consequence is covered by the code's own two-sided finalisation
+   (`src/runtime/engine/engine_core.h:1498-1508` clears `capture_pending`, sets `model_state`, and
+   publishes only the points it captured, on both the published and the unpublished path), and the
+   counters that would show a half-finalised capture are published in the request log
+   (`context_cache.captures`, `scheduler.capture_pending`).
 7. **The generation-abandoned cancellation arm** - **CLOSED 2026-10-11: measured, and both reasons it
    reported VOID were harness defects.** The probe now reports "the subject never completed (cancelled)
    and the follower waited 0.07 s against 25.02 s behind live work -> released early", so an abandoned
