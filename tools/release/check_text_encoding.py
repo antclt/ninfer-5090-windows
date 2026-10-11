@@ -240,6 +240,14 @@ def tracked_text_files() -> list[Path]:
 
     Reading the index is deliberate: the check has to describe what is about to be committed, and
     an untracked scratch file is not part of that.
+
+    A path the index names but the working tree does not have is skipped, and that case is not
+    hypothetical: `git commit <pathspec>` builds a temporary index from HEAD plus the named paths and
+    exports GIT_INDEX_FILE to the hook, so a commit that names its own files -- the practice this
+    repository's own rules ask for -- makes every *deleted* file reappear here as an entry with no
+    bytes behind it. The check then raised FileNotFoundError and reported nothing at all, which is the
+    one outcome a gate must not have. A deleted file has no encoding to check, and its blob was
+    checked when it was added.
     """
     result = subprocess.run(
         ["git", "ls-files", "-z"], capture_output=True, check=True, text=False
@@ -250,7 +258,8 @@ def tracked_text_files() -> list[Path]:
             continue
         path = Path(entry)
         if path.suffix.lower() in TEXT_SUFFIXES or path.name in NAME_ONLY:
-            files.append(path)
+            if path.is_file():
+                files.append(path)
     return files
 
 
