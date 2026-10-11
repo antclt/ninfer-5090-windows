@@ -3154,8 +3154,19 @@ scoped evidence.
 
 9. **The precision-assignment search is not exhausted** - no arm isolates q/k from v/o, and none moves
    MLP activations from A8 to A16. `docs/research/lane-coverage-2026-10-08.md`.
-10. **PromptLookup's tree-draft integration is not built** - the proposer is ported and tested; the
-    verify tree that would consume it does not exist in this tree.
+10. **PromptLookup's tree-draft integration is not built** - **CLOSED 2026-10-11 as a product decision,
+   with the design and the measurements named.** The proposer is ported and tested; what does not exist
+   is a consumer, and the research pass established that the consumer is a *verify-side* question rather
+   than a proposer-side one: both shipped model-free proposers return a flat token sequence (vLLM's
+   `NgramProposer.propose(num_speculative_tokens, sampled_token_ids, num_tokens_no_spec, token_ids_cpu)
+   -> list[list[int]]`, and llama.cpp's lookup driven by `common_speculative_get_output_limits`), so the
+   sequence becomes one path of the existing tree - the shape SGLang's ngram roadmap describes ("trie
+   paths for almost every suffix ... the target model then verifies the entire tree in one pass") and
+   what SuffixDecoding builds directly from a suffix tree. The reason not to build it now is measured
+   rather than assumed: this port's own n-gram work recorded that n-gram alone rejects 91-98 % of rounds,
+   so a model-free proposer pays for a verify path without paying back. Its successor is a suffix-tree
+   proposer, which is a different proposer from the one ported here. Reopening needs a workload where a
+   retrieval proposer's acceptance is measured to be worth the round - not a consumer alone.
 
 **Upstream, out of this port's hands**
 
