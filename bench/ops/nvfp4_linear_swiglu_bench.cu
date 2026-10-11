@@ -76,7 +76,10 @@ Options parse_options(int argc, char** argv) {
             const std::string_view value = next("--policy");
             if (value == "a16") {
                 options.policy  = ops::LinearPolicy::A16Only;
-                options.t_sweep = {1, 4, 8, 16};
+                // Every extent the A16 policy serves, straddling each route boundary, as the op test's
+                // own case list does: the small-T family, the sliced instance to 32, and the MMA
+                // schedules above it.
+                options.t_sweep = {1, 4, 8, 16, 17, 32, 64, 129};
             } else if (value == "a4") {
                 options.policy  = ops::LinearPolicy::AllowA4;
                 options.t_sweep = {5, 48, 49, 56, 64, 65, 96, 97, 128, 256, 1024};
@@ -108,9 +111,12 @@ Options parse_options(int argc, char** argv) {
     if (options.profile && options.t_sweep.size() != 1) {
         throw std::invalid_argument("--profile requires exactly one T");
     }
-    if (options.policy == ops::LinearPolicy::A16Only &&
-        *std::max_element(options.t_sweep.begin(), options.t_sweep.end()) > 16) {
-        throw std::invalid_argument("A16 policy is registered only through T=16");
+    if (options.policy == ops::LinearPolicy::A16Only) {
+        // There was a guard here rejecting A16 above T=16, on the grounds that the policy was
+        // "registered only through T=16" and those extents went through a materialised BF16 projection
+        // rather than a route of this Op's own. That stopped being true when the fused matrix route was
+        // added, and a guard that refuses the extents the Op now serves would refuse to measure exactly
+        // the change that removed it.
     }
     return options;
 }

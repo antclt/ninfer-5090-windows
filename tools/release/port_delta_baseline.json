@@ -177,6 +177,12 @@
       "review": "product",
       "reason": "The bench builds the selector's codebooks as Weight, matching the Op's signature after the codebooks became real weights. Same change as src/ops/wrapper/candidate_selector.cpp."
     },
+    "bench/ops/nvfp4_linear_swiglu_bench.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "The A16 guard's removal. Upstream's route table ends the A16 policy at T=16 and throws above it, so upstream's guard is correct for upstream; this port's fused matrix route serves every extent, and a guard that refuses them would refuse to measure exactly the change that made them servable. It is the consequence of the wide-T route already recorded in nvfp4_linear_swiglu_plan.cpp and .h, not an independent divergence: without it the op's own bench cannot measure the route this port ships."
+    },
     "cmake/Dependencies.cmake": {
       "status": "M",
       "disposition": "windows",
@@ -1187,7 +1193,7 @@
     },
     "src/serve/generation_service.cpp": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "refactor",
       "review": "product",
       "reason": "Publishes the three per-position recall vectors as metrics (see the header entry above)."
     },
@@ -1313,7 +1319,7 @@
     },
     "tests/cmake/CoreTests.cmake": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "product",
       "reason": "Cited in the diff -- measure: Measured. Open it before changing this path."
     },

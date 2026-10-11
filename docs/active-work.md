@@ -3024,11 +3024,30 @@ Evidence: the A16 profile in `tests/ops/linear_swiglu/test_nvfp4.cpp` now runs 1
 (`1,2,4,5,8,9,16,17,24,25,32,33,64,65,96,97,128,129,1024`) and passes at every one -
 `ninfer_linear_swiglu_nvfp4_test.exe` prints `OK LinearSwiGLU NVFP4 correctness` and exits 0 - against
 the same profile and the same 6.3e-3 tail bound this entry's reproduction failed at 8.1e-3. The full
-suite is 154/156 with the two baselined by-construction failures and the baseline gate passes, so the
-real-model drafter routes are unaffected at batch 1, which is every shipped lane; the mutation gate
-passes on the rebuilt tree. The citations above describe the pre-fix tree. The removed route's cost was
-never measured, and its replacement's is not measured either: what is established is the same GEMM with
-no materialized buffer and no second pass, not a speedup figure.
+suite is 155/157 with the two baselined by-construction failures (157 since the uint128 test landed) and
+the baseline gate passes, so the real-model drafter routes are unaffected at batch 1, which is every
+shipped lane; the mutation gate passes on the rebuilt tree. The citations above describe the pre-fix
+tree.
+
+**Measured, and it is not a uniform speedup.** The op's own bench now covers both revisions, because its
+guard ("A16 policy is registered only through T=16") had encoded the old limitation and refused to
+measure the change that removed it; with that guard gone,
+`ninfer_nvfp4_linear_swiglu_bench --policy a16`, median of 10 after 3 warmups, and T <= 16 as the control
+because those rows are the same route in both revisions (their 0-2.8 % spread is the noise floor):
+
+| T | fused (this fix) | pre-fix (`LinearA16Post`) |
+|---|---|---|
+| 16 | 106.5 us | 105.1 us |
+| 17 | 123.6 | 119.5 |
+| 32 | 168.6 | 158.4 |
+| 64 | 219.9 (p95 222) | 225.3 (p95 434) |
+| 129 | 527.2 | 576.2 (p95 806) |
+
+So: **3-7 % slower at T=17..32, even at 64, 8.5 % faster at 129, and a much tighter tail** - the old
+route's p95 at T=64 is nearly twice its median, where the fused route's is within 1 %. The fused figures
+reproduced to the digit when the fix was restored (T=17 123.552 us, T=32 168.608 us). What the fix buys
+for certain is the profile's own A16 tail bound at every extent, with no materialised buffer and no
+second pass.
 ## 2026-10-11 - every open item, consolidated, after the review and the v1.2.0 cut
 
 Written because a release went out with one of these disclosed and the question was fair: what else is
@@ -3170,10 +3189,23 @@ scoped evidence.
 
    So the ordering is **v/o > q/k > shipped**, which is ov-freeze's prediction confirmed here: the o and
    v projections are the more sensitive pair. The quality gains are small (0.15-0.37 %) and the costs
-   are not (14 % for either attention arm, 39 % for the MLP arm), so none is adopted - on the *scoring*
-   route, which is what was measured; the decode-lane cost is not measured and is the only thing that
-   could change that verdict. The earlier statement that "none moves MLP activations from A8 to A16" was
-   also imprecise: the shipped NVFP4 sites are `AllowA4`, so the arm moves A4 to A16.
+   are not, so none is adopted. **And the decode lane is now measured too, not assumed** - the same four
+   artifacts through `ninfer_bench --spec dflash2 --draft-tokens 7 -n 128 -r 5`, with the shipped build
+   first and last (110.10 and 109.80 tok/s, a 0.3 % spread):
+
+   | arm | PPL (scoring) | scoring tok/s | decode tok/s | acceptance |
+   |---|---|---|---|---|
+   | shipped | 4.38763 | 6.06-6.24k | 110.10 / 109.80 | 0.10251 |
+   | MLP down A16 | 4.37280 | 3.70-3.71k | 92.63 | 0.08318 |
+   | q/k A16 | 4.38085 | 5.33k | 105.32 | 0.09276 |
+   | v/o A16 | **4.37154** | 5.21k | 105.27 | 0.09276 |
+
+   So the decode cost is 4.4 % for either attention arm and 15.8 % for the MLP arm, and the acceptance
+   rate moves with them - an A16 target is a slightly different model, so the drafter's proposals meet a
+   different distribution (370 rounds shipped against 390 and 405). That closes the only thing that
+   could have changed the verdict, and it confirms it. The earlier statement that "none moves MLP
+   activations from A8 to A16" was also imprecise: the shipped NVFP4 sites are `AllowA4`, so the arm
+   moves A4 to A16.
 10. **PromptLookup's tree-draft integration is not built** - **CLOSED 2026-10-11 as a product decision,
    with the design and the measurements named.** The proposer is ported and tested; what does not exist
    is a consumer, and the research pass established that the consumer is a *verify-side* question rather
@@ -3201,14 +3233,20 @@ scoped evidence.
       One trial is meaningful for a watchdog-shaped failure at a fixed shape, but not conclusive across
       environments (the report is Linux); upstream has no fix, and the field's mitigation is chunked
       prefill, which this engine exposes as `--prefill-chunk`.
-    - **#208's failure class is absent from this tree, and a bounded soak does not reproduce it.** The
-      causal-cache partition carries a 256-split ceiling, a launch-time capacity guard that throws, and
-      shared memory sized by tile constants rather than by keys-per-split; the commenter's fix is for a
-      fork's own long-context layout, whose names occur nowhere here. A soak on the shipped MTP4+k8v4
-      lane (6 cycles, 60k-token contexts, 512-token decodes) ended with "lane still answering
-      /v1/models: no crash in this run". **That is a scope, not a refutation**: the reporters saw it
-      intermittently over days, and no minutes-long soak has the power to exclude it. Upstream's #208
-      stays open.
+    - **#208's failure class is absent from this tree**, and the run that would test the crash itself was
+      **not** taken. Two things are separate here and the earlier entry ran them together. The *growth*
+      verdict - is there a leak - is what `tools/bench/soak_lane.py` answers, and its instrumentation
+      resolves it in minutes rather than the hours the RSS-based version needed: a 6-cycle run on the
+      shipped MTP4+k8v4 lane ended with "lane still answering /v1/models: no crash in this run" and its
+      floors read as a cache filling rather than a leak. The *crash* verdict - #208's intermittent
+      `cudaErrorIllegalAddress` - is a different question with a different instrument:
+      `tools/release/soak.py` exists for it, names the issue in its docstring, drives the mixed agentic
+      request stream #208 describes, and defaults to `--minutes 16` because "the reported onset is 10-15
+      minutes under sustained load". **This session's 0.9-minute run is below that onset, so it carries
+      no evidence about the crash either way** - the "no crash in this run" line is a statement about a
+      nine-tenths-of-a-minute window, and reading it as a result about #208 would be the kind of
+      over-claim this file exists to prevent. The code check above is the whole of the evidence here.
+      Upstream's #208 stays open.
     - **#229's mechanism is absent** - a scoped search over `src` for `pressure_search`,
       `budget_exhausted` and `pressure release` finds nothing, and the planner that held the flat 5 ms
       budget went with it - and the symptom's shape was re-measured under the replacement cache: a
