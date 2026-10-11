@@ -3152,8 +3152,28 @@ scoped evidence.
 
 **Planned work, not defects**
 
-9. **The precision-assignment search is not exhausted** - no arm isolates q/k from v/o, and none moves
-   MLP activations from A8 to A16. `docs/research/lane-coverage-2026-10-08.md`.
+9. **The precision-assignment search is not exhausted** - **CLOSED 2026-10-11: both named axes are now
+   measured, and neither arm is adopted.** Each arm is a variant artifact built by the shipped recipe
+   with one policy changed (a variant recipe intercepting `recipe.assign`), and the falsifier is the
+   artifact's own use table: the MLP arm moves exactly the target's 64 `mlp/down` uses to `A16Only`
+   (332 -> 396 A16 uses), the q/k arm exactly its 32 `attention/query`+`attention/key` uses, and the v/o
+   arm exactly its 32 `attention/value`+`attention/output` uses, with every other use identical.
+   Scored on `perplexity-1m --quick` (261,167 tokens), interleaved with the shipped build as control,
+   which reproduced **4.38763** on three separate runs:
+
+   | arm | PPL | scoring throughput |
+   |---|---|---|
+   | shipped | 4.38763 | 6.06-6.24k tok/s |
+   | MLP down at A16 | 4.37280 | 3.70-3.71k tok/s |
+   | q/k at A16 | 4.38085 | 5.33k tok/s |
+   | v/o at A16 | **4.37154** | 5.21k tok/s |
+
+   So the ordering is **v/o > q/k > shipped**, which is ov-freeze's prediction confirmed here: the o and
+   v projections are the more sensitive pair. The quality gains are small (0.15-0.37 %) and the costs
+   are not (14 % for either attention arm, 39 % for the MLP arm), so none is adopted - on the *scoring*
+   route, which is what was measured; the decode-lane cost is not measured and is the only thing that
+   could change that verdict. The earlier statement that "none moves MLP activations from A8 to A16" was
+   also imprecise: the shipped NVFP4 sites are `AllowA4`, so the arm moves A4 to A16.
 10. **PromptLookup's tree-draft integration is not built** - **CLOSED 2026-10-11 as a product decision,
    with the design and the measurements named.** The proposer is ported and tested; what does not exist
    is a consumer, and the research pass established that the consumer is a *verify-side* question rather
@@ -3170,24 +3190,63 @@ scoped evidence.
 
 **Upstream, out of this port's hands**
 
-11. #208 (intermittent CUDA illegal access under sustained MTP - the shipped MTP lanes are the
-    configuration it concerns), #333 (a launch timeout on k8v4 + DFlash2), #229 (the materialization
-    grant, removed upstream with the planner that held it).
+11. **#208, #333, #229** - **all three checked to their mechanism, none adopted, and two now carry a
+    measurement here.**
+    - **#333 is testable here, and does not reproduce.** The lane matrix corrected an assumption: this
+      port *does* ship k8v4 + DFlash2 (`start_quasar_v3_dflash2_vision.bat`), so the report's
+      configuration is a shipped one. Measured on it: a 43,956-token body, then the same body again
+      (**hit 43,956 of 43,956, `computed_prefill_tokens` 0, path `checkpoint` - a full cache replay**),
+      then a *different* 43,956-token body whose prefill starts immediately after it: **4.187 s of
+      prefill, http 200, lane alive afterwards**. The reported `cudaErrorLaunchTimeout` did not occur.
+      One trial is meaningful for a watchdog-shaped failure at a fixed shape, but not conclusive across
+      environments (the report is Linux); upstream has no fix, and the field's mitigation is chunked
+      prefill, which this engine exposes as `--prefill-chunk`.
+    - **#208's failure class is absent from this tree, and a bounded soak does not reproduce it.** The
+      causal-cache partition carries a 256-split ceiling, a launch-time capacity guard that throws, and
+      shared memory sized by tile constants rather than by keys-per-split; the commenter's fix is for a
+      fork's own long-context layout, whose names occur nowhere here. A soak on the shipped MTP4+k8v4
+      lane (6 cycles, 60k-token contexts, 512-token decodes) ended with "lane still answering
+      /v1/models: no crash in this run". **That is a scope, not a refutation**: the reporters saw it
+      intermittently over days, and no minutes-long soak has the power to exclude it. Upstream's #208
+      stays open.
+    - **#229's mechanism is absent** - a scoped search over `src` for `pressure_search`,
+      `budget_exhausted` and `pressure release` finds nothing, and the planner that held the flat 5 ms
+      budget went with it - and the symptom's shape was re-measured under the replacement cache: a
+      growing conversation that declares a shared prefix reuses 3,815 of 3,824 tokens on path
+      `checkpoint`, while the unmarked one reads `root` because `/v1/chat/completions` suppresses the
+      engine's automatic shared prefixes, which is the route's policy rather than a cache failure. The
+      live relative of this item is upstream #371 (a *cancelled* follow-up discarding its continuation),
+      a different defect that is not measured here.
 
 **The review's suggestions - fifteen, none of them a defect**
 
-12. Each is a one-liner or a reader-load fix, and none is in a shipped path except where noted: a
-    duplicated translation unit in `src/ops/candidate_selector/sources.cmake`; duplicated includes in
-    two headers; a hardcoded grid z-extent in `materialize_nvfp4.cu`; no regression assertion for the
-    `prefill_chunk` default (1024 -> 8192); **the DFlash2 recall instrumentation runs unconditionally**
-    in every decode round (two synchronous D2H copies, ~544 bytes at window 7, batch 1 - an idle cost,
-    not a correctness one); an orphaned comment above `token_ids` in `prepared_prompt.h`; no test
-    for `src/core/uint128.h`; an unreachable 405 branch in `src/serve/http_server.cpp`; a stale
-    format comment in `apps/perplexity/topk_record.h`; a keepalive guarded by a transitive include;
-    a system header included inside a function body in `src/serve/request_log.cpp`; the perplexity
-    report hardcoding `prefill_chunk_tokens`; an unquoted per-token CSV field; three recall metrics
-    carried onto the serving path and never read; and the timer's idle wakeups (about 15.6x, inferred
-    rather than measured).
+12. Each is a one-liner or a reader-load fix. **Ten are fixed and two of the review's claims are
+    refuted** (`ce93c954`), and the last three are closed here:
+
+    - **The DFlash2 recall instrumentation runs unconditionally** - **CLOSED 2026-10-11: the cost is
+      below what this harness can resolve.** The gate is `io.dflash_decode->candidate_ids.data !=
+      nullptr`, which is true whenever the profile is DFlash2, and the fix would need a field in
+      `include/ninfer/types.h` - which reaches the device tree and rebuilds every CUDA object. Measured
+      before deciding: `ninfer_bench --spec dflash2 --draft-tokens 7 -n 128 -r 3` with the
+      instrumentation on read 106.84 and 109.69 tok/s on two control runs (**a 2.7 % spread**), and the
+      probe that forces `record_recall` false read 107.99 - inside that spread. The copies are two
+      synchronous D2H of ~544 bytes at window 7, batch 1, and an effect that a three-repetition bench on
+      this card cannot resolve is not worth a public-header field. Not adopted, with the measurement and
+      its resolution stated.
+    - **Three recall metrics carried onto the serving path and never read** - **FIXED**: the pure
+      deletion. `speculative_proposed_per_position`, `speculative_recall1_per_position` and
+      `speculative_recall16_per_position` were written into `outcome.metrics` and read by nothing -
+      the CLI reads the *result*'s vectors, not the serving copy. The fields and their assignments are
+      gone.
+    - **The timer's idle wakeups** - **CLOSED: measured and guarded, with the arithmetic named.**
+      The 15.6x is 15.625 ms / 1 ms: the engine's scheduling loop polls with a 1 ms timed wait
+      (`queue_cv_.wait_for` in `engine_core.h`), and a timed wait that is not woken resolves on the
+      system timer unless the process asks otherwise. The *effect* is measured in this tree's own
+      comment at `apps/serve/main.cpp` - before the guard, `initial_binding` was bimodal at 0.9 ms or
+      16.0-17.0 ms and every request carried 18-45 ms of `total - prefill` - and the guard is in the
+      only long-lived app that idles the engine. A one-shot app never has an idle engine to poll, so
+      there is nothing left to fix; the remaining exposure is a *probe* that idles a lane, and the
+      probes start a serve lane, which carries the guard.
 
 **Why the release shipped with item 1.** It is disclosed in the release notes' known limitations and
 reproducible from this file; no shipped configuration reaches it; the fix is a fused kernel rather than a
@@ -3197,8 +3256,14 @@ ship with it is still open.
 **2026-10-11, later the same day: the fix has landed on `dev`, so the tagged cut carries the limitation
 and `dev` does not.** Re-cutting `v1.2.0` before publishing would ship the fused route and drop the
 limitation; publishing the tag as it stands would ship it. That choice is the release owner's.
-**Two of the review's warnings were false positives, and both are recorded here so they are not
-re-raised.** The FP8 MMA split-K block is unreachable in this tree -- every schedule with
+**Three of the review's warnings were false positives, and all three are recorded here so they are not
+re-raised.** The 405 branch in `src/serve/http_server.cpp` is **reachable**: the vendored library is at
+`third_party/cpp-httplib/httplib.h` and defines `MethodNotAllowed_405 = 405` (line 966), which it returns
+for a path matched with an unmatched method, and `tests/test_http_error_handler.cpp` pins the envelope it
+must become. Removing it was this session's error, made by grepping `third_party/httplib/httplib.h` - a
+path that does not exist - and reading the empty result as absence; the branch is restored, and the
+suite's own baseline gate caught the removal by failing on `ninfer_http_error_handler_test`. The FP8 MMA
+split-K block is unreachable in this tree -- every schedule with
 `kSplitWaveCtas > 0` is a TMA one and takes the other launcher, and no shape file carries a
 non-Windows arm -- but it is upstream's shared source, so removing it would grow this port's divergence
 to delete inert code; kept, with the finding in the comment. And

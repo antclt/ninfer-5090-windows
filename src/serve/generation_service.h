@@ -50,11 +50,6 @@ struct GenerationMetrics {
     // onto the serving path because the bench already reports them and a number that exists only in
     // one harness cannot answer a question about the other -- `docs/active-work.md` item 5 recorded
     // that gap as the reason its own findings could not be compared across paths.
-    // `speculative_proposed_per_position` is the denominator for all three per-position rates
-    // (`:proposed`), so it travels with them rather than being derived on the reader's side.
-    std::vector<std::uint64_t> speculative_proposed_per_position;
-    std::vector<std::uint64_t> speculative_recall1_per_position;
-    std::vector<std::uint64_t> speculative_recall16_per_position;
     std::uint32_t prefix_cache_hit_tokens     = 0;
     ninfer::PrefixReusePath prefix_reuse_path = ninfer::PrefixReusePath::Root;
 };
