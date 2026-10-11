@@ -3,6 +3,10 @@
 // Host-only support for the product throughput benchmark. The benchmark itself drives only the
 // public ninfer::Engine API; this file owns its CLI, matrix, statistics, and report schema.
 
+// `ninfer/types.h` for the product's own types, and `ninfer/kv_storage.h` for the KV format's name and
+// parser. Both are needed: this header predates the KV name table and used to get the whole public
+// surface through types.h alone.
+#include "ninfer/types.h"
 #include "ninfer/kv_storage.h"
 
 #include <cstddef>

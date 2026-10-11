@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ninfer/kv_types.h"
+
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -38,14 +40,6 @@ struct CausalTopk {
     [[nodiscard]] std::size_t positions() const noexcept {
         return k > 0 ? indices.size() / static_cast<std::size_t>(k) : 0;
     }
-};
-
-enum class KvCacheStorage : std::uint8_t {
-    BFloat16,
-    Int8Group64,
-    Fp8E4M3Row256,
-    Nvfp4Group16,
-    Fp8KeyNvfp4Value,
 };
 
 enum class EnginePurpose : std::uint8_t {

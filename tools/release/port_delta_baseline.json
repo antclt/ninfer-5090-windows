@@ -329,7 +329,7 @@
     },
     "include/ninfer/types.h": {
       "status": "M",
-      "disposition": "product",
+      "disposition": "unknown",
       "review": "product",
       "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
     },
@@ -518,6 +518,12 @@
       "disposition": "product",
       "review": "product",
       "reason": "Documents the plane order as a contract: kv_cache_append and causal_softmax_attention walk these planes positionally, and which planes exist is a property of the resolved storage layout rather than of the Op."
+    },
+    "src/core/paged_kv_storage.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the device tree reached ninfer/types.h through this header for exactly one name, KvCacheStorage, and types.h carries the whole product's public surface. It includes ninfer/kv_types.h now. Measured in build-test on 2026-10-11 by touching types.h and dry-running the build: 314 objects rebuilt before (298 host, 16 CUDA), 176 after (176 host, 0 CUDA)."
     },
     "src/core/weight_view.cpp": {
       "status": "M",
