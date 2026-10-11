@@ -12,7 +12,7 @@ item 1's question for the reporter had already been answered by the report itsel
 
 | Item | Status | Disposition |
 |---|---|---|
-| Issue 5: cache-hitting race condition | Deferred | Not reproducible at `--max-concurrency 1`; no fix needed |
+| Issue 5: cache-hitting race condition | **Closed 2026-10-11** | The reported mechanism is not in this tree: the guard and its symbol were removed by the context-cache rewrite, and two of the three files holding its call sites are deleted |
 | Fail-stop exit code | **Fixed** | Exit code 3 on engine failure |
 | FP8 TMA kernel faults on MSVC | **Fixed 2026-10-07** | Merged with upstream `d44ab584`; `alignas(64)` in the three TMA headers |
 | Protocol-level unsupported features | By design | Intentional product boundaries |
@@ -24,7 +24,19 @@ item 1's question for the reporter had already been answered by the report itsel
 
 ## 1. Issue 5: cache-hitting race condition
 
-**Status:** Deferred — not reproduced, not refuted.
+**Status:** **CLOSED 2026-10-11 — the reported mechanism is not in this tree.** `checked_resource_difference`
+and its subtraction-underflow guard were removed by the upstream context-cache rewrite: the symbol and
+its message survive only in `tests/models/qwen3_5/test_engine_issue5_race.cpp:274`, whose own comment
+records the correction ("No code path in this tree emits this message since upstream replaced the
+context cache and took `checked_resource_difference` with it"), two of the three files that held its 16
+call sites are deleted (`planning/pressure.cpp`, `transactions/materialization.cpp`), and a tree-wide
+search over `src` finds no underflow guard in the rewritten context cache or core. The reproducer runs
+at the reporter's own configuration inside the suite and does not fire (`Test #64 ... Passed 15.00 sec`,
+2026-10-11) — which is now consistent with the mechanism's absence rather than a blind pass. Upstream
+#339 stays open against upstream's tree. **Residual, stated:** removing the guard means an
+over-subtraction, were one to occur, would no longer throw; this closes "the reported mechanism is
+absent", not "the accounting is proven correct", and the test's follow-up probe (the engine must still
+accept work after the race) is the standing symptom guard.
 
 **What it is:** A user reported that a cache-hitting continuation submitted while another lane is
 generating could cause a resource underflow (`Qwen3.5 resource subtraction underflow`), killing
@@ -63,7 +75,8 @@ measurement reaches. **That is the open part, and it is a search problem, not a 
 
 **Docs:** `docs/research/issue5-deferred-findings.md`
 
-**Disposition: the premise "we only ship concurrency 1" is FALSE, so this is not closed. It is an
+**Disposition (2026-10-04; superseded 2026-10-11 — the mechanism it names is no longer in this tree, see
+the status above): the premise "we only ship concurrency 1" is FALSE, so this is not closed. It is an
 exposed upstream defect on a flag this port accepts.**
 
 Read 2026-10-04: upstream issue **#339, still OPEN**, which this entry had been paraphrasing without

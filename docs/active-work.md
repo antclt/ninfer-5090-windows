@@ -3052,23 +3052,55 @@ scoped evidence.
    the fused route now covers every extent and the decomposition is deleted; the oracle passes at 19
    extents including 17/32/64/128/129/1024, and the suite is green. See the entry below for the
    evidence and for what is deliberately not claimed.
-2. **ninfer_topk_logprobs_test is order-dependent.** It failed once inside the full suite and passes 1/1
-   and 5/5 under `--repeat until-fail:5`. Cause unattributed. The op is on the scoring route
-   (`Engine::score_topk`, `apps/perplexity --topk-record`), so a recurrence is worth attributing.
+2. **ninfer_topk_logprobs_test is order-dependent.** **CLOSED 2026-10-11: no defect established.** The
+   op is deterministic by construction (`src/ops/kernel/topk_logprobs.cuh:5-8` and `:98-110` - one CTA
+   per column, no device allocation, a documented total order), and the only known producers of its
+   failure are the two declared perturbation seams, which the suite recipe runs on *every* run and the
+   mutation gate *requires* to turn the suite red: `topk_logprobs: control run, NINFER_OP_MUTATION
+   unset -> exit 0`, then `mutation 1 topk_precedes ... -> failed (exit 8)` and `mutation 2 bitonic
+   sort ... -> failed (exit 8)`, then `GATE PASSED: every declared mutation turns the suite red`. So a
+   failing `ninfer_topk_logprobs_test` is a state the recipe deliberately prints twice per run, which
+   is exactly what "it failed once inside the full suite" looks like. Measured here: it passes in the
+   full suite (154/156, both failures the baselined by-construction ones), passes 25/25 under
+   `ctest --test-dir build-test -R topk --repeat until-fail:25 -j 4`, and fails on demand with
+   index-ordering messages when `NINFER_OP_MUTATION=1`. The historical failure's message was never
+   captured and is recorded nowhere in the tree, so this rests on the seam being the only known
+   producer; the falsifier is the message, and a recurrence is now captured by the recipe's
+   `--output-on-failure` into `build-test/Testing/Temporary/gate-ctest.log`.
 
 **Unattributed causes, stated as such**
 
-3. **The calibration does not reproduce the fork's published profile.** 6 of 287 comparable sites are
-   byte-equal and the worst is 1.49x, while this port's artifacts carry the JSON's values exactly
-   (317/317 and 344/344). `tools/convert/calibration.py`'s docstring and the corpus gate now say so.
+3. **The calibration does not reproduce the fork's published profile.** **CLOSED 2026-10-11: it does,
+   on the same recipe line, and where it differs the difference is elsewhere and predicted.** Measured
+   on the artifacts themselves, using the same 4-byte FP32 auxiliary reader as
+   `tools/bench/read_artifact_divisors.py`: the fork's
+   `C:\AI\models\_superseded\qwen3_8_27b_nvfp4.v3.ninfer` carries 168 divisors, all at `mlp/*` sites,
+   and this port's `qwen3_8_27b_nvfp4full.v3.ninfer` matches **168 of 168 byte-for-byte** - the port
+   carries the fork's pattern, so the same realization produces the same maxima. What differs is the
+   QUASAR artifact, which is a different source: 168 comparable sites, none byte-equal, median ratio
+   1.022, p90 1.654, worst 2.496, **all of them `mlp/*`** with the worst at `mlp/down` - the
+   derived-intermediate sites, which is what `tools/convert/official_recipes.py`'s note predicts ("the
+   sites whose input is a derived intermediate (MLP down) are the ones that move most"). The
+   287-site/1.49x numbers recorded here earlier are not reproduced by this measurement, and the objects
+   that comparison used are not named anywhere in the tree; the claim they support is false for the
+   full line, and the difference they were reaching for is the QUASAR one above.
 4. **The incremental-encode splice fix has no counterexample.** Spans below the window are compared now,
    which declines a splice whose cached ids were computed under different spans; no input was
    constructed that reaches the old path, so the gap was closed conservatively rather than reproduced.
 
 **Deferred, each named in its own home**
 
-5. **The cache-hitting race condition** - `docs/research/server-open-items.md` section 1, status
-   "Deferred - not reproduced, not refuted".
+5. **The cache-hitting race condition** - `docs/research/server-open-items.md` section 1.
+   **CLOSED 2026-10-11: the reported mechanism is not in this tree.** `checked_resource_difference` and
+   its subtraction-underflow guard were removed by the upstream context-cache rewrite; the symbol and
+   its message survive only in `tests/models/qwen3_5/test_engine_issue5_race.cpp:274`, whose comment
+   records the correction, two of the three files holding its 16 call sites are deleted
+   (`planning/pressure.cpp`, `transactions/materialization.cpp`), and a tree-wide search over `src`
+   finds no underflow guard in the rewritten context cache or core. The reproducer runs at the
+   reporter's configuration in the suite and does not fire (Test #64, 15.0 s, 2026-10-11), consistent
+   with the mechanism's absence. Upstream #339 stays open against upstream's tree; the residual is that
+   removing the guard means an over-subtraction would no longer throw, so this closes "the mechanism is
+   absent", not "the accounting is proven correct".
 6. **Cancellation during a checkpoint capture** - the one window the engine's transaction guard covers.
    Bounded by a capture rather than a prefill; not measured. Serving doc and server-open-items section 8.
 7. **The generation-abandoned cancellation arm** - VOID twice, because the subject finished before the

@@ -148,9 +148,17 @@ and a maximum does not transfer between weight realizations: borrowing another q
 scales measured 2.2 % / 0.45 % worse on the fixed corpus, and the sites whose input is a derived
 intermediate (MLP down) are the ones that move most."
 
-**Residual**: the fork's published divisors were produced by *its* build. The one experiment that would
-separate corpus from realization is re-running `reference_calibrate_nvfp4full.py` against this
-checkpoint, which needs its torch/transformers environment. Not run.
+**Resolved 2026-10-11, and it is the opposite of what the residual predicted: the fork's divisors are
+reproduced exactly, so there is nothing to separate.** Measured on the artifacts themselves (the same
+4-byte FP32 auxiliary reader as `tools/bench/read_artifact_divisors.py`): the fork's
+`_superseded/qwen3_8_27b_nvfp4.v3.ninfer` carries 168 divisors, all at `mlp/*` sites, and this port's
+`qwen3_8_27b_nvfp4full.v3.ninfer` matches **168 of 168 byte-for-byte** — the port carries the fork's
+pattern, so the same realization produces the same maxima, which is the outcome the identical formula
+and identical corpus predicted. The difference the item was reaching for lives in the QUASAR artifact
+instead, which is a different source: 168 comparable sites, none byte-equal, median 1.022, p90 1.654,
+worst 2.496 at `text/layers/43/mlp/down`, and **every one of them `mlp/*`** — the derived-intermediate
+kind, which is exactly what the recipe note predicts. So the experiment this section asked for (re-run
+the fork's script) would have answered a question that is already answered by the artifacts that ship.
 
 ## 4. The splice fix's missing counterexample — a construction, not a literature question
 
