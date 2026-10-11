@@ -113,8 +113,12 @@ void configure_http_server_socket(socket_t socket) noexcept {
     // SO_REUSEADDR then SO_EXCLUSIVEADDRUSE a second process still binds (rc=0), with
     // SO_EXCLUSIVEADDRUSE alone it fails with WSAEACCES (10013), which is the protection this line
     // exists for. Microsoft's Winsock guidance: "All server applications must set
-    // SO_EXCLUSIVEADDRUSE." Note the same page's restart caveat: a port bound this way cannot always be
-    // reused immediately after closure, which is why the server's own restart path is a new process.
+    // SO_EXCLUSIVEADDRUSE." The same page carries a restart caveat -- a port bound this way "cannot
+    // always be reused immediately after socket closure" -- and that is measured rather than argued
+    // here (2026-10-11): with a server-side TIME_WAIT present on the port at rebind time (verified
+    // with netstat, alongside a FIN_WAIT_2 from the still-open client), a new listener bound it in
+    // 0.5 s and answered a request. The caveat did not apply to this loopback bind; why is not
+    // established, and the measurement is what the comment can honestly carry.
     const BOOL enabled  = TRUE;
     const BOOL disabled = FALSE;
     set_socket_option(socket, SOL_SOCKET, SO_REUSEADDR, disabled);
