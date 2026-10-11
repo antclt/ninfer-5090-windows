@@ -35,30 +35,32 @@
 # because the released asset carries the version in its name. Check the current one with
 # `gh api repos/actions/runner/releases/latest --jq '.tag_name, (.assets[].name)'`.
 #
-# The schedule fires only while a runner is up: `run.cmd` is a foreground listener that dies with the
-# shell that started it. **Measured 2026-10-07: it does not have to be the service form.** GitHub
-# requires elevation for the *service*, but a per-user logon task needs none, and
-# `schtasks /create /sc onlogon` is the wrong tool for it -- that switch registers an ANY-user trigger
-# and is denied ("Access is denied"), while `Register-ScheduledTask -Trigger (New-ScheduledTaskTrigger
-# -AtLogOn -User $env:USERNAME)` succeeded from a medium-integrity shell and is registered here as
-# `ninfer-gpu-runner` (state Ready, principal `tobia`, logon Interactive, run level Limited), running
-# `C:\AI\actions-runner\start-if-idle.cmd`. The runner is registered as `5090-box`, online.
+# A dispatched run is only picked up while a runner is up: `run.cmd` is a foreground listener that dies
+# with the shell that started it, so the runner needs a per-user logon task. **Measured 2026-10-07: it
+# does not have to be the service form.** GitHub requires elevation for the *service*, but a per-user
+# logon task needs none, and `schtasks /create /sc onlogon` is the wrong tool for it -- that switch
+# registers an ANY-user trigger and is denied ("Access is denied"), while
+# `Register-ScheduledTask -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME)` succeeded
+# from a medium-integrity shell and is registered here as `ninfer-gpu-runner` (state Ready, principal
+# `tobia`, logon Interactive, run level Limited), running `C:\AI\actions-runner\start-if-idle.cmd`.
+# The runner is registered as `5090-box`, online.
 #
-# **The cron fires, and can be hours late.** The `0 4 * * *` slot on 2026-10-07 created its run at
-# 10:55:59 UTC -- 6 h 56 min after the slot -- and it ran green on `5090-box`. An earlier reading of
-# the same day ("no scheduled run has ever been created") was true when taken and is superseded: a
-# temporary `*/5` probe was watched for only 25 minutes, which is shorter than the delay GitHub
-# documents and users have been reporting since the 2026-08-26 Actions trigger-service incident
-# (community discussions 205984 and 206019; githubstatus.com). So the nightly job is not a fixed time:
-# it may land while someone is measuring, and `--measure` tooling does not declare this workflow's
-# concurrency group. `gh workflow run gpu.yml` remains the way to get a run when you want one.
+# **The cron is withdrawn, 2026-10-11, on this evidence.** Twelve runs from 2026-10-06 to 10-11: 7
+# green, 3 failed, 2 superseded. None of the three failures was a product regression -- one was this
+# workflow's own step (REM in a PowerShell `run:` block), one was the lane-fingerprint step's harness
+# (FileNotFoundError), and one was environmental (a real-model test could not reserve 862 MB because
+# something else held the card). A red run on a good commit is worse than no run: it is how a gate gets
+# muted, and this repository says so about gates that guess. The cron was also never on time -- the
+# `0 4 * * *` slot was delivered at 10:41 UTC on 10-11 and 10:29 UTC on 10-10, six hours late -- so it
+# could land on a measurement anyway, which is the collision class its concurrency group exists to
+# avoid. What remains is `workflow_dispatch`: `gh workflow run gpu.yml` runs the tier when the
+# independence it does provide is worth having, which is a clean checkout and a fresh build rather than
+# a working tree. The tier itself is unchanged, and the `ci` tier on GitHub-hosted runners still guards
+# every push.
 name: gpu-suite
 
 on:
   workflow_dispatch:
-  schedule:
-    # Nightly, when nobody is measuring. See the concurrency note before adding a push trigger.
-    - cron: "0 4 * * *"
 
 # One GPU job at a time, and never cancelled by a newer one. A suite run and a measurement cannot
 # share the card: this repository already had three collisions where one job would have poisoned the
