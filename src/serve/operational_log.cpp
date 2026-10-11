@@ -2,6 +2,7 @@
 
 #include "product/logging/pretty_format.h"
 #include "product/speculative_options.h"
+#include "ninfer/kv_storage.h"
 
 #include <spdlog/logger.h>
 
@@ -109,22 +110,6 @@ const char* protocol_name(std::string_view protocol) noexcept {
     if (protocol == "openai_responses_input_tokens") { return "openai-input-tokens"; }
     if (protocol == "anthropic_count_tokens") { return "anthropic-count-tokens"; }
     return "http";
-}
-
-const char* kv_cache_name(ninfer::KvCacheStorage storage) noexcept {
-    switch (storage) {
-    case ninfer::KvCacheStorage::BFloat16:
-        return "bf16";
-    case ninfer::KvCacheStorage::Int8Group64:
-        return "int8";
-    case ninfer::KvCacheStorage::Fp8E4M3Row256:
-        return "fp8";
-    case ninfer::KvCacheStorage::Nvfp4Group16:
-        return "nvfp4";
-    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
-        return "k8v4";
-    }
-    return "unknown";
 }
 
 const char* kv_capacity_mode_name(ninfer::KvCapacityMode mode) noexcept {
@@ -484,7 +469,7 @@ void OperationalLog::engine_capacity(const GenerationService& service) const {
     const ninfer::ContextCostSummary context_cost = service.load_summary().context_cost;
 
     logger_->info("capacity | KV {} tokens, {}, {} | pages {}/{} | runtime {} | free {}",
-                  product::format_pretty_count(memory.kv_capacity), kv_cache_name(memory.kv_cache),
+                  product::format_pretty_count(memory.kv_capacity), kv_storage_name(memory.kv_cache),
                   kv_capacity_mode_name(memory.kv_capacity_mode),
                   product::format_pretty_count(memory.kv_capacity_page_groups),
                   product::format_pretty_count(memory.kv_capacity_max_page_groups),

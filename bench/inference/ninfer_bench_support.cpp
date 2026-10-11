@@ -77,15 +77,6 @@ std::uint32_t parse_u32(std::string_view text, const char* label, bool allow_zer
     return static_cast<std::uint32_t>(value);
 }
 
-KvCacheStorage parse_kv_cache(std::string_view text) {
-    if (text == "bf16") { return KvCacheStorage::BFloat16; }
-    if (text == "int8") { return KvCacheStorage::Int8Group64; }
-    if (text == "fp8") { return KvCacheStorage::Fp8E4M3Row256; }
-    if (text == "nvfp4") { return KvCacheStorage::Nvfp4Group16; }
-    if (text == "k8v4") { return KvCacheStorage::Fp8KeyNvfp4Value; }
-    throw std::invalid_argument("--kv-dtype must be bf16, int8, fp8, nvfp4, or k8v4");
-}
-
 std::vector<int> parse_int_list(std::string_view value, const char* label) {
     std::vector<int> out;
     std::size_t start = 0;
@@ -471,7 +462,7 @@ BenchOptions parse_args(int argc, char** argv) {
         } else if (arg == "--prefill-chunk") {
             options.prefill_chunk = parse_u32(value("--prefill-chunk"), "prefill-chunk");
         } else if (arg == "--kv-dtype") {
-            options.kv_cache = parse_kv_cache(value("--kv-dtype"));
+            options.kv_cache = parse_kv_storage(value("--kv-dtype"));
         } else if (arg == "--spec") {
             options.speculative.backend = product::parse_speculative_backend(value("--spec"));
         } else if (arg == "--draft-tokens") {
@@ -735,7 +726,7 @@ std::string format_table(const BenchEnvironment& env, const std::vector<TestResu
         << "  corpus:     " << env.corpus_path << " (" << env.corpus_tokens << " tokens)\n"
         << "  config:     max_context=" << env.max_context << " prefill_chunk=" << env.prefill_chunk
         << " concurrency=" << env.concurrency << " constraint=" << constraint_name(env.constraint)
-        << (env.mixed_constraints ? " (mixed)" : "") << " kv_cache=" << kv_cache_name(env.kv_cache)
+        << (env.mixed_constraints ? " (mixed)" : "") << " kv_cache=" << kv_storage_name(env.kv_cache)
         << " spec=" << product::speculative_backend_name(env.speculative.backend)
         << " draft_tokens=" << env.speculative.draft_tokens
         << " proposal_head=" << proposal_head_name(env.speculative.proposal_head)
@@ -831,7 +822,7 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
         << "    \"kv_capacity_page_groups\": " << env.memory.kv_capacity_page_groups << ",\n"
         << "    \"kv_capacity_max_page_groups\": " << env.memory.kv_capacity_max_page_groups
         << ",\n"
-        << "    \"kv_cache\": \"" << kv_cache_name(env.memory.kv_cache) << "\",\n";
+        << "    \"kv_cache\": \"" << kv_storage_name(env.memory.kv_cache) << "\",\n";
     append_arena_json(out, "weights", env.memory.weights, "    ", true);
     append_arena_json(out, "sequence", env.memory.sequence, "    ", true);
     append_arena_json(out, "workspace", env.memory.workspace, "    ", true);
@@ -860,7 +851,7 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
         << "    \"mixed_constraints\": " << (env.mixed_constraints ? "true" : "false") << ",\n"
         << "    \"max_context\": " << env.max_context << ",\n"
         << "    \"prefill_chunk\": " << env.prefill_chunk << ",\n"
-        << "    \"kv_cache\": \"" << kv_cache_name(env.kv_cache) << "\",\n"
+        << "    \"kv_cache\": \"" << kv_storage_name(env.kv_cache) << "\",\n"
         << "    \"speculative_backend\": \""
         << product::speculative_backend_name(env.speculative.backend) << "\",\n"
         << "    \"draft_tokens\": " << env.speculative.draft_tokens << ",\n"
@@ -1008,7 +999,7 @@ std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult
             << env.speculative.draft_tokens << ','
             << proposal_head_name(env.speculative.proposal_head) << ','
             << decode_path_name(env.use_cuda_graph, env.speculative) << ','
-            << kv_cache_name(env.kv_cache) << ',' << env.memory.kv_payload_bytes << ','
+            << kv_storage_name(env.kv_cache) << ',' << env.memory.kv_payload_bytes << ','
             << env.load.host_to_device_bytes << ',' << env.memory.weights.capacity_bytes << ','
             << env.memory.sequence.capacity_bytes << ',' << env.memory.workspace.capacity_bytes
             << ','
@@ -1078,22 +1069,6 @@ std::string json_escape(std::string_view value) {
         }
     }
     return out;
-}
-
-std::string kv_cache_name(KvCacheStorage storage) {
-    switch (storage) {
-    case KvCacheStorage::BFloat16:
-        return "bf16";
-    case KvCacheStorage::Int8Group64:
-        return "int8-group64";
-    case KvCacheStorage::Fp8E4M3Row256:
-        return "fp8-e4m3-row256";
-    case KvCacheStorage::Nvfp4Group16:
-        return "nvfp4";
-    case KvCacheStorage::Fp8KeyNvfp4Value:
-        return "k8v4";
-    }
-    return "unknown";
 }
 
 std::string proposal_head_name(ProposalHead head) {

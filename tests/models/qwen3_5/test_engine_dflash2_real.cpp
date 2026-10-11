@@ -1,6 +1,6 @@
 #include "ninfer/engine.h"
 #include "speculative_page_boundary.h"
-#include "kv_cache_storage.h"
+#include "ninfer/kv_storage.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         options.context_cache.device_state_slots = argc > 7 ? std::stoul(argv[7]) : 3U;
         options.use_cuda_graph                   = graph;
         options.enable_vision                    = argc > 6 && std::stoi(argv[6]) != 0;
-        options.kv_cache = ninfer::test::parse_kv_cache_storage(argc > 5 ? argv[5] : "bf16");
+        options.kv_cache = ninfer::parse_kv_storage(argc > 5 ? argv[5] : "bf16");
         auto penalty     = request(24);
         penalty.execution.sampling.presence_penalty  = 0.5F;
         penalty.execution.sampling.frequency_penalty = 0.25F;

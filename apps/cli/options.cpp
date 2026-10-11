@@ -1,5 +1,6 @@
 #include "options.h"
 #include "product/speculative_options.h"
+#include "ninfer/kv_storage.h"
 
 #include <cerrno>
 #include <cmath>
@@ -50,15 +51,6 @@ float parse_float(const char* text, std::string_view label, float minimum, float
         throw std::invalid_argument("invalid " + std::string(label) + ": " + text);
     }
     return static_cast<float>(value);
-}
-
-KvCacheStorage parse_kv_cache(std::string_view text) {
-    if (text == "bf16") { return KvCacheStorage::BFloat16; }
-    if (text == "int8") { return KvCacheStorage::Int8Group64; }
-    if (text == "fp8") { return KvCacheStorage::Fp8E4M3Row256; }
-    if (text == "nvfp4") { return KvCacheStorage::Nvfp4Group16; }
-    if (text == "k8v4") { return KvCacheStorage::Fp8KeyNvfp4Value; }
-    throw std::invalid_argument("invalid kv-dtype: " + std::string(text));
 }
 
 KvCapacityPolicy parse_kv_capacity(const char* text) {
@@ -156,7 +148,7 @@ Options parse_options(int argc, char** argv) {
         } else if (arg == "--device") {
             options.device = parse_device(value(arg));
         } else if (arg == "--kv-dtype") {
-            options.kv_cache = parse_kv_cache(value(arg));
+            options.kv_cache = parse_kv_storage(value(arg));
         } else if (arg == "--spec") {
             options.speculative.backend = product::parse_speculative_backend(value(arg));
         } else if (arg == "--draft-tokens") {

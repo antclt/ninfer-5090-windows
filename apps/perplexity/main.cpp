@@ -6,6 +6,7 @@
 #include "product/logging/logging.h"
 #include "product/logging/pretty_format.h"
 #include "product/logging/startup_log.h"
+#include "ninfer/kv_storage.h"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/logger.h>
@@ -128,18 +129,9 @@ Options parse_options(int argc, char** argv) {
         } else if (option == "--device") {
             out.device = parse_integer<int>(value("--device"), "device");
         } else if (option == "--kv-dtype") {
-            const std::string_view dtype = value("--kv-dtype");
-            if (dtype == "bf16") {
-                out.kv = ninfer::KvCacheStorage::BFloat16;
-            } else if (dtype == "int8") {
-                out.kv = ninfer::KvCacheStorage::Int8Group64;
-            } else if (dtype == "fp8") {
-                out.kv = ninfer::KvCacheStorage::Fp8E4M3Row256;
-            } else if (dtype == "nvfp4") {
-                out.kv = ninfer::KvCacheStorage::Nvfp4Group16;
-            } else if (dtype == "k8v4") {
-                out.kv = ninfer::KvCacheStorage::Fp8KeyNvfp4Value;
-            } else {
+            try {
+                out.kv = ninfer::parse_kv_storage(value("--kv-dtype"));
+            } catch (const std::invalid_argument&) {
                 usage_error("--kv-dtype must be bf16, int8, fp8, nvfp4, or k8v4");
             }
         } else if (option == "--output") {
@@ -176,22 +168,6 @@ Options parse_options(int argc, char** argv) {
     return out;
 }
 
-std::string kv_name(ninfer::KvCacheStorage value) {
-    switch (value) {
-    case ninfer::KvCacheStorage::BFloat16:
-        return "bf16";
-    case ninfer::KvCacheStorage::Int8Group64:
-        return "int8-g64";
-    case ninfer::KvCacheStorage::Fp8E4M3Row256:
-        return "fp8-e4m3-r256";
-    case ninfer::KvCacheStorage::Nvfp4Group16:
-        return "nvfp4";
-    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
-        return "k8v4";
-    }
-    throw std::logic_error("unknown KV dtype");
-}
-
 std::string safe_component(std::string_view value) {
     std::string out;
     out.reserve(value.size());
@@ -220,7 +196,7 @@ std::filesystem::path prepare_output_directory(const Options& options,
                                                const CorpusSelection& corpus) {
     std::filesystem::path output = options.output.value_or(
         std::filesystem::path("profiles/perplexity") / safe_component(load.model_name) /
-        safe_component(load.prefill_signature) / kv_name(options.kv) /
+        safe_component(load.prefill_signature) / ninfer::kv_storage_name(options.kv) /
         safe_component(corpus.corpus_id) / safe_component(corpus.mode) / timestamp());
     if (std::filesystem::exists(output)) {
         if (!std::filesystem::is_directory(output) ||
@@ -305,7 +281,7 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
         const Clock::time_point started = Clock::now();
         ninfer::perplexity::TopkRecordWriter writer(
             *options.topk_record, options.topk_k, corpus.corpus_id, options.context, options.stride,
-            kv_name(options.kv), load.prefill_signature);
+            ninfer::kv_storage_name(options.kv), load.prefill_signature);
         for (std::size_t stream_index = 0; stream_index < streams.size(); ++stream_index) {
             const EvaluationStream& stream = streams[stream_index];
             std::ostringstream status;
@@ -528,7 +504,7 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
           {"stride_tokens", options.stride},
           {"prefill_chunk_tokens", ninfer::EngineOptions{}.prefill_chunk},
           {"score_tile_tokens", 1024},
-          {"kv_dtype", kv_name(options.kv)}}},
+          {"kv_dtype", ninfer::kv_storage_name(options.kv)}}},
         {"timing",
          {{"load_seconds", load.load_seconds},
           {"read_and_tokenize_seconds", preflight_seconds},
@@ -554,7 +530,7 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
 
     std::cout << "Perplexity result\n"
               << "artifact: " << load.model_name << '\n'
-              << "kv: " << kv_name(options.kv) << ", corpus: " << corpus.corpus_id << " / "
+              << "kv: " << ninfer::kv_storage_name(options.kv) << ", corpus: " << corpus.corpus_id << " / "
               << corpus.mode << ", context/stride: " << options.context << '/' << options.stride
               << "\n\n";
     std::cout << std::left << std::setw(24) << "domain" << std::right << std::setw(16) << "tokens"

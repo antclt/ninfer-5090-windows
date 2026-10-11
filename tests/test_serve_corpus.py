@@ -187,7 +187,7 @@ def test_arbitrary_artifact_labels_reach_the_requested_backend(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
-    "kv_dtype,cache_name", [("int8", "int8-group64"), ("fp8", "fp8-e4m3-row256")]
+    "kv_dtype,cache_name", [("int8", "int8-g64"), ("fp8", "fp8-e4m3-r256")]
 )
 @pytest.mark.parametrize("concurrent", [False, True])
 def test_selected_kv_reaches_server_and_is_verified(

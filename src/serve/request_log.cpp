@@ -2,6 +2,7 @@
 #include "product/constraint_observation.h"
 #include "product/logging/pretty_format.h"
 #include "product/speculative_options.h"
+#include "ninfer/kv_storage.h"
 
 #include <spdlog/logger.h>
 
@@ -131,22 +132,6 @@ std::string tool_choice_name(const ToolChoice& choice) {
 Json requested_reasoning_effort_json(const std::optional<RequestedReasoningEffort>& requested) {
     return requested ? Json(std::string(requested_reasoning_effort_name(*requested)))
                      : Json(nullptr);
-}
-
-const char* kv_cache_name(ninfer::KvCacheStorage storage) {
-    switch (storage) {
-    case ninfer::KvCacheStorage::BFloat16:
-        return "bf16";
-    case ninfer::KvCacheStorage::Int8Group64:
-        return "int8-group64";
-    case ninfer::KvCacheStorage::Fp8E4M3Row256:
-        return "fp8-e4m3-row256";
-    case ninfer::KvCacheStorage::Nvfp4Group16:
-        return "nvfp4";
-    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
-        return "k8v4";
-    }
-    return "unknown";
 }
 
 const char* kv_capacity_mode_name(ninfer::KvCapacityMode mode) {
@@ -556,7 +541,7 @@ std::string format_server_start_json(
              {"pending_timeout_ms", engine_options.pending_timeout_ms},
              {"prefill_chunk", engine_options.prefill_chunk},
              {"log_stats_interval_ms", options.log_stats_interval_ms},
-             {"kv_cache", kv_cache_name(engine_options.kv_cache)},
+             {"kv_cache", kv_storage_name(engine_options.kv_cache)},
              {"vision", engine_options.enable_vision},
              {"cuda_graph", engine_options.use_cuda_graph},
              {"prefix_reuse", options.allow_prefix_reuse},

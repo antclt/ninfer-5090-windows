@@ -1,5 +1,5 @@
 #include "ninfer/engine.h"
-#include "kv_cache_storage.h"
+#include "ninfer/kv_storage.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -1879,7 +1879,7 @@ int exercise_attention_integration(const char* artifact) {
         return std::string_view(value && *value ? value : fallback);
     };
     const auto storage =
-        ninfer::test::parse_kv_cache_storage(setting("NINFER_TEST_KV_DTYPE", "bf16"));
+        ninfer::parse_kv_storage(setting("NINFER_TEST_KV_DTYPE", "bf16"));
     const auto backend_name = setting("NINFER_TEST_SPECULATIVE", "mtp");
     ninfer::SpeculativeBackend backend;
     if (backend_name == "none")

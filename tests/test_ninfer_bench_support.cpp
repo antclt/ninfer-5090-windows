@@ -194,9 +194,9 @@ int test_cli_contract() {
     failures += expect(k8v4.kv_cache == ninfer::KvCacheStorage::Fp8KeyNvfp4Value, "K8V4 KV");
     failures += expect(qb::usage_text("ninfer_bench").find("nvfp4|k8v4") != std::string::npos,
                        "benchmark help omits new KV modes");
-    failures += expect_string(qb::kv_cache_name(ninfer::KvCacheStorage::Nvfp4Group16), "nvfp4",
+    failures += expect_string(ninfer::kv_storage_name(ninfer::KvCacheStorage::Nvfp4Group16), "nvfp4",
                               "NVFP4 report name");
-    failures += expect_string(qb::kv_cache_name(ninfer::KvCacheStorage::Fp8KeyNvfp4Value), "k8v4",
+    failures += expect_string(ninfer::kv_storage_name(ninfer::KvCacheStorage::Fp8KeyNvfp4Value), "k8v4",
                               "K8V4 report name");
     failures += expect_throws<std::invalid_argument>(
         [] {
@@ -364,7 +364,7 @@ int test_report_contract() {
         expect(report.at("load").at("prefill_signature") == "groupwise-int", "load weights id");
     failures +=
         expect(report.at("load").at("host_to_device_bytes") == 17400000000ULL, "load H2D bytes");
-    failures += expect(report.at("memory").at("kv_cache") == "int8-group64", "memory KV");
+    failures += expect(report.at("memory").at("kv_cache") == "int8-g64", "memory KV");
     failures += expect(report.at("memory").at("kv_capacity") == 8192, "memory KV capacity");
     failures += expect(report.at("memory").at("workspace").at("capacity_bytes") == 100000000ULL,
                        "workspace capacity");

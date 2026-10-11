@@ -3,7 +3,7 @@
 // Host-only support for the product throughput benchmark. The benchmark itself drives only the
 // public ninfer::Engine API; this file owns its CLI, matrix, statistics, and report schema.
 
-#include "ninfer/types.h"
+#include "ninfer/kv_storage.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -158,7 +158,6 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
 std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult>& results);
 
 std::string json_escape(std::string_view value);
-std::string kv_cache_name(KvCacheStorage storage);
 std::string proposal_head_name(ProposalHead head);
 std::uint64_t file_size_or_zero(const std::string& path);
 

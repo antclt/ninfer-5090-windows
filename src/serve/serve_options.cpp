@@ -2,6 +2,7 @@
 
 #include "serve/serve_options.h"
 #include "product/speculative_options.h"
+#include "ninfer/kv_storage.h"
 
 #include <cerrno>
 #include <cstdint>
@@ -93,16 +94,6 @@ std::size_t parse_host_context_mib(const char* text) {
         throw std::invalid_argument("--host-context-mib is out of range");
     }
     return whole_bytes + fractional_bytes;
-}
-
-KvCacheStorage parse_kv_dtype(const char* text) {
-    const std::string value(text);
-    if (value == "bf16") { return KvCacheStorage::BFloat16; }
-    if (value == "int8") { return KvCacheStorage::Int8Group64; }
-    if (value == "fp8") { return KvCacheStorage::Fp8E4M3Row256; }
-    if (value == "nvfp4") { return KvCacheStorage::Nvfp4Group16; }
-    if (value == "k8v4") { return KvCacheStorage::Fp8KeyNvfp4Value; }
-    throw std::invalid_argument("invalid kv-dtype: " + value);
 }
 
 KvCapacityPolicy parse_kv_capacity(const char* text) {
@@ -286,7 +277,7 @@ ServeOptions parse_serve_options(int argc, char** argv) {
         } else if (arg == "--device") {
             options.device = parse_nonnegative_int(require_value("--device"), "device");
         } else if (arg == "--kv-dtype") {
-            options.kv_cache = parse_kv_dtype(require_value("--kv-dtype"));
+            options.kv_cache = parse_kv_storage(require_value("--kv-dtype"));
         } else if (arg == "--spec") {
             options.speculative.backend =
                 product::parse_speculative_backend(require_value("--spec"));

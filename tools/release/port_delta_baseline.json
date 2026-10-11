@@ -63,6 +63,12 @@
       "review": "product",
       "reason": "Part of the drafter-recall instrument: the CLI prints recall@1 and recall@16 by position from the vectors decode.cpp accumulates, and the per-position denominators are what make the two rates readable."
     },
+    "apps/cli/options.cpp": {
+      "status": "M",
+      "disposition": "refactor",
+      "review": "product",
+      "reason": "One name table for one KV format: its local parse_kv_cache was one of four copies of the same five-branch chain, and it calls ninfer::parse_kv_storage() from include/ninfer/kv_storage.h now. Same flags, same values; tests/test_cli_options.cpp covers the parse."
+    },
     "apps/cli/options.h": {
       "status": "M",
       "disposition": "unknown",
@@ -152,6 +158,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
+    },
+    "bench/inference/ninfer_bench.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "One name table: the bench's own kv_cache_name was one of five copies and it calls ninfer::kv_storage_name() now. tests/test_ninfer_bench_support.cpp pins the values it prints."
     },
     "bench/inference/ninfer_bench_support.cpp": {
       "status": "M",
@@ -1347,6 +1359,18 @@
       "review": "product",
       "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
     },
+    "tests/kv_cache_storage.h": {
+      "status": "D",
+      "disposition": "deleted",
+      "review": "deleted",
+      "reason": "Removed by the port: a sixth copy of the same parser, in namespace ninfer::test. Its three includers call ninfer::parse_kv_storage() now."
+    },
+    "tests/models/qwen3_5/test_engine_dflash2_real.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: includes ninfer/kv_storage.h and calls ninfer::parse_kv_storage() instead of the deleted test helper."
+    },
     "tests/models/qwen3_5/test_engine_dflash_real.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1394,6 +1418,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "The A16 profile's extent list, extended from 4 extents to 19 so the oracle covers every route boundary (17/24/25/32/33/64/65/96/97/128/129/1024) and the drafter's worst case at k=15, batch=8. Those extents failed this profile's own 6.3e-3 tail bound at 8.1e-3 before the route was fused, so the list is the evidence for the fix. It extends upstream's profile rather than adding a second one, because two profiles would let the criterion drift between them."
+    },
+    "tests/ops/softmax_attention/causal_cache.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the device test's own label table carried two more spellings for the same storages (fp8-e4m3fn-row256, nvfp4-g16); it calls ninfer::kv_storage_name() now. Labels only -- no assertion reads them."
     },
     "tests/ops/softmax_attention/main.cpp": {
       "status": "M",
@@ -1586,6 +1616,12 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "Subprocess call states encoding='utf-8'. Upstream's call uses text=True with no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and the payload is deliberately non-ASCII. Windows necessity, found by the subprocess-encoding gate (check_subprocess_encoding.py), which exists because upstream wrote the same defect twice. No assertion changed."
+    },
+    "tools/bench/run_serve_corpus.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: KV_CACHE_NAMES restated the engine's names in the request log's old long spelling; it carries the canonical short spelling now, which is what tools/release/per_domain_kl.py compares between two top-k records."
     },
     "tools/bench/run_serve_ttft.py": {
       "status": "M",

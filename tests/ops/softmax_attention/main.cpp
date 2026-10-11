@@ -1,4 +1,4 @@
-#include "kv_cache_storage.h"
+#include "ninfer/kv_storage.h"
 #include <iostream>
 #include <optional>
 #include <string_view>
@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
             else if (argument == "--kv-dtype" && i + 1 < argc) {
                 const std::string_view name(argv[++i]);
                 storage     = name == "all" ? std::nullopt
-                                            : std::optional(ninfer::test::parse_kv_cache_storage(name));
+                                            : std::optional(ninfer::parse_kv_storage(name));
                 causal_only = true;
             } else
                 throw std::invalid_argument("invalid attention test option");

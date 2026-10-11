@@ -2,6 +2,7 @@
 #include "core/paged_kv_cache.h"
 #include "ninfer/ops/kv_cache_append.h"
 #include "ninfer/ops/softmax_attention.h"
+#include "ninfer/kv_storage.h"
 #include "ops/op_tester.h"
 #include "ops/softmax_attention/oracle.h"
 
@@ -1666,22 +1667,6 @@ int verify_positions(const std::string& label, const GuardedDeviceBuffer& device
     return failures;
 }
 
-const char* cache_name(KvCacheStorage storage) {
-    switch (storage) {
-    case KvCacheStorage::BFloat16:
-        return "bf16";
-    case KvCacheStorage::Int8Group64:
-        return "int8-g64";
-    case KvCacheStorage::Fp8E4M3Row256:
-        return "fp8-e4m3fn-row256";
-    case KvCacheStorage::Nvfp4Group16:
-        return "nvfp4-g16";
-    case KvCacheStorage::Fp8KeyNvfp4Value:
-        return "k8v4";
-    }
-    return "unknown";
-}
-
 ReductionCriterion attention_criterion(KvCacheStorage storage) {
     if (storage == KvCacheStorage::BFloat16) return kAttentionBf16Criterion;
     if (storage == KvCacheStorage::Int8Group64) return kAttentionInt8Criterion;
@@ -1698,7 +1683,7 @@ int verify_attention(const std::string& label, const std::vector<double>& actual
 
 std::string case_label(const char* entry, const Geometry& geometry, KvCacheStorage storage,
                        const AttentionCase& test_case, MappingPattern mapping) {
-    return std::string(entry) + " " + geometry.name + " " + cache_name(storage) +
+    return std::string(entry) + " " + geometry.name + " " + kv_storage_name(storage) +
            " mapping=" + mapping_name(mapping) + " T=" + std::to_string(test_case.tokens) +
            " keys=" + std::to_string(test_case.base + test_case.tokens) +
            " envelope_max=" + std::to_string(test_case.envelope_max) +
@@ -1853,7 +1838,7 @@ int run_a1_case(DeviceExecutionView execution, const Geometry& geometry, KvCache
             cuda_synchronize();
             const auto actual = copy_from_guarded<std::uint16_t>(dout, q_bits.size());
             graph_failures +=
-                verify_attention(std::string(cache_name(storage)) + " attention envelope update",
+                verify_attention(std::string(kv_storage_name(storage)) + " attention envelope update",
                                  bf16_bits_to_double(select_query_columns(
                                      actual, kHeadDim * geometry.q_heads, oracle_queries)),
                                  reference, attention_criterion(storage));
@@ -2140,7 +2125,7 @@ int run_batch_case(DeviceExecutionView execution, const Geometry& geometry, KvCa
             launch();
         cuda_synchronize(execution.stream);
         const std::string label = std::string("causal batch ") + geometry.name + " " +
-                                  cache_name(storage) + " W=" + std::to_string(width) +
+                                  kv_storage_name(storage) + " W=" + std::to_string(width) +
                                   " B=" + std::to_string(batch) + " phase=" + std::to_string(phase);
         const auto output = copy_from_guarded<std::uint16_t>(dout, q.size());
         failures += verify_attention(label, bf16_bits_to_double(output), reference,
@@ -2227,11 +2212,11 @@ int report_quantization_quality(KvCacheStorage storage, std::uint32_t seed) {
     const double relative_rmse = reference_rms == 0.0 ? 0.0 : rmse / reference_rms;
     if (!std::isfinite(mae) || !std::isfinite(rmse) || !std::isfinite(relative_rmse) ||
         !std::isfinite(maximum_error)) {
-        std::cerr << cache_name(storage)
+        std::cerr << kv_storage_name(storage)
                   << " quantization quality produced non-finite statistics\n";
         return 1;
     }
-    std::cout << cache_name(storage) << " quantized-vs-bf16 oracle quality" << " mae=" << mae
+    std::cout << kv_storage_name(storage) << " quantized-vs-bf16 oracle quality" << " mae=" << mae
               << " rmse=" << rmse << " rel_rmse=" << relative_rmse << " max_abs=" << maximum_error
               << '\n';
     return 0;
@@ -2763,12 +2748,12 @@ int run_softmax_attention_causal_cache_tests(std::optional<KvCacheStorage> selec
           KvCacheStorage::Nvfp4Group16, KvCacheStorage::Fp8KeyNvfp4Value}) {
         if (selected && storage != *selected) continue;
         const auto start = std::chrono::steady_clock::now();
-        std::cout << "RUN causal_softmax_attention " << cache_name(storage) << std::endl;
+        std::cout << "RUN causal_softmax_attention " << kv_storage_name(storage) << std::endl;
         const int current = run_storage_cases(execution, storage);
         const auto seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         std::cout << (current ? "FAIL" : "PASS") << " causal_softmax_attention "
-                  << cache_name(storage) << " public-contract correctness (" << seconds << " s)"
+                  << kv_storage_name(storage) << " public-contract correctness (" << seconds << " s)"
                   << std::endl;
         failures += current;
     }
