@@ -146,6 +146,21 @@ def collect(against: str) -> list[Entry]:
     # the merge commit lands, so a HEAD-based base would be stale for exactly the commit this hook is
     # guarding and would read the incoming branch's own files as divergences.
     based_on = "MERGE_HEAD" if (REPO / ".git" / "MERGE_HEAD").exists() else "HEAD"
+    # A release cut has no common ancestor with upstream: `main` is a squashed tree whose lineage was
+    # rebuilt, so the delta is undefined rather than empty and `git merge-base` exits non-zero instead
+    # of printing nothing. That is not a divergence to ratchet -- it is a branch this gate does not
+    # apply to -- so it reports and returns nothing, the way check_doc_citations.py reports a citation
+    # naming no tracked file. Blocking here made the release branch uncommittable, which is how this
+    # was found: the v1.2.0 cut failed on `git merge-base HEAD upstream/dev` while the tree was clean
+    # and identical to dev's.
+    probe = subprocess.run(
+        ["git", "merge-base", based_on, against],
+        cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+    )
+    if probe.returncode != 0:
+        print(f"  port delta  : {based_on} has no common ancestor with {against} -- a release cut, "
+              "where this ratchet does not apply")
+        return []
     base = git("merge-base", based_on, against).strip()
     counts: dict[str, tuple[int, int]] = {}
     for line in git("diff", "--numstat", base).splitlines():
