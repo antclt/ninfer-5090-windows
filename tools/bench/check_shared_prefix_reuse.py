@@ -255,7 +255,7 @@ def main() -> int:
     if request_log.exists():
         request_log.unlink()
 
-    command, _ = serve_command(arguments.exe, arguments.artifact, arguments.port, False, request_log)
+    command = serve_command(arguments.exe, arguments.artifact, arguments.port, False, request_log)
     # A throughput record is the ONLY place the context-cache selection counters are written, and it
     # is emitted either on the --log-stats-interval timer or in the shutdown tail. The tail alone is
     # not enough in practice: the periodic record keeps the counters available even if the graceful
@@ -433,8 +433,8 @@ def main() -> int:
         print()
         print("  NOTE: the last throughput record predates the final request, so its counters do not")
         print("  cover this run and are not quoted as the attribution. Raise --stats-interval-ms to")
-        print(f"  see them (the stale record holds shared_stable_prefix="
-              f"{stale_counters.get('shared_stable_prefix', '(absent)')}).")
+        print(f"  see them (the stale record holds checkpoint_selections="
+              f"{stale_counters.get('checkpoint_selections', '(absent)')}).")
         print()
     else:
         selections = (fresh[-1].get("context_cache") or {}).get("selections") or {}
@@ -442,11 +442,14 @@ def main() -> int:
     if fresh:
         print("  cache selection counters (from a throughput record at least as late as the last"
               " request):")
+        # The rewrite replaced ADR-0009's refusal-detail counters (a candidate that reached the plan,
+        # one the Program refused, one skipped at the shortlist key) with path counts, so a refusal is
+        # no longer attributable from the counters alone -- read the PATH and the hit count instead.
         for name in (
-            "shared_stable_prefix",
-            "shared_reuse_candidates",
-            "shared_reuse_declined",
-            "shared_reuse_key_mismatch",
+            "root_selections",
+            "checkpoint_selections",
+            "reused_prompt_tokens",
+            "last_selected_frontier_tokens",
         ):
             print(f"    {name:28s} {selections.get(name, '(absent)')}")
         print()
@@ -472,14 +475,23 @@ def main() -> int:
     # OpenAI shape, and fall back to the Anthropic one, because the latter is the arm that works.
     warm_source = "openai"
     warm_hit, warm_path = rows[7][2], rows[7][3]
-    if warm_hit == 0 and anthropic_hit != 0:
+    # The reuse paths are `root` and `checkpoint` since the context-cache rewrite retired
+    # `shared_stable_prefix` and `private_response_replay` as path names; a replay survives as a state
+    # restore, so what separates a cached-prefix decode from one is that this arm computed a prefill of
+    # its own tail rather than replaying one.
+    warm_computed = done[8]["result"]["computed_prefill_tokens"]
+    if anthropic_hit > warm_hit:
+        # Whichever arm reached a real cached-prefix decode is the measurable one, and the warmer of
+        # the two is the better measurement. Preferring the OpenAI shape outright used to take a 287-token
+        # hit over an 8054-token one on the same lane, which measures a colder prefix.
         warm_source = "anthropic"
         warm_hit, warm_path = anthropic_hit, anthropic_path
+        warm_computed = done[10]["result"]["computed_prefill_tokens"]
         print()
-        print(f"  Warm TTFT is taken from the {warm_source} arm: it is the one that reaches a cached")
-        print("  prefix with a real decode behind it.")
+        print(f"  Warm TTFT is taken from the {warm_source} arm: it is the warmer of the two, with")
+        print(f"  {warm_hit} hit tokens against the OpenAI arm's {rows[7][2]}.")
 
-    warm_ok = warm_hit != 0 and warm_path == "shared_stable_prefix"
+    warm_ok = warm_hit != 0 and warm_path != "root" and warm_computed > 0
     if not warm_ok:
         # Only quote a counter as the attribution when a record actually covers the run. Quoting a
         # stale one is how this script once printed all-zero counters directly beneath a warm hit.
@@ -509,8 +521,8 @@ def main() -> int:
     print("  For warm_lane_sweep.py, two things follow and both were the wrong way round before:")
     print("    - the declaration must resolve to a frontier, and both a MESSAGE and a content PART resolve")
     print("      as of 2026-10-03. That is necessary, not sufficient, and not observable on the OpenAI")
-    print("      arm: private_response_replay dominates it, so a reuse number there says nothing about")
-    print("      whether a shared candidate was published. Only a shared_stable_prefix path does.")
+    print("      arm: a replay dominates it, so a reuse number there says nothing about whether a")
+    print("      shared candidate was published. Only a `checkpoint` path with a computed tail does.")
     print("    - the two requests must be DIFFERENT conversations. Seeding with a shorter version of")
     print("      the same one takes private_response_replay, which never decodes.")
     return 0

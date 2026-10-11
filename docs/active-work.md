@@ -3084,9 +3084,17 @@ scoped evidence.
    287-site/1.49x numbers recorded here earlier are not reproduced by this measurement, and the objects
    that comparison used are not named anywhere in the tree; the claim they support is false for the
    full line, and the difference they were reaching for is the QUASAR one above.
-4. **The incremental-encode splice fix has no counterexample.** Spans below the window are compared now,
-   which declines a splice whose cached ids were computed under different spans; no input was
-   constructed that reaches the old path, so the gap was closed conservatively rather than reproduced.
+4. **The incremental-encode splice fix has no counterexample.** **CLOSED 2026-10-11: the counterexample
+   is constructed, and what it produces is not merely different but wrong.** `test_frontend.cpp`'s
+   `test_incremental_encoding_declines_differing_below_window_spans` builds the case ADR-0010's safety
+   argument left open: a cached prefix and an extension that share text and boundaries and differ only
+   in a *literal span below the seam's window*, which suppresses added-token recognition and therefore
+   changes the ids. Measured both ways - with the below-window comparison disabled the encode splices
+   and returns ids that differ from a fresh encode ("the declined encode did not reproduce the full
+   encode"), and with it enabled the splice is declined and the ids match. The test asserts its own
+   premise (the two span sets must change the ids, or it demonstrates nothing) and its control (the same
+   extension with the cache's own spans must splice, "so this test proves nothing yet"). Registered in
+   `ninfer_qwen3_5_frontend_test`, so the suite carries it.
 
 **Deferred, each named in its own home**
 
@@ -3105,8 +3113,20 @@ scoped evidence.
    Bounded by a capture rather than a prefill; not measured. Serving doc and server-open-items section 8.
 7. **The generation-abandoned cancellation arm** - VOID twice, because the subject finished before the
    socket closed. That half of upstream #111 is upstream's own verified fix, not a measurement here.
-8. **Warm TTFT** - attributed rather than measured: the only shape that would move it is a first request
-   after a cold start, and the launchers' warmup covers it.
+8. **Warm TTFT** - **CLOSED 2026-10-11: measured.** On the QUASAR dflash2 lane, a second conversation
+   sharing a declared system prefix (`/v1/messages`, path `checkpoint`, 8054 of 8079 prompt tokens hit)
+   took a TTFT of **60 ms**, where the same shape cold (`path root`, 8080 tokens) took **627 ms** - read
+   per request from the lane's own `request-log-jsonl`, with `computed_prefill_tokens` as the
+   discriminator that the arm decoded its own tail rather than replaying one. The item's "attributed
+   rather than measured" is superseded, and so is the older note in this file that the lane had no
+   cached-prefix-plus-real-decode path: that path exists on the Anthropic route, whose declaration lands
+   on the message and resolves. ADR-0012's 159.71 ms at 8k was taken on an earlier revision, with the
+   native renderer since withdrawn; the two figures are not comparable and the cause of the difference
+   is not attributed. **Two instrument defects were fixed on the way**: `check_shared_prefix_reuse.py`
+   unpacked a list as if it were a pair, so it crashed and no run could measure anything; and its warm
+   criterion required the retired path name `shared_stable_prefix`, which the context-cache rewrite
+   replaced with `checkpoint`/`root` - a false "NOT measurable" verdict, now "hit > 0, path != root, and
+   a computed tail", taken from the warmer of the two arms rather than the OpenAI one.
 
 **Planned work, not defects**
 

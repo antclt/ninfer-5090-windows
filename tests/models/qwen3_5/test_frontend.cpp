@@ -1156,6 +1156,72 @@ int test_incremental_encoding_matches_full() {
     return failures;
 }
 
+// The counterexample ADR-0010's safety argument left open: two encodes that share a token prefix and
+// a boundary set, and differ only in a literal span *below* the seam's window. A literal span
+// suppresses added-token recognition inside it, so the same bytes carry different ids -- which is what
+// makes a splice below the window wrong rather than merely different. The check that compares those
+// spans is the fix, and this is the input that shows it firing.
+int test_incremental_encoding_declines_differing_below_window_spans() {
+    int failures = 0;
+    try {
+        const FrontendResources fixture = resources();
+        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
+                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
+                                  .generation_config_json = fixture.generation_config_json});
+        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
+                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
+                                  .generation_config_json = fixture.generation_config_json});
+
+        // `helloST` is one of the fixture's added tokens, so the prefix's ids depend on whether a
+        // literal span covers it.
+        const std::string first      = "the resolver reads helloST pending";
+        const std::string second     = "and the scheduler coalesces adjacent runs";
+        const std::string short_text = first + second;
+        const std::string tail       = "then the arena hands the run back";
+        const std::string long_text  = short_text + tail;
+        const std::vector<std::size_t> short_boundaries{first.size(), short_text.size()};
+        const std::vector<std::size_t> long_boundaries{first.size(), short_text.size(),
+                                                       long_text.size()};
+        const std::vector<ninfer::text::ByteSpan> no_spans{};
+        // Ends before the seam, so the seam stays spliceable and the span is compared below the
+        // window rather than skipping the boundary outright.
+        const std::vector<ninfer::text::ByteSpan> span_over_prefix{{0, first.size()}};
+
+        (void)warm.encode_with_boundaries(short_text, short_boundaries, {}, no_spans);
+        failures += check(warm.encode_cache_splices() == 0, "a first encode reported a splice");
+
+        // The control: the same extension with the cache's own spans splices, so this input is known
+        // to reach the splice at all.
+        const fi::BoundaryEncodedText spliced =
+            warm.encode_with_boundaries(long_text, long_boundaries, {}, no_spans);
+        failures += check(warm.encode_cache_splices() == 1,
+                          "the extending encode did not splice, so this test proves nothing yet");
+
+        // The counterexample: identical text and boundaries, only a span below the window differs.
+        const fi::BoundaryEncodedText declined =
+            warm.encode_with_boundaries(long_text, long_boundaries, {}, span_over_prefix);
+        failures += check(warm.encode_cache_splices() == 1,
+                          "a differing literal span below the window did not stop the splice");
+        failures += check(warm.encode_cache_fallbacks() == 0,
+                          "the encode fell back instead of declining the splice");
+
+        // The oracle, and the counterexample's own premise: the two span sets must really change the
+        // ids, or the splice this declines is one that would have been right.
+        const fi::BoundaryEncodedText oracle_spanned =
+            cold.encode_with_boundaries(long_text, long_boundaries, {}, span_over_prefix);
+        const fi::BoundaryEncodedText oracle_plain =
+            cold.encode_with_boundaries(long_text, long_boundaries, {}, no_spans);
+        failures += check(oracle_spanned.input_ids != oracle_plain.input_ids,
+                          "the counterexample does not change the ids, so it demonstrates nothing");
+        failures += check(declined.input_ids == oracle_spanned.input_ids,
+                          "the declined encode did not reproduce the full encode");
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "  below-window span check threw: %s\n", error.what());
+        failures += 1;
+    }
+    return failures;
+}
+
 int test_repeated_encoding_matches_full() {
     int failures = 0;
     try {
@@ -2996,6 +3062,7 @@ int main() {
     failures += test_boundary_aware_tokenization();
     failures += test_incremental_encoding_matches_full();
     failures += test_repeated_encoding_matches_full();
+    failures += test_incremental_encoding_declines_differing_below_window_spans();
     failures += test_rendered_special_tokens();
     failures += test_repeated_special_tokens_scan_linearly();
     failures += test_bounded_tokenizer_prefix();

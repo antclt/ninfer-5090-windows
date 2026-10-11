@@ -169,6 +169,17 @@ The reachable class is BPE's non-prefix-stability: appending a suffix can change
 *last* cached token (a merge across the boundary), so a cached id can be one the new tokenization would
 not produce.
 
+**Resolved 2026-10-11: the counterexample is built, and the mechanism is not the one this section
+guessed.** The check's own comment names it precisely - "Two requests can share a token prefix and still
+carry different spans inside it -- different message splits that tokenize identically" - and the span is
+what matters, not a BPE merge across the seam (that case is the *window* check's, which already covers
+it). A literal span **suppresses added-token recognition**, so the same bytes carry different ids when a
+span below the window differs, which is what makes the splice *wrong* rather than merely different.
+`tests/models/qwen3_5/test_frontend.cpp`'s
+`test_incremental_encoding_declines_differing_below_window_spans` constructs it and asserts its own
+premise and control; falsified both ways - with the comparison disabled the splice fires and the ids
+differ from a fresh encode, with it enabled the splice is declined and they match.
+
 *Reported, and it names both the problem and a better fix*: **Incremental BPE Tokenization** (arXiv
 2605.30813; OpenReview `ZbWgrDzCQo`) "incrementally maintains BPE tokenization results for every prefix
 of the input text, implementing the standard BPE merge procedure", and "provides native support for
@@ -199,11 +210,24 @@ Item 7's arm was VOID twice because the subject *finished* before the socket clo
 to keep the subject generating while the client abandons: a long output cap, and abort after the first
 streamed token rather than after a fixed delay.
 
-## 8. Warm TTFT — the instrument exists
+## 8. Warm TTFT — measured 2026-10-11
 
-`tools/bench/first_request_lane.py` is the instrument ("whether a first request is slower than later
-identical ones"), and its own header warns that `--seed` must be pinned. One cold-process run closes
-the item; nothing external is needed.
+The instrument existed; the *blocker* was that it crashed and that its criterion named a retired path.
+
+**Measured**: on the QUASAR dflash2 lane, a second conversation sharing a declared system prefix
+(`/v1/messages`, path `checkpoint`, **8054 of 8079 prompt tokens hit**) took a TTFT of **60 ms**; the
+same shape cold (`path root`, 8080 tokens) took **627 ms**. Read per request from the lane's own
+`request-log-jsonl`, with `computed_prefill_tokens` as the discriminator that the warm arm decoded its
+own tail rather than replaying one. ADR-0012's 159.71 ms at 8k was taken on an earlier revision (with
+the native renderer, since withdrawn), so the two are not comparable.
+
+**Two instrument defects fixed**: `tools/bench/check_shared_prefix_reuse.py` unpacked `serve_command`'s
+returned list as if it were a pair, so the tool crashed before any request; and its warm criterion
+required `warm_path == "shared_stable_prefix"`, a path name the context-cache rewrite retired
+(`PrefixReusePath` now holds only `Root` and `Checkpoint`, `include/ninfer/types.h:908`), which made
+"WARM TTFT: NOT measurable" a false verdict that no run could escape. The criterion is now
+"hit > 0, path != root, and a computed tail", and the arm is chosen as the *warmer* of the two rather
+than the OpenAI one - the old rule quoted a 287-token hit over an 8054-token one on the same lane.
 
 ## 9. The precision-assignment search — the literature agrees with our own measurement
 
