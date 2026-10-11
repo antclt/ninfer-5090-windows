@@ -79,6 +79,8 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
 from engine import spawn_engine, stop_engine  # noqa: E402
+sys.path.insert(0, str(REPO))
+from tools.ninfer_serve.request_log import records  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 request_log = LOG_DIR / f"requests-{args.tag}.jsonl"
@@ -153,20 +155,7 @@ def post_and_abandon(port: int, model_id: str, prompt: str, max_tokens: int, kil
 
 def completions(path: Path) -> list[dict]:
     """Only the records that describe a finished request; `request_start` events carry no phases."""
-    if not path.is_file():
-        return []
-    records = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if record.get("event") != "request_start":
-            records.append(record)
-    return records
+    return [record for record in records(path) if record.get("event") != "request_start"]
 
 
 def request_id(record: dict) -> int:

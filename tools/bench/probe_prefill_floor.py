@@ -77,6 +77,8 @@ args = parser.parse_args()
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
 from engine import spawn_engine, stop_engine  # noqa: E402
+sys.path.insert(0, str(REPO))
+from tools.ninfer_serve.request_log import records  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 print(f"lane: {profile['file']}", flush=True)
@@ -129,10 +131,8 @@ try:
             json.loads(response.read())
         wall = (time.time() - started) * 1000.0
 
-        records = [json.loads(line) for line in request_log.read_text(encoding="utf-8",
-                                                                      errors="replace").splitlines()
-                   if line.strip()]
-        done = [r for r in records if r.get("event") == "request_done"]
+        parsed = records(request_log)
+        done = [r for r in parsed if r.get("event") == "request_done"]
         if not done:
             print(f"  request {index + 1}: wall {wall:6.1f} ms; no request_done record yet", flush=True)
             continue

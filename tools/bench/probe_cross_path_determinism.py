@@ -62,6 +62,8 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
 from engine import spawn_engine, stop_engine  # noqa: E402
+sys.path.insert(0, str(REPO))
+from tools.ninfer_serve.request_log import records  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 request_log = LOG_DIR / f"requests-{args.tag}.jsonl"
@@ -99,20 +101,6 @@ def conversation(prefix: str, tail: str) -> list[dict[str, Any]]:
             {"role": "user", "content": tail}]
 
 
-def phases(path: Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    records = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line:
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return records
-
-
 def ask(port: int, model_id: str, messages: list[dict[str, Any]]) -> dict:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=900)
     body = json.dumps({"model": model_id, "messages": messages, "max_tokens": args.max_tokens,
@@ -146,8 +134,9 @@ def start_lane(tag: str) -> tuple[subprocess.Popen, str]:
 
 def last_record(mark: int) -> dict:
     """The completion record added since `mark` records were in the log, if any."""
-    records = [record for record in phases(request_log) if record.get("event") != "request_start"]
-    return records[-1] if len(records) > mark else {}
+    completions = [record for record in records(request_log)
+                   if record.get("event") != "request_start"]
+    return completions[-1] if len(completions) > mark else {}
 
 
 def shared_counter() -> int | None:
@@ -157,7 +146,7 @@ def shared_counter() -> int | None:
     two records -- the discriminator that works for every request is the hit count below.
     """
     value = None
-    for record in phases(request_log):
+    for record in records(request_log):
         selections = (record.get("context_cache") or {}).get("selections") or {}
         if "a checkpoint reuse" in selections:
             value = selections["a checkpoint reuse"]
@@ -174,7 +163,7 @@ print(f"shared prefix: {len(prefix):,} characters (~{len(prefix) // 4:,} tokens)
 # Cold arm: a fresh lane, so nothing can be reused.
 print("\n=== cold arm ===", flush=True)
 process, model_id = start_lane("cold")
-cold_mark = len([r for r in phases(request_log) if r.get("event") != "request_start"])
+cold_mark = len([r for r in records(request_log) if r.get("event") != "request_start"])
 cold = ask(args.port, model_id, conversation(prefix, CONTINUATION))
 cold_record = last_record(cold_mark)
 stop_engine(process)
@@ -184,7 +173,7 @@ print(f"  http {cold['status']}, {len(cold['text'])} characters of output; "
 # Warm arm: a fresh lane, a different continuation sharing the prefix, then this one.
 print("\n=== warm arm ===", flush=True)
 process, model_id = start_lane("warm")
-warm_mark = len([r for r in phases(request_log) if r.get("event") != "request_start"])
+warm_mark = len([r for r in records(request_log) if r.get("event") != "request_start"])
 seed = ask(args.port, model_id, conversation(prefix, ALTERNATE))
 seed_record = last_record(warm_mark)
 warm = ask(args.port, model_id, conversation(prefix, CONTINUATION))

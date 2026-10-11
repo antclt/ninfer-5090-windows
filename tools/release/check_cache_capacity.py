@@ -19,8 +19,10 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import profiles  # noqa: E402
+from tools.ninfer_serve.request_log import records  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 SERVE = REPO / "build" / "apps" / "ninfer-serve.exe"
@@ -85,7 +87,7 @@ def main() -> int:
             send(port, tag)
         time.sleep(7)  # the request log flushes per interval
 
-        done = [json.loads(line) for line in LOG.read_text(encoding="utf-8").splitlines()]
+        done = records(LOG)
         resends = [record for record in done if record.get("event") == "request_done"][5:]
         hits = sum(1 for record in resends if record["result"]["prefix_cache_hit_tokens"] > 0)
         cached = sum(record["result"]["prefix_cache_hit_tokens"] for record in resends)

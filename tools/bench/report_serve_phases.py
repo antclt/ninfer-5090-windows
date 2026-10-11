@@ -22,11 +22,13 @@ exactly how a projection becomes a fact unearned.
 from __future__ import annotations
 
 import argparse
-import json
 import statistics
 import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.ninfer_serve.request_log import events  # noqa: E402
 
 # ADR-0012's own words, carried here so the comparison is explicit rather than remembered.
 PROJECTED_PREPARED_MS = 8.0
@@ -54,12 +56,8 @@ def cache_selection_counters(path: Path) -> dict[str, Any]:
         print(f"  FAIL: no request log at {path}")
         raise SystemExit(1)
     latest: dict[str, Any] | None = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        record = json.loads(line)
-        if record.get("event") == "throughput":
-            latest = record
+    for record in events(path, "throughput"):
+        latest = record
     if latest is None:
         print(f"  FAIL: {path.name} holds no throughput record, so the cache-selection counters are")
         print("  not in it. The lane was probably killed rather than stopped gracefully, or")
@@ -74,13 +72,7 @@ def request_done_records(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         print(f"  FAIL: no request log at {path}")
         raise SystemExit(1)
-    done = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        record = json.loads(line)
-        if record.get("event") == "request_done":
-            done.append(record)
+    done = events(path, "request_done")
     if not done:
         print(f"  FAIL: {path} has no request_done records, so there is nothing to report")
         raise SystemExit(1)

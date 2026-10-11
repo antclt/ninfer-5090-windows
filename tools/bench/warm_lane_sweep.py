@@ -43,6 +43,8 @@ from engine import (  # noqa: E402
     wait_ready,
 )
 from first_request_lane import REPO_ROOT  # noqa: E402
+sys.path.insert(0, str(REPO_ROOT))
+from tools.ninfer_serve.request_log import events  # noqa: E402
 
 FILLER = "The quick brown fox jumps over the lazy dog. " * 4
 
@@ -151,11 +153,7 @@ def main() -> int:
     if not request_log.is_file():
         print(f"  FAIL: no request log at {request_log}")
         return 1
-    done = [
-        json.loads(line)
-        for line in request_log.read_text(encoding="utf-8").splitlines()
-        if line.strip() and json.loads(line).get("event") == "request_done"
-    ]
+    done = events(request_log, "request_done")
     if not done:
         print(f"  FAIL: {request_log} has no request_done records")
         return 1

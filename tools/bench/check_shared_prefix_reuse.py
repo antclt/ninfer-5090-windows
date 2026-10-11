@@ -55,6 +55,8 @@ from engine import (  # noqa: E402
     wait_ready,
 )
 from first_request_lane import REPO_ROOT  # noqa: E402
+sys.path.insert(0, str(REPO_ROOT))
+from tools.ninfer_serve.request_log import records  # noqa: E402
 
 BODY_WORDS = 400
 MESSAGES = 6
@@ -341,9 +343,7 @@ def main() -> int:
     if not request_log.is_file():
         print(f"  FAIL: no request log at {request_log}")
         return 1
-    json_lines = [
-        json.loads(line) for line in request_log.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    json_lines = records(request_log)
     done = [record for record in json_lines if record.get("event") == "request_done"]
     # Nine requests are sent; done[0] is the first repeat (the seed), so the reported rows are
     # 1-indexed positions 2..9. The last two are the two shared conversations.
