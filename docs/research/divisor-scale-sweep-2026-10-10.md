@@ -34,11 +34,11 @@ reads at call time (`official_recipes.py:411`): a per-arm recipe file patches
 Two falsifiers, because a flat result from a transform that never took would look identical to a real
 flat result:
 
-1. **The seam, in-process** (`test_seam.py`): `load_calibration()` returns 53.4925 unpatched, 213.9701
+1. **The seam, in-process** (`tools/bench/probe_divisor_seam.py`): `load_calibration()` returns 53.4925 unpatched, 213.9701
    under the x4 patch, 26.7463 under d2 and 1.0000 under const, and the original value after the patch
    is restored. `python -m tools.convert` imports the recipes relatively (`from .official_recipes import
    RECIPES`), so the patched module object is the one the recipe reads.
-2. **The stored artifact** (`read_divisors.py`, reading the same 4-byte FP32 auxiliary on the use that
+2. **The stored artifact** (`tools/bench/read_artifact_divisors.py`, reading the same 4-byte FP32 auxiliary on the use that
    `verify_artifact.py`'s `check_divisors` reads):
 
 | artifact | layer-0 GDN q/k/v/z | gdn/output | mlp/gate |
