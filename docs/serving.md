@@ -1164,6 +1164,15 @@ and, when graphs are enabled, one exact-batch CUDA Graph replay. A
 request joins that batch only after its single-request prefill finishes; when it completes or is
 cancelled, the next boundary rebuilds the batch without an empty row.
 
+**A client that disappears is detected between prefill chunks.** Measured on the QUASAR DFlash2 lane at
+`--max-concurrency 1` (`tools/bench/probe_cancellation.py`): a cold 158,447-token prompt whose client
+sent RST two seconds in stopped after 32,768 tokens — four `--prefill-chunk` chunks — and a follower sent
+at that moment waited 0.81 s, against 26.42 s behind a *live* request of the same size in the same run
+(idle floor 0.08 s). A disconnect during generation is released the same way. Cancellation is skipped
+only while a *context transaction* is open, which on this port is a checkpoint capture rather than a
+prefill; that window's bound is not measured. `docs/research/server-open-items.md` §8 carries the
+disposition of the upstream report (Neroued/ninfer#184) this answers.
+
 `--max-pending-requests` bounds the requests waiting behind the active set. The total generation
 request lifetime capacity is `max_concurrency + max_pending_requests`, including requests still in
 CPU/media preparation and completed model results whose response has not yet been released. A full

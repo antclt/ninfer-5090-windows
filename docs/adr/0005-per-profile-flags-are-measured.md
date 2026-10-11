@@ -94,3 +94,34 @@ convention, and never uniformly across profiles. The three cache-bound flags lik
 
 The natural instinct is to apply one setting to every profile, which is measurably worse on at
 least three of them. The earlier uniform d5 was wrong on QUASAR.
+
+## Amendment 2026-10-10: the proposal head is now measured on all eight profiles
+
+The decision above lists QUASAR, the NVFP4-full image and the retired image. Swift and NVIDIA were added
+afterwards and had no record anywhere in the tree, while all eight profiles passed `--lm-head-draft` --
+the convention this ADR exists to forbid.
+
+`docs/research/proposal-head-per-lane-2026-10-10.md` carries the measurement: real text, greedy, two
+rounds per arm, the lane's own flags composed through `profiles.launcher_args`, the flag removed rather
+than substituted. Seven lanes confirm the shipped setting on this ADR's own criterion; on five of them the
+full head accepts *more* and still decodes slower, which is exactly the case the Consequences section
+names. The bench corpus could not have decided it: it saturates at 0.9914, the tooling table's own
+warning.
+
+**One lane did not confirm it, on one protocol only.** Greedy real text (temperature 0) reads
+`start_nvidia_v3_dflash2_vision` at 28.8 % acceptance and 226.5 tok/s with the flag against 38.3 % and
+271.6 without — but that arm does not decide. Interleaved on the served sampling the sign reverses
+(329.5/323.6 against 257.2/257.9 tok/s; 45.9 % against 35.9 % acceptance), and the served protocol is the
+one these lanes run. The note carries both, and the disagreement is a property of the accept rule rather
+than noise.
+
+**Decided 2026-10-10: no setting changes, and the record now exists.** The greedy arm that first looked
+like a defect on `start_nvidia_v3_dflash2_vision` reverses on the protocol the lanes serve: interleaved on
+`lane_fingerprint.py`'s `code` cell, the shipped flag reads 329.5/323.6 tok/s and 45.9 % acceptance
+against 257.2/257.9 and 35.9 % without it, so clearing it would have been a 25-28 % regression. The first
+comparison was between two full fingerprints two hours apart — the "measure A and then B and you have
+measured the window" failure this repo records — and it is the reason the decision is taken from
+interleaved runs. The head-side lever is closed by the engine regardless (`linear_topk` resolves the
+shortlist path at Q4 only, `src/ops/linear_topk/linear_topk.cpp:35-49`). Both arms are in
+`docs/research/proposal-head-per-lane-2026-10-10.md`, and the per-profile record this ADR asks for now
+covers all eight lanes.

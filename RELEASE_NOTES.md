@@ -24,8 +24,10 @@ are new.
   checked exhaustively — so the divisors are measured on this checkpoint by
   `tools/convert/calibration.py` and committed with it. Borrowing another quantization's stored scales
   instead measured 2.2%/0.45% worse: an activation maximum does not transfer between weight
-  realizations. Perplexity improves to **4.75750** from 4.82452 on the subset and **4.97532** from
-  4.98768 on the corpus.
+  realizations. Perplexity on the full corpus at fp8 KV is **4.724219** against the published build's
+  4.98768 (`docs/perplexity-baseline.md`, the shipping gate's own table, re-taken 2026-10-07 and
+  reproduced to the last digit on 2026-10-10). The `--quick` pair recorded on 2026-09-24 was 4.75750
+  from 4.82452; `--quick` is one stream per domain and is not comparable, which that document explains.
 - **A fourth line joins the release.** `start_nvidia_v3_dflash2_vision.bat` and
   `start_nvidia_v3_mtp4_vision.bat` serve NVIDIA's own ModelOpt quantization of the base model: its
   NVFP4 MLP imported on all 64 layers, its FP8 attention encoded from the BF16 base using the
@@ -43,6 +45,15 @@ are new.
   against 60.9% on that artifact's DFlash2 lane. The z-lab draft was trained against the stock model's
   hidden states and this finetune's are not the stock ones, so which encoding matches them is a property
   of the target and is measured per artifact rather than carried across.
+- **The proposal head is now a record for all eight lanes, and no setting changed.** ADR-0005 requires
+  the spec route, draft depth and proposal head to be a per-profile decision from a record; the two
+  artifacts added after that ADR had none, while all eight lanes passed `--lm-head-draft`. Measured on the
+  served sampling, one lane at a time: every lane confirms the shipped setting, and on several of them the
+  full head accepts *more* and still decodes slower, which is why decode rate rather than acceptance is
+  the criterion. One lane's greedy measurement pointed the other way, and reversed when the two arms were
+  interleaved on the protocol the lanes actually serve — 329.5/323.6 tok/s with the flag against
+  257.2/257.9 without. That reversal is what the record carries: taking the first number would have
+  shipped a 25 % regression on that lane.
 - **Two lane figures had drifted, and one artifact could not be measured at all.** Sweeping the
   *unchanged* artifacts, the acceptance figures recorded on 2026-09-17 no longer reproduce: one
   artifact's DFlash2 lane reads 45.7% against a recorded 62.5%, and its MTP d4 lane 62.4% against
@@ -56,6 +67,17 @@ are new.
   identical across two domains won and two lost, and that is what the release says they are.
 - **`--quick` figures for the QUASAR artifact do not reproduce** either: 4.89741 recorded, 4.94879
   measured. Every row in `docs/perplexity-baseline.md` now carries the date it was taken.
+- **A Windows timer defect added up to 16 ms to every request, and is fixed.** The engine's scheduling
+  poll waits with a 1 ms timeout, which a process that never raises the system timer resolves on the
+  15.625 ms tick instead. Measured on one lane, same artifact and same requests: `initial_binding` was
+  bimodal at 0.9 ms or 16.0-17.0 ms, `queue_wait` bunched at 0-15 ms, and total latency averaged
+  77.3 ms. `ninfer-serve` now calls `timeBeginPeriod(1)` and the same requests read a flat 2.0-2.6 ms
+  `initial_binding` with 56.3 ms total. Decode and acceptance are unmoved (fingerprint `code` cell
+  320.1 tok/s / 45.9%). `ninfer-cli` runs the same loop once per invocation, where it is invisible
+  beside model load, and `ninfer-perplexity` does not run it at all.
+- **The three apps set the console code page**, so their output renders as UTF-8 in any console rather
+  than through the machine's OEM code page. Verified in both directions with a probe that reads the
+  console's output code page: 437 before, 65001 after.
 
 ### Artifacts
 

@@ -339,7 +339,26 @@ mean by 7.6%. At the new format the published cell reads **367.9 tok/s at 58.0%*
   the other's setting. The other seven lanes measure 4-15% faster than published, which is drift rather
   than a defect, and the acceptance columns reproduce exactly.
 - **item 1-5, 8 of the coverage list are now closed.** Still open and instrument-ready: the
-  cancellation and queue cases, and cross-path determinism. **Soak closed 2026-10-10**: 220 cycles of
+  cancellation and queue cases, and cross-path determinism.
+  **Cancellation closed 2026-10-10, and upstream #184's symptom does not reproduce here.** With
+  `--max-concurrency 1` on the QUASAR DFlash2 lane, a cold 158,447-token prompt whose client sent RST
+  2 s in was stopped after **32,768 of 158,447 tokens** — four 8,192-token prefill chunks — and the
+  slot was free: a follower sent at the RST moment waited **0.81 s**, against **26.42 s** behind a
+  *live* request of the same size (157,932 tokens, 28.4 s of prefill) on the same lane in the same run.
+  The idle floor is 0.08 s. Cancellation is therefore honoured *between* prefill chunks, which is the
+  mechanism the upstream issue says cannot run (`EngineCore::cancel_active_requests` returns early while
+  `has_context_transaction()`); on this port that guard covers an open context transaction, not an
+  ordinary prefill. Instrument: `tools/bench/probe_cancellation.py`; raw evidence
+  `profiles/bench/cancellation/requests-qat-dflash2-r2.jsonl` (requests 2/3 against 4/5).
+  **Unmeasured, and named as such:** a client lost while a *checkpoint capture* is open — the state the
+  guard does cover. Its window here is a capture rather than a whole prefill, and that bound was not
+  measured. **Cross-path determinism closed 2026-10-10, and it holds.** The same continuation was served
+  cold on a fresh lane and then through the shared-prefix path: the cold request reused 0 tokens, the warm
+  one spliced **12,141**, and the two produced **byte-identical** output (317 characters, greedy). The
+  instrument is `tools/bench/probe_cross_path_determinism.py`, and the warm arm's reuse is the guard that
+  makes the comparison mean anything — a first-seen continuation can only hit through the shared prefix,
+  because an exact repeat would have taken `private_response_replay` and never decoded. **Soak closed
+  2026-10-10**: 220 cycles of
   chunked context fill (125k tokens) plus a 2,048-token decode each, 5.5 h on the shipped QUASAR DFlash2
   lane, no crash and no growth -- host RSS 10,141 -> 10,187 MiB (+8.3 MiB/h whole-run, **+0.2 MiB/h in the
   second half**), device flat to negative. The run survived five hourly location evictions, which is what
@@ -361,9 +380,19 @@ mean by 7.6%. At the new format the published cell reads **367.9 tok/s at 58.0%*
   comparison (V = 0.218 both ways) and so bounds what the test can see
   (`docs/research/planned-projects-checked-2026-10-09.md`).
 - **Needing build work, and the most promising for making the models better**: the precision-assignment
-  search is not exhausted (no arm isolates q/k from v/o, or moves MLP activations from A8 to A16), and
-  **the drafter's own precision has never been varied while the target is held fixed** — a lever
-  directly on acceptance.
+  search is not exhausted (no arm isolates q/k from v/o, or moves MLP activations from A8 to A16).
+  **Corrected 2026-10-10:** this list also said "the drafter's own precision has never been varied while
+  the target is held fixed", and that is false — it has been varied twice, on two targets, and both
+  measurements are in the tree: `_nvfp4_draft`'s docstring records Q8 at 54.8 % against NVFP4 at 58.0 %
+  on QUASAR's target (`tools/convert/official_recipes.py:185-191`), and the nvidia recipe's note records
+  the same swap *losing* 3.2 points there (57.7 % against 60.9 %, `:716-719`). What is unmeasured is the
+  third point: a BF16 draft, i.e. whether the shipped encoding sits at an optimum or merely above its
+  alternative. That build and its A/B are the experiment, not a re-run of a settled axis.
+  **The third point closed the same day, by the engine rather than by a measurement.** A BF16 draft is
+  refused at startup: an artifact built with one (118 s, 1,600 objects) failed at load with `FATAL server
+  failed during startup | dflash2: dflash2/layers/0: QKV input projection: native form requires Q8 or
+  NVFP4`. So the drafter's encoding is a two-point space, both points are measured on every target, and
+  this item is complete rather than partly explored.
 
 ## Raw records
 

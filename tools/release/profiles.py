@@ -292,7 +292,15 @@ PROFILES: list[dict[str, Any]] = [
               "served regime at the served sampling, depth 9 leads by 13.2% on 36,000 characters of "
               "real code (258.5 against 228.3 tok/s, spreads 0.3/0.7%) and loses 8.9% on 36,000 "
               "characters of Chinese (295.9 against 324.8). Maximin over the two served domains takes "
-              "depth 9, as do the short-domain mean and the mean over both sets."),
+              "depth 9, as do the short-domain mean and the mean over both sets. The proposal head was "
+              "measured on this lane twice on 2026-10-10 and the two protocols disagree. At the served "
+              "sampling, an interleaved four-run A/B reads 329.5/323.6 tok/s and 45.9% acceptance with "
+              "--lm-head-draft against 257.2/257.9 and 35.9% without, so the flag stays. At greedy the "
+              "same lane reads 38.3% and 270 tok/s without it against 28.8% and 226 with it. The served "
+              "protocol decides, and the greedy arm is kept in the record because the disagreement is a "
+              "property of the accept rule rather than noise: a frequency-ranked shortlist truncates the "
+              "argmax a greedy target asks for far more often than it truncates a sampled one. "
+              "docs/research/proposal-head-per-lane-2026-10-10.md carries both."),
     dict(file="start_nvidia_v3_mtp4_vision.bat", port=8093, art=NVIDIA, device_state_slots=1,
          label="NVIDIA ModelOpt + MTP4 + Vision", model_id="qwen3.8-27b-nvidia-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="fp8",

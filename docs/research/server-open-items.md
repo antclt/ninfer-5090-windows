@@ -404,3 +404,32 @@ which on Windows enables `SO_REUSEADDR` — allowing another process to hijack t
 guidance: "All server applications must set `SO_EXCLUSIVEADDRUSE`."
 
 **Disposition:** Fixed.
+
+## 8. Upstream #184: an abandoned request holding the slot
+
+**Status:** Does not reproduce on this port; measured 2026-10-10.
+
+**What it is:** upstream reports that with `--max-concurrency 1` a client lost during context
+materialization or a long synchronous prefill keeps the only slot until that work finishes, because the
+serve layer's heartbeat cannot run while the engine is synchronous inside the request and
+`EngineCore::cancel_active_requests` returns early while a context transaction is open. In production
+that reads as every later request queueing until `--pending-timeout-ms`.
+
+**What was measured:** `tools/bench/probe_cancellation.py` on the QUASAR DFlash2 lane. A cold
+158,447-token prompt whose client sent RST two seconds in stopped after **32,768 of 158,447 tokens** —
+four 8,192-token prefill chunks — and the slot was free: a follower sent at the RST moment waited
+**0.81 s**, against **26.42 s** behind a *live* request of the same size (157,932 tokens, 28.4 s of
+prefill) in the same run, with an idle floor of 0.08 s. Cancellation is therefore honoured *between*
+prefill chunks. The guard the issue names covers an open context transaction, which on this port is a
+checkpoint capture rather than the whole prefill.
+
+**Disposition:** Closed as not-reproducing, with one window named and unmeasured: a client lost while a
+checkpoint capture is open. Its bound here is the capture rather than a prefill, and it was not
+measured. Raw evidence: `profiles/bench/cancellation/requests-qat-dflash2-r2.jsonl`.
+
+**Confirmed with the corrected instrument 2026-10-10.** The probe's second run reports the abandoned
+subject as *never completed* (32,768 of 158,447 prompt tokens computed, `prefix_cache_hit_tokens` 0) with
+a follower wait of **0.87 s** against **25.82 s** behind a live prefill of the same size, idle floor
+0.08 s — verdict `released early`. Its generation arm reported **VOID** both times, because the subject
+finished on its own before the socket closed; that half of the case is upstream's own verified fix
+(`ce09aee5`) rather than a measurement taken here.
