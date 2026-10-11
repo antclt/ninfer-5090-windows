@@ -5,10 +5,18 @@ from the weights: it is a separate model-role value (docs/maintainer/tensor-form
 A ModelOpt checkpoint records one per site; a compressed-tensors checkpoint does not, so a site that is
 encoded locally has to be measured.
 
-The method, the corpus and the constant are the fork's, from `calibrate_nvfp4full.py`, whose output the
-published all-NVFP4 profile carries. That artifact's 247 `input_scale_divisor` values are therefore the
-acceptance test for this module: the same corpus and the same arithmetic on the same weights must
-reproduce them. The fork streamed one decoder layer at a time onto the GPU to bound device memory; here
+The method, the corpus and the constant are the fork's, from `calibrate_nvfp4full.py`. What is
+established is narrower than this paragraph first claimed, and the difference is measured. Measured
+2026-10-10: the corpus is byte-identical to the fork script's own documents (joined sha256
+d56a2380fe2ad346a83bf25d45248bf0df5ff7ce8023566d9cb753782322ccab on both sides, non-ASCII included),
+and this port's artifacts carry this JSON's values exactly -- 317 of 317 locally-calibrated uses in
+`qwen3_8_27b_nvfp4full` and 344 of 344 in `qwen3_8_27b_nvfp4full_noex`, byte-equal as FP32. What is *not*
+established is that this module reproduces the fork's published profile: against
+`_superseded/nvfp4full_fetched.ninfer` only 6 of 287 comparable sites are byte-equal, 274 of 317 are
+within 2%, and the worst is 1.49x. The cause is unattributed -- the fork's script is on this machine, but
+no fork calibration output survives to compare against and re-running it was not done. The corpus gate
+cites the reproduction as evidence; read it with that scope.
+The fork streamed one decoder layer at a time onto the GPU to bound device memory; here
 `device_map="auto"` places what fits and transfers each layer once for a single batched forward pass,
 which is enough because the corpus is about ten thousand characters.
 

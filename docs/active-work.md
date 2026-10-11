@@ -2986,3 +2986,27 @@ Each of these was investigated and settled. They look like open work and are not
   the same way — including `qwen3_8_27b_nvfp4swift.v3.ninfer`, whose own comment says "a superseded
   build under a live filename is a measurement waiting to go wrong". `C:\AI\models` now holds only
   the five shipping lanes.
+
+## 2026-10-10 - the A16 SwiGLU decomposition above T=16 exceeds its profile's criterion (open)
+
+Found by a blast-radius review of the port's own divergence, and confirmed by measurement the same day.
+`src/ops/linear_swiglu/nvfp4/nvfp4_linear_swiglu_plan.cpp:40` routes every A16/AllowA8 call with T>16
+through `LinearA16Post`, which materializes the gate/up projection in BF16 (`:96-104`) and applies
+`silu_mul` to that, where the fused routes through T=16 apply the nonlinearity to FP32 accumulators.
+`include/ninfer/ops/linear_swiglu.h:30` documents that decomposition as the design, and `linear()`'s
+output contract is BF16 (`include/ninfer/ops/linear.h:129`), so the rounding is not avoidable without a
+fused A16 kernel above T=16.
+
+Measured: with the A16 oracle profile extended to 17/32/64/129 (`tests/ops/linear_swiglu/test_nvfp4.cpp:81`
+stops at 16), every T>16 fails the profile's own criterion at the same index with the same values -
+actual 4.59375 against reference 4.55671, a relative error of 8.1e-3 against the A16 tail bound of
+6.3e-3, about 29% over. Identical at all four extents, so it is the rounding and not an extent-dependent
+bug. The cases were reverted rather than committed red; this is the reproduction: change
+`kA16Cases` to `{1, 4, 8, 16, 17, 32, 64, 129}`, then
+`cmake --build build-test --target ninfer_linear_swiglu_nvfp4_test` and run
+`build-test\tests\ninfer_linear_swiglu_nvfp4_test.exe`.
+
+Reachability: the drafter calls SwiGLU with T=(k+1)*batch, so batch 1 keeps T<=16 (fused) even at the
+15-column tree; the decomposition needs batch>=2, i.e. `--max-concurrency > 1`, which every shipped lane
+leaves at 1. Fix: a fused A16 kernel above T=16, or a route-aware criterion if the contract is meant to
+allow the decomposition's accuracy - the second is a contract change and was not taken.

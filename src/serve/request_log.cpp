@@ -97,12 +97,25 @@ const char* finish_reason_name(ninfer::FinishReason reason) {
 }
 
 Json tool_call_parse_json(const ninfer::ToolCallParseDiagnostics& diagnostics) {
-    return Json{{"marker_seen", diagnostics.marker_seen},
-                {"structured_call_count", diagnostics.structured_call_count},
-                {"empty_arguments_omitted", diagnostics.empty_arguments_omitted},
-                {"schema_mismatch_arguments", diagnostics.schema_mismatch_arguments},
-                {"fallback_reason",
-                 ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason)}};
+    Json parse{{"marker_seen", diagnostics.marker_seen},
+               {"structured_call_count", diagnostics.structured_call_count},
+               {"empty_arguments_omitted", diagnostics.empty_arguments_omitted},
+               {"schema_mismatch_arguments", diagnostics.schema_mismatch_arguments},
+               {"fallback_reason",
+                ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason)}};
+    // The reason alone cannot tell a model that misspelled a declared tool from one that invented a
+    // tool, and those need opposite responses, so the subject belongs in the machine-readable record
+    // too. `rejected_tool_name` is set only when it is already a valid tool name and the length only
+    // when it is not, which is what keeps generated markup out of both records.
+    if (!diagnostics.rejected_tool_name.empty()) {
+        parse["rejected_tool_name"] = diagnostics.rejected_tool_name;
+        if (!diagnostics.rejected_tool_near_match.empty()) {
+            parse["rejected_tool_near_match"] = diagnostics.rejected_tool_near_match;
+        }
+    } else if (diagnostics.rejected_tool_name_length != 0) {
+        parse["rejected_tool_name_length"] = diagnostics.rejected_tool_name_length;
+    }
+    return parse;
 }
 
 std::string tool_choice_name(const ToolChoice& choice) {

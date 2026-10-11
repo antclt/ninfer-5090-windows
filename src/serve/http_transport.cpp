@@ -107,9 +107,17 @@ void configure_http_server_socket(socket_t socket) noexcept {
     set_socket_option(socket, IPPROTO_TCP, TCP_KEEPCNT, kKeepAliveProbeCount);
     set_socket_option(socket, IPPROTO_TCP, TCP_USER_TIMEOUT, kTcpUserTimeoutMilliseconds);
 #elif defined(_WIN32)
-    // SO_EXCLUSIVEADDRUSE prevents another process from hijacking the port via SO_REUSEADDR.
-    // Microsoft's Winsock guidance: "All server applications must set SO_EXCLUSIVEADDRUSE."
-    const BOOL enabled = TRUE;
+    // SO_EXCLUSIVEADDRUSE prevents another process from hijacking the port, and it only does so when
+    // SO_REUSEADDR is not already set: default_socket_options above sets that on Windows, and a later
+    // SO_EXCLUSIVEADDRUSE does not override it. Measured with a three-arm bind probe -- with
+    // SO_REUSEADDR then SO_EXCLUSIVEADDRUSE a second process still binds (rc=0), with
+    // SO_EXCLUSIVEADDRUSE alone it fails with WSAEACCES (10013), which is the protection this line
+    // exists for. Microsoft's Winsock guidance: "All server applications must set
+    // SO_EXCLUSIVEADDRUSE." Note the same page's restart caveat: a port bound this way cannot always be
+    // reused immediately after closure, which is why the server's own restart path is a new process.
+    const BOOL enabled  = TRUE;
+    const BOOL disabled = FALSE;
+    set_socket_option(socket, SOL_SOCKET, SO_REUSEADDR, disabled);
     set_socket_option(socket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, enabled);
     // A half-open connection otherwise holds a request slot until the client's own timeout fires.
     // TCP_KEEPIDLE/TCP_KEEPINTVL/TCP_KEEPCNT are only defined by newer SDKs, so each is guarded.

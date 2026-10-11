@@ -74,7 +74,8 @@ def main() -> int:
     if hash_payloads and digest_mismatches:
         print(f"  payload digest mismatches: {len(digest_mismatches)}  e.g. {digest_mismatches[:3]}")
 
-    identical = not (only_left or only_right or mismatched)
+    identical = not (only_left or only_right or mismatched
+                     or (hash_payloads and digest_mismatches))
     print(f"layout: {'IDENTICAL' if identical else 'DIFFERS'}"
           + (f"   payloads: {'identical' if not digest_mismatches else 'differ'}"
              if hash_payloads else ""))

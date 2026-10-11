@@ -162,8 +162,12 @@ def test_blocks_are_the_unit_of_work_not_whole_parents() -> None:
 def test_projected_peak_is_reported_for_a_real_artifact() -> None:
     """The pre-flight number the crash lacked, on a real file, with the control being the arithmetic.
 
-    Reads only the directory, so it is cheap even on a 17.65 GiB artifact. The expected value is
-    stated rather than computed from the function under test.
+    Reads only the directory, so it is cheap even on a 17.65 GiB artifact. The expectation is
+    recomputed here over every format `check_values` decodes, with the per-format cost stated rather
+    than borrowed: the first version of this test recomputed with the same nvfp4-only filter the
+    function used, so the two agreed by construction and could not see the gap that let a 0.76 GiB
+    projection stand in front of a 12.64 GiB decode. A test that mirrors the implementation agrees
+    with it whatever it does.
     """
     models = Path(r"C:\AI\models")
     if not models.is_dir():
@@ -173,16 +177,26 @@ def test_projected_peak_is_reported_for_a_real_artifact() -> None:
         pytest.skip("no .ninfer artifact to measure")
     from tools.artifact.reader import Artifact
     from tools.artifact.schema import TensorObject
+    from tools.convert.verify_artifact import QUANT_FORMATS
 
     with Artifact.open(candidates[0]) as artifact:
         projected = verify.projected_peak_bytes(artifact)
-        largest = 0
+        expected = 0
+        largest_float32_parent = 0
         for obj in artifact.objects:
-            if not isinstance(obj, TensorObject):
+            if not isinstance(obj, TensorObject) or len(obj.shape) != 2:
                 continue
-            if not (obj.format or "").startswith("nvfp4") or len(obj.shape) != 2:
+            if not (obj.format or "").startswith("nvfp4") and obj.format not in QUANT_FORMATS:
                 continue
-            largest = max(largest, obj.shape[0] * obj.shape[1] * 4 + obj.bytes)
-    assert projected == largest
-    # The whole point: a single parent's float32 size, not the whole artifact's.
-    assert projected < 4 * 2**30, f"projected peak {projected / 2**30:.2f} GiB is over budget"
+            elements = obj.shape[0] * obj.shape[1]
+            # Float32 planes plus the raw payload. Grouped parents decode through row_split with two
+            # float32 planes alive together, measured at about 10 bytes per element; the NVFP4 path
+            # holds one float32 parent beside its payload.
+            per_element = 10 if obj.format in QUANT_FORMATS else 4
+            expected = max(expected, elements * per_element + obj.bytes)
+            largest_float32_parent = max(largest_float32_parent, elements * 4)
+    assert projected == expected
+    # The whole point: a single parent's float32 size, not the whole artifact's -- and never less than
+    # the largest parent read at float32 alone, which is the assertion the nvfp4-only projection failed
+    # on every artifact on this machine. The budget is the caller's argument, so it is not asserted.
+    assert projected >= largest_float32_parent

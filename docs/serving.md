@@ -884,7 +884,7 @@ The table lists executable defaults. The startup example selects a long-context 
 | `--max-concurrency N` | resident execution lanes; valid range `1..8` | `1` |
 | `--max-pending-requests N` | additional requests allowed to wait for admission | `16` |
 | `--pending-timeout-ms N` | maximum preparation-plus-admission wait | `30000` |
-| `--prefill-chunk N` | text-prefill chunk | `1024` |
+| `--prefill-chunk N` | text-prefill chunk | `8192` |
 | `--log-stats-interval-ms N` | aggregate throughput report interval; `0` disables it | `5000` |
 | `--log-level trace\|debug\|info\|warning\|error\|critical\|off` | pretty stderr verbosity | `info` |
 | `--device N` | CUDA device index | `0` |
@@ -957,7 +957,10 @@ sequences. Pretty values use readable units and rounded rates; use the independe
 complete fields and full precision. Operational records never contain prompts, generated text,
 request bodies, credentials, or arbitrary client error messages.
 If a tool marker is returned to text because its structure or tool identity cannot be represented,
-Serve emits one warning with only the failure classification, never the generated markup.
+Serve emits one warning with the failure classification and the subject it rejected: the emitted name
+when it is already a valid tool identifier, or the length of what was read when it is not, plus the
+declared tool that differs only by case when there is one. Only an identifier is quoted, so generated
+markup still does not reach this record; the same three fields travel in the request JSONL.
 
 ## Live metrics
 

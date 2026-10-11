@@ -27,12 +27,23 @@ namespace ninfer::ops::detail {
 // /Zc:__cplusplus. Measured by tools/scripts/probe_tma_align.cmd: alignof(CUtensorMap) == 8.
 // Overriding it to 128 is what produced C2719 on Windows and forced the pointer form this port
 // later removed.
-struct Nvfp4A4TmaDescriptors {
+struct alignas(64) Nvfp4A4TmaDescriptors {
     CUtensorMap a_codes;
     CUtensorMap b_codes;
     CUtensorMap a_scales;
     CUtensorMap b_scales;
 };
+
+// The alignment above is what the TMA instruction needs, and the device pass is inferred to apply
+// alignas(TENSOR_MAP_ALIGN) to CUtensorMap -- the host pass measures 8, which is why the by-value form
+// once failed here as C2719. The fp8 sibling solves this the same way and pins it; this struct relied
+// on the inference alone, so a device pass that stopped applying it would place a by-value
+// __grid_constant__ parameter below 64 bytes and misalign the tensormap operand with nothing to say so.
+static_assert(alignof(Nvfp4A4TmaDescriptors) == 64,
+              "the alignment above is what the TMA instruction needs; if this fails, the compiler "
+              "stopped applying the device-side alignment this struct depends on");
+static_assert(sizeof(Nvfp4A4TmaDescriptors) == 4 * sizeof(CUtensorMap),
+              "four descriptors back to back; the acquire-map size argument assumes this");
 
 inline void nvfp4_check_driver(CUresult status, const char* operation) {
     if (status == CUDA_SUCCESS) { return; }

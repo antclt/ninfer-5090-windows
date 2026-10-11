@@ -197,8 +197,8 @@ private:
     // than a correctness question.
     mutable std::mutex encode_cache_mutex_;
     mutable std::vector<EncodeCacheEntry> encode_cache_;
-    mutable std::size_t encode_cache_splices_   = 0;
-    mutable std::size_t encode_cache_fallbacks_ = 0;
+    mutable std::atomic<std::size_t> encode_cache_splices_   = 0;
+    mutable std::atomic<std::size_t> encode_cache_fallbacks_ = 0;
 
     std::vector<std::string> decoded_token_bytes_;
     std::vector<bool> valid_token_ids_;

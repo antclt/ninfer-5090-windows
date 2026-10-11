@@ -161,8 +161,17 @@ void context_kv_materialize(
     }
     const std::int32_t padded = static_cast<std::int32_t>(layers.front().cache.padded_capacity);
     const std::int32_t lane_capacity = layers.front().cache.lane_capacity;
+    // The decoder below is chosen from layer 0, so a mixed set would decode every layer with layer 0's
+    // format -- and require_weight validates each layer against its own geometry, so it would pass.
+    // The candidate-selector path carries this same guard for the same class, added after a measured
+    // illegal access; here the consequence is silently wrong cache content rather than a fault.
+    const QType shared_qtype = layers.front().key_weight.qtype;
     for (std::size_t index = 0; index < layers.size(); ++index) {
         const ContextKVMaterializeLayerView& layer = layers[index];
+        if (layer.key_weight.qtype != shared_qtype || layer.value_weight.qtype != shared_qtype) {
+            throw std::invalid_argument(
+                "context_kv_materialize: every layer must share one key/value weight format");
+        }
         require_weight(layer.key_weight, "key weight");
         require_weight(layer.value_weight, "value weight");
         require_tensor(layer.key_norm_weight, DType::BF16, kHeadDim, 1, 1, 1, 4, "key norm weight");

@@ -1193,15 +1193,22 @@ private:
         } catch (...) {
             phase.finish();
             for (std::size_t index = 0; index < terminal_count; ++index) {
-                complete_success(terminal_requests[index], terminal_reasons[index]);
                 remove_completed_slot(terminal_lanes[index]);
+                publish_runtime_stats();
+                complete_success(terminal_requests[index], terminal_reasons[index]);
             }
             throw;
         }
         phase.finish();
         for (std::size_t index = 0; index < terminal_count; ++index) {
-            complete_success(terminal_requests[index], terminal_reasons[index]);
+            // The order the settle path already uses, and for its reason: free the lane and publish the
+            // post-release snapshot before waking the caller, so a runtime_stats() read after
+            // generate() returns reflects the released lane rather than the last decode boundary.
+            // `terminal_requests` holds a shared_ptr copy, which keeps the record alive across the
+            // release -- the same reference `cancel_active_requests` names.
             remove_completed_slot(terminal_lanes[index]);
+            publish_runtime_stats();
+            complete_success(terminal_requests[index], terminal_reasons[index]);
         }
     }
 

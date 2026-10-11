@@ -279,6 +279,14 @@ with it).
   port: the eight launchers were verified end to end, the 262,144 ceiling probes ran every spec, and
   the lane sweeps held MTP and DFlash2 at the full context across all four artifacts, on this engine
   revision.
+- **One A16 SwiGLU decomposition is less accurate than the fused route it replaces, above a draft batch
+  of one.** Every A16 call with T>16 projects gate/up into a BF16 buffer and applies the nonlinearity to
+  that, where the fused routes through T=16 use FP32 accumulators. Measured against the op's own FP64
+  oracle, the relative error is 8.1e-3 against the profile's 6.3e-3 bound — about 29 % over, and
+  systematic rather than size-dependent. It is reachable only when the draft batch exceeds one
+  (`--max-concurrency > 1`), which no shipped launcher sets; every lane here runs a single lane, so the
+  fused route serves it. Recorded in `docs/active-work.md` with its reproduction; the fix is a fused A16
+  kernel above T=16, not a wider criterion.
 
 ## Release numbering
 

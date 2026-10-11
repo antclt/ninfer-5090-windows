@@ -702,10 +702,21 @@ def projected_peak_bytes(artifact: Artifact) -> int:
         # type checker instead of narrowing the union.
         if not isinstance(obj, TensorObject):
             continue
-        if not (obj.format or "").startswith("nvfp4") or len(obj.shape) != 2:
+        # The same set check_values decodes, not just NVFP4. The first version of this projection
+        # filtered to `nvfp4` and therefore could not fire on grouped-integer parents, which are the
+        # largest in every artifact on this machine: measured on the nvidia image it projected
+        # 0.76 GiB and then decoded a 248320x5120 q8_g32_fp16 parent at a 12.64 GiB peak working set.
+        if len(obj.shape) != 2:
+            continue
+        if not obj.format.startswith("nvfp4") and obj.format not in QUANT_FORMATS:
             continue
         elements = obj.shape[0] * obj.shape[1]
-        largest = max(largest, elements * 4 + obj.bytes)
+        # Float32 planes plus the raw payload, per decoder rather than one flat cost. The NVFP4 path
+        # holds a float32 parent beside the payload; the grouped path goes through
+        # dequantize_row_split(dtype=torch.float32), whose planes are alive together while the slice
+        # is taken -- measured at about 10 bytes per element, not 4.
+        per_element = 10 if obj.format in QUANT_FORMATS else 4
+        largest = max(largest, elements * per_element + obj.bytes)
     return largest
 
 
@@ -786,7 +797,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             budget = args.max_peak_gib * 2**30
             print(
                 f"  projected peak    {projected / 2**30:.2f} GiB "
-                f"(largest NVFP4 parent, float32, plus its raw payload)"
+                f"(largest decoded parent in any format, float32, plus its raw payload)"
             )
             if projected > budget:
                 print(
