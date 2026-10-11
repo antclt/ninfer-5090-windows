@@ -23,21 +23,43 @@ So extending the family above T=16 is a larger-capacity instance, a dispatch arm
 `tests/ops/linear_swiglu/test_nvfp4.cpp:81` currently stops short of. The estimate this note replaces
 was "a day of kernel work"; that estimate was wrong in the expensive direction.
 
-**The field fuses the nonlinearity into the epilogue.** *Reported*: TensorRT-LLM — "The GEMM + SwiGLU
+**What the field does, read in its own source: it materializes the intermediate.** *Reported*: TensorRT-LLM — "The GEMM + SwiGLU
 fusion in Gated-MLP combines two Matmul operations and one SwiGLU operation into a single kernel.
 Currently this is only supported for FP8"
 (<https://nvidia.github.io/TensorRT-LLM/performance/performance-tuning-guide/fp8-quantization.html>);
 epilogue fusion "eliminates intermediate global memory reads and writes by applying the activation
 function directly within the GEMM epilogue" (fal.ai, via search); CUTLASS does it with an epilogue
-visitor tree; and tile-level SwiGLU fusion is current work (arXiv 2607.02521). The reason the
+visitor tree; and tile-level SwiGLU fusion is current work (arXiv 2607.02521) — so fusion exists in the
+toolkits and in FP8 serving, and the question this item turns on is what the *shipped* engines do with
+quantized weights. The reason the
 nonlinearity is not run *in* the quantized precision is a hardware one — tensor cores for the GEMM,
-higher precision for the activation — which is what our fused routes already do and our fallback does
-not.
+higher precision for the activation.
 
-**A second defect in the same route.** *Read in source*: the fallback calls `silu_mul` on *slices* of
-the projected buffer, which are not contiguous, so it takes `silu_and_mul_strided_input_kernel` — a
-per-element loop computing indices, not the contiguous kernel. Even keeping the decomposition, that is
-a cost the fused route does not pay.
+**Three primaries, read rather than summarised.** vLLM applies
+`SiluAndMul` as a **separate kernel** over the materialized gate/up tensor —
+`vllm/model_executor/layers/activation.py`, `class SiluAndMul(CustomOp)` with
+`self.op = torch.ops._C.silu_and_mul` and `forward_native` written as `F.silu(x[..., :d]) * x[..., d:]`,
+i.e. a BF16/FP16 round trip between the projection and the activation, which is the same shape as this
+route's. llama.cpp fuses only the **activation pair** — `ggml_glu`, `ggml_swiglu`, `ggml_swiglu_swapped`
+and `GGML_GLU_OP_SWIGLU` in `ggml/include/ggml.h` — consuming an already-materialized gate/up tensor.
+And TensorRT-LLM's GEMM + SwiGLU fusion is documented as FP8-only. **So no engine in this survey fuses
+the activation into a quantized GEMM's epilogue, and this route's T ≤ 16 family is ahead of the field
+rather than behind it.** The reason to extend it is internal consistency with this port's own A16 tail
+bound — the reason the item's own text gives for not widening the criterion.
+
+**A claim in this note's first version was wrong, and the check that refutes it is the useful part.** It
+said the fallback calls `silu_mul` on non-contiguous slices and therefore takes
+`silu_and_mul_strided_input_kernel`, a per-element loop with two divisions each. It does not.
+`nvfp4_linear_swiglu_plan.cpp:96-104` passes `projected.slice(0, 0, 17408)` and
+`projected.slice(0, 17408, 17408)` — **dim-0 slices** of a `[34816, T]` BF16 buffer allocated at 256-byte
+alignment — and `can_use_dim0_split_fast_path` (`src/ops/launcher/silu_and_mul.cu:17-33`) accepts
+exactly that shape: rank-2, even `ne[0]`, `nb[0] == sizeof(bf16)` (the row direction tight within the
+slice) and `nb[1] % sizeof(bf16x2) == 0`. The launcher therefore takes
+`silu_and_mul_dim0_split_kernel` — the `bf162`-vectorized path, with no per-element index arithmetic. The
+decomposition's real cost is the BF16 round trip through that buffer, which the route's own comment
+already states: "It materializes a [34816,T] BF16 buffer, so it trades that traffic for serving the
+extent at all." So there is **one** defect here — the rounding against the profile's own tail bound — and
+not two.
 
 **A neighbouring measurement worth reading before adopting anything.** *Reported*: upstream #364/#365 —
 the NVFP4 W4A4 `linear_add` at `[5120,17408]` launches `M32N64` at every A4 width up to 64 tokens,
@@ -127,8 +149,17 @@ computed under different spans; no input was constructed that reaches the old pa
 
 The reachable class is BPE's non-prefix-stability: appending a suffix can change the identity of the
 *last* cached token (a merge across the boundary), so a cached id can be one the new tokenization would
-not produce. Constructing one is a pure-tokenizer search against the shipped tokenizer — cheap, not yet
-run, and worth doing because the new span check has never been *seen* to decline a splice.
+not produce.
+
+*Reported, and it names both the problem and a better fix*: **Incremental BPE Tokenization** (arXiv
+2605.30813; OpenReview `ZbWgrDzCQo`) "incrementally maintains BPE tokenization results for every prefix
+of the input text, implementing the standard BPE merge procedure", and "provides native support for
+full-prefix tasks (e.g., FIM, token healing) by efficiently providing tokenizations of all prefixes". So
+the conservative span comparison is a *correct* answer to a documented problem, and the published
+alternative — maintaining the merge state per prefix — is the design that would *recover* the splices
+this fix declines. That is an implementation to aim at rather than a defect to repair, and the
+counterexample is still worth constructing, because the span check has never been *seen* to decline a
+splice.
 
 ## 5. The cache-hitting race — upstream is replacing the subsystem
 
@@ -158,11 +189,29 @@ the item; nothing external is needed.
 
 ## 9. The precision-assignment search — the literature agrees with our own measurement
 
-*Reported*: QServe (arXiv 2405.04532) — W4A8KV4, with "W4A4 quantization introduces a notable accuracy
-degradation" and the design keeping activations at 8 bits while weights go to 4; Atom (MLSys 2024,
-<https://homes.cs.washington.edu/~arvind/papers/atom-mlsys.pdf>) — "a novel mixed-precision and
-fine-grained quantization process", i.e. sensitive layers held higher; Gong et al., "What Makes
-Quantization for Large Language Model Hard" (AAAI 2024) — the W4A8 setting specifically.
+*Read in source, two primaries*:
+
+- **ov-freeze** (arXiv 2403.18159, read in the paper's HTML body): "low-bit quantization non-uniformly
+  impacts different parts of the attention modules. Specifically, **o- and v-projection layers are more
+  susceptible to quantization errors than other weight layers** in the multi-head self-attention
+  module", with ov-freeze — freezing those two during QAT — reaching "near floating point precision
+  performance, i.e., less than 0.7 % loss of accuracy" for LLaMAv2-7B at 4-bit weights. So the
+  isolation arm this item asks for should contrast **o/v against q/k**, which is the opposite of the
+  naive guess.
+- **QServe** (arXiv 2405.04532v2, read in its own text): "SmoothAttention effectively smooths the
+  outliers in **Keys**. **Values doesn't suffer from outliers.**" That is about the *cache*, not the
+  weights: the key side carries the outliers and the value side does not.
+
+*Reported, snippet only — the full text is paywalled, an ACM DOI returned 403*: a sensitivity study
+distinguishing W8A8, where "activation quantization is the primary bottleneck", from W4A8, where weight
+quantization is. That is this port's regime (NVFP4 weights, A8/A16 activations), and it points the same
+way as ov-freeze: at 4-bit weights, *weight* precision is the lever. Upstream PR #284 (admitting a Q6
+gate_up shape) is that lever approached from the artifact side.
+
+**And the activation-side arm is cheap.** *Read in source*: `src/ops/linear_add/nvfp4/
+nvfp4_linear_add_a16.cu` and `src/ops/linear_add/fp8/fp8_linear_add_a16.cu` already exist, so the MLP
+down projection has an A16 route in both quantized families. Moving its activation from A8 to A16 is a
+dispatch or policy question, not a kernel gap.
 
 **The convergence worth acting on**: our own calibration note says the sites whose input is a *derived
 intermediate* (the MLP down projection) are the ones that move most, and that is where the literature
@@ -246,8 +295,14 @@ resident, and every shipped lane runs `--max-concurrency 1`.
 | **#340** | *not* a conflict: its `SO_REUSEADDR` sits inside `#if defined(__linux__)`, for Linux TIME_WAIT, and never touches the Windows path this port changed |
 | **#341** | Linux-only, confirmed by the same patch |
 
-## What was not done
+## What was not done, and one correction
 
+- **A claim in this note's first version was wrong and is corrected in item 1**: the A16 fallback does
+  not take the strided `silu_mul` kernel, it takes the vectorized dim0-split path. It was found by
+  checking the claim against `can_use_dim0_split_fast_path` rather than by re-reading the sentence that
+  made it.
+- The ACM sensitivity study returned 403, so its W8A8/W4A8 distinction stays a search snippet rather
+  than a read source; QServe's and ov-freeze's statements were read in full.
 - The fork's calibration script was **read, not re-run** — separating corpus from realization needs its
   torch environment.
 - Item 4's counterexample, item 8's cold-start run, #371's reproduction and #333's shape are **plans**,
