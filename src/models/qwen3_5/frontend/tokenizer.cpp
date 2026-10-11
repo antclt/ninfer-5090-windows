@@ -986,6 +986,26 @@ Tokenizer::splice_from_cache(std::string_view text, std::span<const std::size_t>
             }
             if (!covered) { continue; }
 
+            // The spans below the window are copied from the cache unverified, and the window check
+            // cannot see them: it compares only spans *within* [prev, seam). Two requests can share a
+            // token prefix and still carry different spans inside it -- different message splits that
+            // tokenize identically -- in which case a full encode of this request would tokenize that
+            // region differently and the splice would return the cache's ids, a silently different
+            // prompt. Comparing them declines the splice instead, which is the conservative direction:
+            // it can only cost a re-encode, never a wrong id. No counterexample was constructed for
+            // this; the gap is in ADR-0010's safety argument, which proves the window and copies more.
+            const std::vector<text::ByteSpan> cached_below =
+                spans_within(entry.literal_spans, 0, prev_offset);
+            const std::vector<text::ByteSpan> request_below =
+                spans_within(literal_spans, 0, prev_offset);
+            if (cached_below.size() != request_below.size() ||
+                !std::equal(cached_below.begin(), cached_below.end(), request_below.begin(),
+                            [](const text::ByteSpan& lhs, const text::ByteSpan& rhs) {
+                                return lhs.begin == rhs.begin && lhs.end == rhs.end;
+                            })) {
+                continue;
+            }
+
             // The window, [prev, seam), encoded on its own must reproduce the cached ids. This is
             // the test for a seam at an added-token boundary, and for no added token spanning it:
             // a mid-stretch seam shortens the first stretch, and a spanning token is cut in half.
