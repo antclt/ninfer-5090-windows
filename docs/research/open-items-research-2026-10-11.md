@@ -206,9 +206,14 @@ re-prefills the whole conversation — 6.8 s instead of ~0.1 s on a 34k-token co
 user-visible TTFT cliff in the same subsystem our item 6 lives in, and it is reproducible in shape on a
 shipped lane.
 
-Item 7's arm was VOID twice because the subject *finished* before the socket closed. The harness fix is
-to keep the subject generating while the client abandons: a long output cap, and abort after the first
-streamed token rather than after a fixed delay.
+Item 7's arm was VOID twice because the subject *finished* before the socket closed. **Resolved
+2026-10-11: measured, and both causes were harness defects.** The prompt finished inside the 2 s window
+even with a long-answer instruction (the log shows a 101-token prompt completing), so it became a
+counting task that cannot stop early; and `followup()` judged the arm with
+`computed_prefill_tokens == prompt_tokens`, a PREFILL invariant that is true by construction for a
+generation subject - so the arm could never be non-VOID. Judged now by whether the subject was still
+alive at the kill, it reads "the subject never completed (cancelled) and the follower waited 0.07 s
+against 25.02 s behind live work -> released early".
 
 ## 8. Warm TTFT — measured 2026-10-11
 

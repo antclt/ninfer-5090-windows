@@ -3111,8 +3111,18 @@ scoped evidence.
    absent", not "the accounting is proven correct".
 6. **Cancellation during a checkpoint capture** - the one window the engine's transaction guard covers.
    Bounded by a capture rather than a prefill; not measured. Serving doc and server-open-items section 8.
-7. **The generation-abandoned cancellation arm** - VOID twice, because the subject finished before the
-   socket closed. That half of upstream #111 is upstream's own verified fix, not a measurement here.
+7. **The generation-abandoned cancellation arm** - **CLOSED 2026-10-11: measured, and both reasons it
+   reported VOID were harness defects.** The probe now reports "the subject never completed (cancelled)
+   and the follower waited 0.07 s against 25.02 s behind live work -> released early", so an abandoned
+   generation releases its slot - #111's upstream fix, measured here rather than quoted. Getting there
+   took two fixes. First the *prompt*: the arm already asked for a long answer, but the model still
+   finished inside the 2 s window (the log shows a 101-token prompt completing), so the subject had to
+   become a task that cannot stop early - a counting task. Then the *guard*: `followup()` recorded
+   `subject_completed` from `computed_prefill_tokens == prompt_tokens`, which is a PREFILL invariant and
+   is true by construction for a generation subject whose short prompt prefills instantly, so this arm
+   could never be non-VOID and "VOID twice" was structural. The generation arm is now judged by whether
+   its subject was still alive when the socket closed (`timings_seconds.total >= kill_after`). The
+   prefill arm is unchanged and still reads "released early" (0.76 s against 25.02 s).
 8. **Warm TTFT** - **CLOSED 2026-10-11: measured.** On the QUASAR dflash2 lane, a second conversation
    sharing a declared system prefix (`/v1/messages`, path `checkpoint`, 8054 of 8079 prompt tokens hit)
    took a TTFT of **60 ms**, where the same shape cold (`path root`, 8080 tokens) took **627 ms** - read

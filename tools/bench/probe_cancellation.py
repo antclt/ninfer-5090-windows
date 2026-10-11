@@ -26,7 +26,9 @@ Three ways this instrument can lie, each closed by construction rather than by h
     sends a *different* slice of the corpus, and the live arm's own record is checked to show a cold
     prefill (`prefix_cache_hit_tokens` must be 0).
   * **A generation that stops on its own is not abandoned.** The first version's subject hit EOS after 50
-    tokens, 2 s before the socket closed. The generation arm now asks for a long answer and the verdict
+    tokens, 2 s before the socket closed, and raising the cap did not fix it: the second version asked for a
+    1500-token C++ answer and the model still finished early, so the arm reported VOID again. The prompt is
+    the lever, not the cap - it is now a counting task, which cannot stop inside the window. The verdict
     requires the subject to have *no* completion record at all -- that absence is the evidence that it
     was cancelled rather than finished.
   * **A clean close is not a disconnect.** The abandoned client closes with `SO_LINGER 0`, which sends
@@ -103,9 +105,12 @@ def cold_prompt(chars: int, offset: int = 0) -> str:
     return text[offset:offset + chars]
 
 
-LONG_ANSWER = ("\n\nWrite a complete, heavily commented C++ implementation of a lock-free MPMC queue "
-               "using hazard pointers. Explain each design decision as you go, and do not stop before "
-               "you have written at least 1500 tokens of code and prose.")
+# A task whose output cannot finish inside the abandon window. The first version asked for a long C++
+# implementation and the model still returned a short answer, hitting EOS 2 s in, so the arm reported
+# VOID a second time. Counting is the shape that cannot stop early, and the cap stays far above what
+# two seconds of decoding can reach.
+LONG_ANSWER = ("\n\nCount from 1 to 2000, one number per line, with no commentary and no summary. "
+               "Do not stop before 2000.")
 FOLLOWER = "Explain what a semaphore is in one sentence."
 
 
@@ -222,10 +227,17 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
             follower_record = new[-1] if new else None
             subjects = new[:-1]
             subject = subjects[0] if subjects else None
+            subject_seconds = float((subject.get("timings_seconds") or {}).get("total", 0.0)) if subject else 0.0
             arms[name] = {"follower_seconds": follower["seconds"],
                           "queue_wait": queue_wait(follower_record) if follower_record else None,
                           "subject_completed": completed(subject) if subject else False,
                           "subject_cancelled": bool(subject) and not completed(subject),
+                          # `completed()` is a PREFILL invariant. It is true by construction for a
+                          # generation subject, whose short prompt prefills instantly -- which is why
+                          # this arm reported VOID twice. A generation subject is evidence only when it
+                          # was still alive when the socket closed.
+                          "subject_seconds": subject_seconds,
+                          "subject_alive_at_kill": subject_seconds >= args.kill_after,
                           "subject_cold": (cold_hit(subject) == 0 if subject else None)}
             print(f"  [{name}] follower wall {follower['seconds']:.2f} s, "
                   f"queue_wait {arms[name]['queue_wait']}, "
@@ -281,7 +293,13 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
             arm = arms.get(name)
             if not arm:
                 continue
-            if arm["subject_completed"]:
+            # The prefill arm is judged by the prefill invariant. The generation arm cannot be: a short
+            # generation prompt prefills instantly, so `completed()` is true by construction there and
+            # the arm reported VOID twice for that reason. Its subject is evidence when it was still
+            # alive when the socket closed.
+            void = (arm["subject_seconds"] < args.kill_after if name == "generation"
+                    else arm["subject_completed"])
+            if void:
                 print(f"  {name}: VOID -- the subject finished on its own, so nothing was abandoned",
                       flush=True)
             elif live_wait is None:
