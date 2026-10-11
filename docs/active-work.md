@@ -3261,16 +3261,20 @@ scoped evidence.
 12. Each is a one-liner or a reader-load fix. **Ten are fixed and two of the review's claims are
     refuted** (`ce93c954`), and the last three are closed here:
 
-    - **The DFlash2 recall instrumentation runs unconditionally** - **CLOSED 2026-10-11: the cost is
-      below what this harness can resolve.** The gate is `io.dflash_decode->candidate_ids.data !=
-      nullptr`, which is true whenever the profile is DFlash2, and the fix would need a field in
-      `include/ninfer/types.h` - which reaches the device tree and rebuilds every CUDA object. Measured
-      before deciding: `ninfer_bench --spec dflash2 --draft-tokens 7 -n 128 -r 3` with the
-      instrumentation on read 106.84 and 109.69 tok/s on two control runs (**a 2.7 % spread**), and the
-      probe that forces `record_recall` false read 107.99 - inside that spread. The copies are two
-      synchronous D2H of ~544 bytes at window 7, batch 1, and an effect that a three-repetition bench on
-      this card cannot resolve is not worth a public-header field. Not adopted, with the measurement and
-      its resolution stated.
+    - **The DFlash2 recall instrumentation runs unconditionally** - **CLOSED 2026-10-11: measured at
+      0.19 % of decode throughput, by paired interleaving.** The gate is
+      `io.dflash_decode->candidate_ids.data != nullptr`, true whenever the profile is DFlash2, and a
+      correct gate needs a field in `include/ninfer/types.h` - which reaches the device tree and rebuilds
+      every CUDA object. The first attempt measured three runs per arm and resolved nothing: the control
+      runs differed by 2.7 %. The second used the design this repository prescribes for an effect below
+      the noise - a temporary `NINFER_NO_RECALL` environment gate so both arms ran from one binary, and
+      six *pairs* of adjacent runs so the card's drift cancels within each pair: on
+      106.88/110.05/110.11/110.09/110.02/109.99, off 110.12/110.22/110.32/110.23/110.42/110.28, paired
+      deltas 3.24 (the first pair, a cold card), then 0.17, 0.21, 0.14, 0.40, 0.29 - **median 0.21 tok/s
+      = 0.19 %**. The probe is reverted. **Not adopted**: 0.19 % is below what this repository's own
+      measurements resolve and does not buy a public-header field. The block's own comment belongs beside
+      the number - "the device is idle here, so the read sits outside the round body rather than inside
+      it" - which is why the cost is a copy and a stack array rather than a stall.
     - **Three recall metrics carried onto the serving path and never read** - **FIXED**: the pure
       deletion. `speculative_proposed_per_position`, `speculative_recall1_per_position` and
       `speculative_recall16_per_position` were written into `outcome.metrics` and read by nothing -
