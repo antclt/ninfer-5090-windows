@@ -166,13 +166,7 @@ httplib::Server::HandlerResponse handle_unrendered_http_error(const ServeOptions
         error.message = request.path.rfind("/v1/messages", 0) == 0
                             ? "requested Anthropic resource was not found"
                             : "The requested resource was not found on this server.";
-    } else if (response.status == 405) {
-        error.status  = 405;
-        error.type    = "invalid_request_error";
-        error.code    = "method_not_allowed";
-        error.message = "The requested method is not allowed for this endpoint.";
-    } else {
-        // An unrecognised status on the Anthropic surface belongs to that surface's own handler,
+    } else {        // An unrecognised status on the Anthropic surface belongs to that surface's own handler,
         // which renders the real error envelope; a generic one here would replace it. The request
         // ID has already been established, and that is the guarantee this path owes before any
         // rendering. On an OpenAI path the generic envelope is still written, because an

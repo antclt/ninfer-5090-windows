@@ -68,6 +68,14 @@ ninfer_add_test(ninfer_host_timing_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_host_timing.cpp"
   LIBRARIES ninfer_core)
 
+# The 128-bit integer the cost-model arithmetic is written against. Its two branches are selected by
+# the compiler rather than by this project -- the builtin on GCC and Clang, the fallback struct on
+# MSVC -- so the same assertions are the only thing that can show the fallback agrees with the
+# builtin, and the divisor case is the bug the header records as fixed.
+ninfer_add_test(ninfer_uint128_test
+  SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_uint128.cpp"
+  LIBRARIES ninfer_core)
+
 ninfer_add_test(ninfer_jinja_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../text/test_jinja.cpp"
   LIBRARIES ninfer_jinja ninfer::json)

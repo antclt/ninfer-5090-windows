@@ -15,7 +15,7 @@
 //
 //   header   magic "NINFKL01" | k u32 | stream_count u32 | positions u64
 //            corpus_id 32B NUL-padded | context u32 | stride u32
-//            kv_dtype 8B NUL-padded | prefill_signature 64B NUL-padded
+//            kv_dtype 32B NUL-padded | prefill_signature 64B NUL-padded
 //   stream   id_len u16 | id | domain_len u16 | domain | digest_len u16 (=32)
 //            token_digest 32B | position_count u32
 //   position k * i32 indices (descending log-probability), then k * f32 log-probabilities

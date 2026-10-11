@@ -32,6 +32,13 @@ int check(bool condition, const char* message) {
 
 int main() {
     int failures      = 0;
+    // The prefill-chunk default is 8192 in two places, and 1024 -> 8192 was a deliberate change whose
+    // figures are published at the new value. Pin the value and the agreement, so a silent edit to
+    // either one fails here instead of in a report that quotes the other.
+    failures += check(ninfer::EngineOptions{}.prefill_chunk == 8192,
+                      "the engine's prefill-chunk default changed");
+    failures += check(ninfer::cli::Options{}.prefill_chunk == ninfer::EngineOptions{}.prefill_chunk,
+                      "the CLI's prefill-chunk default drifted from the engine's");
     const auto choice = parse({"ninfer", "model.ninfer", "--prompt", "hello", "--choice", "",
                                "--choice", "a|b", "--choice", "你好"});
     failures += check(choice.choices == std::vector<std::string>{"", "a|b", "你好"},

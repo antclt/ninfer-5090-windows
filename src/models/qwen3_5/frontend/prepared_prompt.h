@@ -144,7 +144,6 @@ struct PrepareStats {
 };
 
 struct PreparedPromptData {
-    // Proposal-only sources, never part of target tokens, positions or cache identity.
     std::vector<TokenId> token_ids;
     std::vector<std::uint8_t> token_types;
     std::vector<std::int32_t> positions;

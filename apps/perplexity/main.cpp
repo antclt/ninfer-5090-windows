@@ -376,6 +376,19 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
     // stream, so two runs of the same stream can be aligned position by position; that is what
     // makes a single position's candidate gap readable, and it is why this is a dump rather than
     // another aggregate.
+    //
+    // The id is quoted, because a corpus id may contain a comma or a quote and an unquoted one shifts
+    // every column after it: the dump then reads as a valid table with the wrong values. CSV quoting
+    // doubles an embedded quote.
+    const auto csv_field = [](const std::string& value) {
+        std::string quoted = "\"";
+        for (const char ch : value) {
+            if (ch == '"') { quoted += '"'; }
+            quoted += ch;
+        }
+        quoted += '"';
+        return quoted;
+    };
     std::ofstream per_token;
     if (options.per_token_logprobs) {
         per_token.open(*options.per_token_logprobs, std::ios::trunc);
@@ -423,7 +436,7 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
             window_score.add(logprobs);
             if (per_token.is_open()) {
                 for (std::size_t i = 0; i < logprobs.size(); ++i) {
-                    per_token << stream.source.id << ',' << (window.target_begin + i) << ','
+                    per_token << csv_field(stream.source.id) << ',' << (window.target_begin + i) << ','
                               << logprobs[i] << '\n';
                 }
             }
@@ -513,7 +526,7 @@ int run(const Options& options, const std::shared_ptr<spdlog::logger>& logger,
           {"device", options.device},
           {"context_tokens", options.context},
           {"stride_tokens", options.stride},
-          {"prefill_chunk_tokens", 8192},
+          {"prefill_chunk_tokens", ninfer::EngineOptions{}.prefill_chunk},
           {"score_tile_tokens", 1024},
           {"kv_dtype", kv_name(options.kv)}}},
         {"timing",

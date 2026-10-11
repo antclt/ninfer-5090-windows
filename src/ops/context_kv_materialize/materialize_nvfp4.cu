@@ -273,7 +273,8 @@ void launch_mma(const Tensor& x, const Tensor& positions, const Tensor& counts, 
             context_kv_mma_nvfp4_kernel<Rows, Columns, BlockK, ColumnWarps>,
             cudaFuncAttributeMaxDynamicSharedMemorySize, bytes));
     context_kv_mma_nvfp4_kernel<Rows, Columns, BlockK, ColumnWarps>
-        <<<dim3(kRows / Rows, (envelope.max_count * x.ne[2] + Columns - 1) / Columns, 10),
+        <<<dim3(kRows / Rows, (envelope.max_count * x.ne[2] + Columns - 1) / Columns,
+                2 * kContextKVMaterializeLayers),
            Rows / 16 * ColumnWarps * 32, bytes, stream>>>(
             static_cast<const __nv_bfloat16*>(x.data), static_cast<const int*>(positions.data),
             static_cast<const int*>(counts.data), static_cast<const int*>(slots.data), layers,
