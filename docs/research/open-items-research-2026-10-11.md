@@ -313,7 +313,67 @@ resident, and every shipped lane runs `--max-concurrency 1`.
 | **#340** | *not* a conflict: its `SO_REUSEADDR` sits inside `#if defined(__linux__)`, for Linux TIME_WAIT, and never touches the Windows path this port changed |
 | **#341** | Linux-only, confirmed by the same patch |
 
-## What was not done, and one correction
+## 2026-10-11, second pass — the items that were still open, researched
+
+Same labels: *read in source* (file:line or URL), *measured here*, *reported*.
+
+**4. Incremental tokenization.** *Read in source*: vLLM's prefix cache is keyed by **token ids**, not
+text — "we hash each kv-cache block by the tokens in the block and the tokens in the prefix before the
+block" (`docs/design/prefix_caching.md`). So a shipped engine that re-tokenizes a prompt differently
+simply *misses* the cache; it never splices ids onto freshly-tokenized text, which is why BPE
+prefix-instability is not a hazard there and *is* one for this port's incremental encode. That makes the
+span comparison the right answer for a splice-based design, and the published design that would
+*recover* the declined splices is the incremental-merge algorithm of item 4 above (arXiv 2605.30813),
+not a relaxation of the check.
+
+**9. The precision arms.** *Read in source*, SmoothQuant's own words (README and abstract, arXiv
+2211.10438): "Based on the fact that **weights are easy to quantize while activations are not**,
+SmoothQuant smooths the activation outliers by offline **migrating the quantization difficulty from
+activations to weights**", with the outliers "approximately in the range of 100x larger than the
+non-outlier values" (the project's own slides). So the activation side is the hard side at 8 bits, which
+supports an A8→A16 arm; and the *weight* side's sensitivity order is ov-freeze's (o and v before q and
+k). Both arms this item names are therefore supported by a primary, and the port's own calibration note
+agrees with SmoothQuant about *where* the difficulty sits (derived-intermediate sites).
+
+**10. PromptLookup's consumer.** *Read in source*, the two shipped model-free proposers:
+vLLM's `NgramProposer.propose(num_speculative_tokens, sampled_token_ids, num_tokens_no_spec,
+token_ids_cpu, slot_mappings=None) -> list[list[int]]` — the consumer passes the draft budget and the
+context ids and receives a **flat token sequence per request**; llama.cpp's lookup example is driven by
+`common_speculative_get_output_limits(n_batch, n_parallel, n_draft)` over an ngram cache. Neither
+returns a tree. So consuming a lookup proposer here is a **verify-side** question — the sequence becomes
+one path of the existing tree, which is the shape SGLang's ngram roadmap describes ("trie paths for
+almost every suffix ... the target model then verifies the entire tree in one pass") and what
+SuffixDecoding builds directly. The proposer side needs no new interface; the consumer does not exist
+yet.
+
+**11. Upstream, this pass.**
+
+- **#307** `refactor(ops): single-pass online log-sum-exp in target_logprobs` — *read to its mechanism*
+  (`src/ops/kernel/target_logprobs.cuh +12/-7`): measured −36.3 % kernel time, PPL identical to ≤1e-6,
+  and by its own numbers "**this op is 0.30 % of kernel time** on its sole product route", so
+  end-to-end scoring is unchanged. It also *adds* a precondition: the online form NaN-poisons on a
+  non-finite logit, which the header must document. **Read, usable, not worth adopting**: no end-to-end
+  effect and a new contract precondition.
+- **#338** `fix(runtime): report payload bytes for state-image transfers` — the defect is real upstream
+  (`observe_transfer` accumulated `observation.units`, i.e. *image counts*, into byte counters) and it is
+  **not present in this tree**: this port's equivalent path separates them explicitly
+  (`src/runtime/engine/engine_metrics.inl:249-252` adds `transfer.work.payload_bytes` to the byte
+  counters and `transfer.units`/`transfer.page_count` to the unit counters), and the observation struct
+  documents the split (`src/runtime/contract/resources.h:86`). Nothing to adopt.
+- **#333** (`cudaErrorLaunchTimeout` on a DFLash2 prefill right after a ~98 %-replay prefill): no fix
+  exists upstream. The mechanism is a kernel outliving the watchdog, and the documented mitigation in
+  the field is chunked prefill (vLLM: "Chunked prefill allows vLLM to process large prefills in smaller
+  chunks", `docs.vllm.ai` optimization guide). This engine already has the knob — `--prefill-chunk` —
+  so the testable question is whether the reported shape reproduces at the shipped chunk size.
+- **#229 / #371** remain the same symptom family under the new cache: the mechanism #229 names is absent
+  from `src` (scoped search for `pressure_search`, `budget_exhausted`, `pressure release`), and #371 is
+  a live report against `ConsumeToActive`.
+
+**6, 7, 8, 12 need no online research.** Item 7's harness fix is a long output cap plus an abort after
+the first streamed token; item 8 is one cold-process run of `tools/bench/first_request_lane.py`; item 12
+is fifteen small fixes, of which the recall instrumentation's gate is a pointer test that is always true
+because the caller always allocates the tensor.
+
 
 - **A claim in this note's first version was wrong and is corrected in item 1**: the A16 fallback does
   not take the strided `silu_mul` kernel, it takes the vectorized dim0-split path. It was found by
