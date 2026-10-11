@@ -3,13 +3,13 @@
 
 `tools/bench/warm_lane_sweep.py` found that a growing conversation with a genuinely shared prefix
 returns `prefix_cache_hit_tokens = 0` and path `root`, while an identical repeat takes
-`private_response_replay`. That is two observations and no cause. This is the loop that decides
+a replay. That is two observations and no cause. This is the loop that decides
 between "the shared-prefix path is not taken" and "the sweep's condition does not reach it".
 
 THE CONTROL IS THE POINT. Every earlier instrument here could report zero hits whether the cache
 worked or not, because nothing ever demonstrated that the same measurement can SEE a hit. So this
 sends two requests first that are known to hit -- an exact repeat, which the engine answers from
-`private_response_replay` -- and FAILS if even those read zero. Without that arm, a green run means
+a replay -- and FAILS if even those read zero. Without that arm, a green run means
 nothing at all: it is equally consistent with a working cache and with a harness pointed at the wrong
 field.
 
@@ -72,8 +72,10 @@ SYSTEM = "You are a concise assistant that answers in one sentence."
 #     the tool contract is built before it (frontend.cpp:733-738), so tools move where the shared
 #     region ends.
 #
-# Measured without a tool: shared_reuse_candidates 0, shared_reuse_key_mismatch 0 -- no shared entry
-# reached a reuse plan at all. This arm is the recipe ADR-0009 actually recorded as served.
+# Measured without a tool, under the selection counters that existed then: shared_reuse_candidates 0,
+# shared_reuse_key_mismatch 0 -- no shared entry reached a reuse plan at all. Those two counters went
+# with the context-cache rewrite; today's report which path won rather than why one lost. This arm is
+# the recipe ADR-0009 actually recorded as served.
 TOOL = {
     "type": "function",
     "function": {
@@ -129,9 +131,9 @@ def system_then(first_user: str, tail: list[dict[str, str]], ask: str) -> list[d
     message and one tool definition, differing in their first user turn". The divergence has to come
     EARLY, because the shared prefix has to end at the system message: the protocol's automatic target
     is the end of the last message, so a prefix that runs to the end of the prompt is published at the
-    whole-prompt frontier, where `private_response_replay` wins the valuation instead
+    whole-prompt frontier, where a replay wins the valuation instead
     (profiles.py:388-392, and ADR-0009's third arm: identical prompts are offered the shared
-    candidate and `private_response_replay` takes it).
+    candidate and a replay takes it).
 
     My first version differed only in the FINAL ask, so its shared region ran to the end of the
     prompt, and it got 0 hit tokens on both conversations -- the exact third arm, not the second.
@@ -275,7 +277,7 @@ def main() -> int:
             print(f"  FAIL: lane never became ready; see {server_log}")
             return 1
         base = conversation(MESSAGES)
-        # 1. the control: identical body twice. Known to take private_response_replay.
+        # 1. the control: identical body twice. Known to take a replay.
         for _ in range(2):
             post(arguments.port, body_for(base, 1), arguments.timeout)
         # 2. the question: one more turn, sharing every preceding turn exactly, unmarked.
@@ -301,7 +303,7 @@ def main() -> int:
 
         # 6. ADR-0009's shape: a system turn carrying the declaration, then TWO DIFFERENT
         # conversations that share everything up to the system message and diverge after it. This is
-        # the only shape in which `private_response_replay` cannot win the valuation, because the
+        # the only shape in which a replay cannot win the valuation, because the
         # two prompts are not the same prompt.
         #
         # The system block is deliberately LARGE. At the original 79 tokens the shared prefix was
@@ -464,7 +466,7 @@ def main() -> int:
         print("  The OpenAI arms are no longer explained by the marker location: the native renderer")
         print("  has resolved MessagePartBoundary since 2026-10-03 (ADR-0012's correction), and the")
         print("  differential oracle pins that against the Jinja path. Read an OpenAI arm's PATH, not")
-        print("  just its hit count: reuse through private_response_replay is ADR-0009's second")
+        print("  just its hit count: reuse through a replay is ADR-0009's second")
         print("  mechanism -- the shared candidate is available and loses the valuation -- and it is")
         print("  not a failure of the marker to resolve.")
     else:
@@ -476,7 +478,7 @@ def main() -> int:
     warm_source = "openai"
     warm_hit, warm_path = rows[7][2], rows[7][3]
     # The reuse paths are `root` and `checkpoint` since the context-cache rewrite retired
-    # `shared_stable_prefix` and `private_response_replay` as path names; a replay survives as a state
+    # a checkpoint reuse and a replay as path names; a replay survives as a state
     # restore, so what separates a cached-prefix decode from one is that this arm computed a prefill of
     # its own tail rather than replaying one.
     warm_computed = done[8]["result"]["computed_prefill_tokens"]
@@ -498,14 +500,11 @@ def main() -> int:
         if not fresh:
             print("  NOT ATTRIBUTED: no throughput record covers the final request, so the counters")
             print("  cannot say which gate refused. Raise --stats-interval-ms.")
-        elif selections.get("shared_reuse_key_mismatch"):
-            print("  ATTRIBUTED: a shared index entry was skipped before planning -- no shortlist key")
-            print("  matched at its frontier (resource_manager.h:329). The incoming prompt does not")
-            print("  hash to the resident prefix there, so the pair above never became a candidate.")
-        elif selections.get("shared_reuse_declined"):
-            print("  ATTRIBUTED: a shared entry reached the plan and the Program refused it.")
-        elif selections.get("shared_reuse_candidates"):
-            print("  ATTRIBUTED: a shared entry reached the plan unrefused, and another path won.")
+        # ADR-0009's refusal-detail counters -- a candidate that reached the plan, one the Program
+        # refused, one skipped at the shortlist key -- went with the context-cache rewrite, so a refusal
+        # is no longer attributable from the counters: they say which path won, not why another lost.
+        elif selections.get("checkpoint_selections"):
+            print("  ATTRIBUTED: a checkpoint selection won in this run, so a reuse was served.")
         else:
             print("  ATTRIBUTED: no shared entry reached a reuse plan at all in this run.")
         print()
@@ -524,7 +523,7 @@ def main() -> int:
     print("      arm: a replay dominates it, so a reuse number there says nothing about whether a")
     print("      shared candidate was published. Only a `checkpoint` path with a computed tail does.")
     print("    - the two requests must be DIFFERENT conversations. Seeding with a shorter version of")
-    print("      the same one takes private_response_replay, which never decodes.")
+    print("      the same one takes a replay, which never decodes.")
     return 0
 
 

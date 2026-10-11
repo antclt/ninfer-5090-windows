@@ -12,12 +12,12 @@ Four traps, each of which makes the comparison say nothing while looking fine:
     content *part* (`check_shared_prefix_reuse.py:147-157`), so an unmarked OpenAI arm correctly reads
     `path: root` even when it reuses. Every request here is built from parts and the breakpoint is
     placed on the *last shared message*, which is where the shared prefix actually ends.
-  * **An exact repeat never decodes.** The second identical request takes `private_response_replay` and
+  * **An exact repeat never decodes.** The second identical request takes a replay and
     returns a stored response, so comparing it with the first compares a recording with a generation.
     The warm arm therefore shares its prefix with a *different* continuation.
   * **The cold arm has to be cold.** A fresh lane serves the first request with nothing to reuse, and
     the request's own `path` field is checked rather than assumed.
-  * **The warm arm has to take the shared path.** Only a `shared_stable_prefix` path settles this; if
+  * **The warm arm has to take the shared path.** Only a a checkpoint reuse path settles this; if
     the warm request reads `root`, the run is void and says so instead of reporting identity.
 
 Both arms are greedy, so identical inputs must produce identical tokens if the path is not part of the
@@ -160,7 +160,7 @@ def last_record(mark: int) -> dict:
 
 
 def shared_counter() -> int | None:
-    """The cache's `shared_stable_prefix` selection counter, from the log's latest throughput record.
+    """The cache's a checkpoint reuse selection counter, from the log's latest throughput record.
 
     Corroboration only. The counters are written on an interval, so a short request can finish between
     two records -- the discriminator that works for every request is the hit count below.
@@ -168,8 +168,8 @@ def shared_counter() -> int | None:
     value = None
     for record in phases(request_log):
         selections = (record.get("context_cache") or {}).get("selections") or {}
-        if "shared_stable_prefix" in selections:
-            value = selections["shared_stable_prefix"]
+        if "a checkpoint reuse" in selections:
+            value = selections["a checkpoint reuse"]
     return value
 
 
@@ -201,7 +201,7 @@ warm_record = last_record(warm_mark)
 stop_lane(process)
 print(f"  seed: prefix_cache_hit_tokens {hit_tokens(seed_record)}", flush=True)
 print(f"  warm: http {warm['status']}, {len(warm['text'])} characters of output; "
-      f"prefix_cache_hit_tokens {hit_tokens(warm_record)}, shared_stable_prefix counter "
+      f"prefix_cache_hit_tokens {hit_tokens(warm_record)}, a checkpoint reuse counter "
       f"{shared_counter()}", flush=True)
 
 identical = cold["text"] == warm["text"] and cold["text"] != ""
@@ -230,7 +230,7 @@ summary = {"lane": profile["file"], "artifact": args.artifact, "prefix_chars": l
                     "usage": cold["usage"]},
            "seed": {"hit_tokens": hit_tokens(seed_record), "usage": seed["usage"]},
            "warm": {"hit_tokens": hit_tokens(warm_record), "text": warm["text"],
-                    "usage": warm["usage"], "shared_stable_prefix": shared_counter()},
+                    "usage": warm["usage"], "a checkpoint reuse": shared_counter()},
            "identical": identical, "verdict": verdict}
 result_path = LOG_DIR / f"result-{args.tag}.json"
 result_path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8", newline="\n")

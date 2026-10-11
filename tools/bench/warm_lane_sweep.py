@@ -55,7 +55,7 @@ def conversation(messages: int, chars: int) -> list[dict[str, str]]:
     prefix with one new turn at the end -- the shape a chat client produces, and the only shape in
     which "warm" means a cached prefix plus a real decode.
 
-    Sending the same body twice does NOT produce that. It takes `private_response_replay`, which
+    Sending the same body twice does NOT produce that. It takes a replay, which
     returns a stored response and never decodes, so its TTFT measures replay rather than the
     prefill-plus-decode path ADR-0012 projected for. The first version of this sweep did exactly
     that and every warm row came back on the replay path.
@@ -125,7 +125,7 @@ def main() -> int:
             # reuses a real prefix and has to decode its new turn. Reported, not seeded.
             #
             # `max(1, messages - 1)` clamped to 1, which at messages == 1 sent the SAME body twice
-            # and produced a private_response_replay row that had nothing to do with prefix reuse.
+            # and produced a a replay row that had nothing to do with prefix reuse.
             # Below 2 there is no shorter conversation, so the seed is skipped rather than faked and
             # the request is sent once; such a row is then reported as unseeded instead of warm.
             seed_count = messages - 1
@@ -181,9 +181,9 @@ def main() -> int:
         # A replay path returns a stored response and never decodes, so its TTFT is not a
         # prefill-plus-decode measurement. Such a row is reported and then excluded, because a
         # plausible number taken on the wrong path is the failure this whole script exists to avoid.
-        valid = hit > 0 and path != "private_response_replay"
+        valid = hit > 0 and path != "a replay"
         print(
-            f"  {'':>5} {('yes' if valid else ('REPLAY' if path == 'private_response_replay' else 'NO')):>6}"
+            f"  {'':>5} {('yes' if valid else ('REPLAY' if path == 'a replay' else 'NO')):>6}"
             f" {result['prompt_tokens']:11d} {hit:6d} {timing['prepare'] * 1000:8.2f}"
             f" {timing['ttft'] * 1000:8.2f}  {path}"
         )
@@ -197,7 +197,7 @@ def main() -> int:
 
     print()
     if replays:
-        print(f"  EXCLUDED {len(replays)} row(s) on index {replays}: private_response_replay returns a")
+        print(f"  EXCLUDED {len(replays)} row(s) on index {replays}: a replay returns a")
         print("  stored response without decoding, so their TTFT is replay latency, not TTFT.")
     if not warms:
         print("  No request combined a prefix cache hit with a real decode, so there is no warm")

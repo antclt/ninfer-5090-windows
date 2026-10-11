@@ -3,7 +3,7 @@
 
 RESULT 2026-10-02: the transient does not reproduce. At temperature 0.7 with the seed pinned, eight
 identical requests in one lane were byte-identical in both arms, across three separate process
-launches, while the cache engaged on requests 2..8 (private_response_replay, 39 hit tokens). The
+launches, while the cache engaged on requests 2..8 (a replay, 39 hit tokens). The
 261.7 tok/s figure came from comparing two ninfer_bench RUNS at --warmup 0 against --warmup 1, which
 is a configuration comparison and not a first-request effect; ADR-0002 already covers it. So this
 harness is retained as the instrument that settles it, not because the answer was surprising.

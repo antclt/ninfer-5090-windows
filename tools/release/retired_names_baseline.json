@@ -1,0 +1,252 @@
+{
+  "note": "Tokens the tree does not define, in files that use them for a reason other than a criterion. Filed by review; a new occurrence fails check_retired_names.py.",
+  "paths": {
+    "AGENTS.md": {
+      "candidate_demand_mask": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn",
+      "exact_resident_keys": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn",
+      "ninfer_admission_policy_test": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn",
+      "ninfer_materialization_budget_test": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn",
+      "private_response_replay": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn",
+      "shared_stable_prefix": "named as history or as another project's symbol: the retired vocabulary is called retired in the same sentence, the deleted tests and the upstream issue's identifiers are cited from the tracker, and the artifact name is the superseded build this file records as withdrawn"
+    },
+    "tools/bench/check_shared_prefix_reuse.py": {
+      "shared_reuse_candidates": "a measurement recorded under the selection counters that existed then, and marked as such in the comment",
+      "shared_reuse_key_mismatch": "a measurement recorded under the selection counters that existed then, and marked as such in the comment"
+    },
+    "tools/bench/make_divisor_variants.py": {
+      "nvfp4_act_headroom": "the variant tag this tool writes into artifact filenames"
+    },
+    "tools/bench/repo_fix_eval.py": {
+      "bf16_a16_test": "the tool's own step labels and the upstream helper it names",
+      "linear_bf16_a16": "the tool's own step labels and the upstream helper it names",
+      "repo_fix_eval_step": "the tool's own step labels and the upstream helper it names"
+    },
+    "tools/bench/report_serve_phases.py": {
+      "shared_reuse_candidates": "the tool's own watched list; the counters it names were retired with the subsystem, and the gate keeps them visible rather than silently correct",
+      "shared_reuse_declined": "the tool's own watched list; the counters it names were retired with the subsystem, and the gate keeps them visible rather than silently correct",
+      "shared_reuse_key_mismatch": "the tool's own watched list; the counters it names were retired with the subsystem, and the gate keeps them visible rather than silently correct",
+      "shared_stable_prefix": "the tool's own watched list; the counters it names were retired with the subsystem, and the gate keeps them visible rather than silently correct"
+    },
+    "tools/bench/run_ninfer_bench_matrix.py": {
+      "context_decode_k": "the tool's own matrix cell and series labels",
+      "ctx_p128_g8_k3_graph": "the tool's own matrix cell and series labels",
+      "mtp_sweep_k": "the tool's own matrix cell and series labels",
+      "ninfer_bench_matrix_run": "the tool's own matrix cell and series labels",
+      "prefill_lengths_k": "the tool's own matrix cell and series labels",
+      "prefill_p128_k0": "the tool's own matrix cell and series labels",
+      "prefill_p8192_chunk": "the tool's own matrix cell and series labels",
+      "tg8_k3_graph": "the tool's own matrix cell and series labels",
+      "tg_lengths_k": "the tool's own matrix cell and series labels"
+    },
+    "tools/bench/run_serve_concurrency.py": {
+      "concurrent_http_send": "the tool's own result keys",
+      "ninfer_serve_concurrency_bench_point": "the tool's own result keys",
+      "ninfer_serve_concurrency_bench_summary": "the tool's own result keys",
+      "ordered_http_send": "the tool's own result keys"
+    },
+    "tools/bench/run_serve_corpus.py": {
+      "completed_before_block": "the tool's own result keys and CSV column names",
+      "completion_tokens_mean": "the tool's own result keys and CSV column names",
+      "completion_tokens_stddev": "the tool's own result keys and CSV column names",
+      "decode_device_wait_us_per_round_mean": "the tool's own result keys and CSV column names",
+      "decode_device_wait_us_per_round_stddev": "the tool's own result keys and CSV column names",
+      "decode_host_us_per_round_mean": "the tool's own result keys and CSV column names",
+      "decode_host_us_per_round_stddev": "the tool's own result keys and CSV column names",
+      "decode_tok_s_mean": "the tool's own result keys and CSV column names",
+      "decode_tok_s_stddev": "the tool's own result keys and CSV column names",
+      "engine_host_exposed_ms_mean": "the tool's own result keys and CSV column names",
+      "engine_host_exposed_ms_stddev": "the tool's own result keys and CSV column names",
+      "ninfer_serve_corpus_result": "the tool's own result keys and CSV column names",
+      "prompt_tokens_mean": "the tool's own result keys and CSV column names",
+      "prompt_tokens_stddev": "the tool's own result keys and CSV column names",
+      "queue_wait_ms_mean": "the tool's own result keys and CSV column names",
+      "queue_wait_ms_stddev": "the tool's own result keys and CSV column names",
+      "server_ttft_ms_mean": "the tool's own result keys and CSV column names",
+      "server_ttft_ms_stddev": "the tool's own result keys and CSV column names",
+      "speculative_acceptance_mean": "the tool's own result keys and CSV column names",
+      "speculative_acceptance_stddev": "the tool's own result keys and CSV column names",
+      "speculative_tokens_per_round_mean": "the tool's own result keys and CSV column names",
+      "speculative_tokens_per_round_stddev": "the tool's own result keys and CSV column names"
+    },
+    "tools/bench/ttft/build_fixtures.py": {
+      "system_a_frontier": "the tool's own case and comparison labels, which it writes and reads back",
+      "system_a_prompt": "the tool's own case and comparison labels, which it writes and reads back",
+      "system_b_frontier": "the tool's own case and comparison labels, which it writes and reads back",
+      "system_b_prompt": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/cases.py": {
+      "automatic_shared_capture": "the tool's own case and comparison labels, which it writes and reads back",
+      "decode_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "invalid_profile_provenance": "the tool's own case and comparison labels, which it writes and reads back",
+      "nominal_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "pressure_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "short_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "text_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "vision_input_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "vision_output_limit": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/corpus.py": {
+      "expected_kv_tokens": "the tool's own case and comparison labels, which it writes and reads back",
+      "record_or_path": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/diagnostics.py": {
+      "aggregate_response_is_terminal": "the tool's own case and comparison labels, which it writes and reads back",
+      "ambiguous_wire_identity": "the tool's own case and comparison labels, which it writes and reads back",
+      "conflicting_wire_identity": "the tool's own case and comparison labels, which it writes and reads back",
+      "duplicate_request_done": "the tool's own case and comparison labels, which it writes and reads back",
+      "first_output_timing_unavailable": "the tool's own case and comparison labels, which it writes and reads back",
+      "inconsistent_progress_counters": "the tool's own case and comparison labels, which it writes and reads back",
+      "invalid_replay_interval": "the tool's own case and comparison labels, which it writes and reads back",
+      "invalid_request_log": "the tool's own case and comparison labels, which it writes and reads back",
+      "isolated_server_runtime_intervals": "the tool's own case and comparison labels, which it writes and reads back",
+      "no_client_first_output": "the tool's own case and comparison labels, which it writes and reads back",
+      "replay_interval_count_mismatch": "the tool's own case and comparison labels, which it writes and reads back",
+      "replay_interval_incomplete": "the tool's own case and comparison labels, which it writes and reads back",
+      "request_diagnostics_unavailable": "the tool's own case and comparison labels, which it writes and reads back",
+      "request_done_missing": "the tool's own case and comparison labels, which it writes and reads back",
+      "request_log_missing": "the tool's own case and comparison labels, which it writes and reads back",
+      "runtime_intervals_missing": "the tool's own case and comparison labels, which it writes and reads back",
+      "streaming_first_output": "the tool's own case and comparison labels, which it writes and reads back",
+      "terminal_diagnostics_unavailable": "the tool's own case and comparison labels, which it writes and reads back",
+      "wire_identity_not_found": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/execution.py": {
+      "barrier_spread_ns": "the tool's own case and comparison labels, which it writes and reads back",
+      "failed_before_first": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/render.py": {
+      "host_total_ms": "the tool's own case and comparison labels, which it writes and reads back",
+      "paired_within_run": "the tool's own case and comparison labels, which it writes and reads back",
+      "symmetric_order_stat": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/bench/ttft/report.py": {
+      "anonymous_continuation_vs_source": "the tool's own case and comparison labels, which it writes and reads back",
+      "decode_short_vs_cold": "the tool's own case and comparison labels, which it writes and reads back",
+      "independent_group_medians": "the tool's own case and comparison labels, which it writes and reads back",
+      "many_image_thread1_vs_default": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_prefix_append_vs_source": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_prefix_changed_vs_source": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_prefix_continuation_vs_source": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_prepare_short_vs_cold": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_thrash_final_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "media_warm_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "mixed_cold_long_concurrent_vs_ordered": "the tool's own case and comparison labels, which it writes and reads back",
+      "mixed_continuation_concurrent_vs_ordered": "the tool's own case and comparison labels, which it writes and reads back",
+      "mixed_image_concurrent_vs_ordered": "the tool's own case and comparison labels, which it writes and reads back",
+      "mixed_short_concurrent_vs_ordered": "the tool's own case and comparison labels, which it writes and reads back",
+      "ninfer_serve_ttft_summary": "the tool's own case and comparison labels, which it writes and reads back",
+      "paired_within_run": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_1024_short_vs_cold": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_128_short_vs_cold": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_128_vs_1024": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_4096_short_vs_cold": "the tool's own case and comparison labels, which it writes and reads back",
+      "prefill_4096_vs_1024": "the tool's own case and comparison labels, which it writes and reads back",
+      "request_log_not_loaded": "the tool's own case and comparison labels, which it writes and reads back",
+      "resume_both_host_vs_device": "the tool's own case and comparison labels, which it writes and reads back",
+      "resume_evicted_vs_device": "the tool's own case and comparison labels, which it writes and reads back",
+      "resume_kv_host_vs_device": "the tool's own case and comparison labels, which it writes and reads back",
+      "resume_state_host_vs_device": "the tool's own case and comparison labels, which it writes and reads back",
+      "roles_at_rank": "the tool's own case and comparison labels, which it writes and reads back",
+      "session_64k_a2_vs_a1": "the tool's own case and comparison labels, which it writes and reads back",
+      "session_64k_b2_vs_b1": "the tool's own case and comparison labels, which it writes and reads back",
+      "session_continuation_vs_source": "the tool's own case and comparison labels, which it writes and reads back",
+      "session_hot_vs_cache_off": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_openai_explicit_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_openai_implicit_reuse_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_prefix_competition_final_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_system_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_tool_competition_reuse_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_tools_changed_vs_stable": "the tool's own case and comparison labels, which it writes and reads back",
+      "shared_tools_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "state_hot_a": "the tool's own case and comparison labels, which it writes and reads back",
+      "unmarked_repeat_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "unmarked_reuse_vs_first": "the tool's own case and comparison labels, which it writes and reads back",
+      "unmarked_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back"
+    },
+    "tools/convert/__main__.py": {
+      "ninfer_user_recipe": "the tool's own report key"
+    },
+    "tools/convert/calibration.py": {
+      "gate_up_projection": "an artifact name in prose",
+      "hf_device_map": "an artifact name in prose",
+      "qwen3_8_27b_nvfp4full": "an artifact name in prose",
+      "qwen3_8_27b_nvfp4full_noex": "an artifact name in prose"
+    },
+    "tools/convert/official_recipes.py": {
+      "in_proj_a": "a source-checkpoint module name",
+      "in_proj_b": "a source-checkpoint module name",
+      "qwen3_8_27b_nvfp4nvidia": "a source-checkpoint module name"
+    },
+    "tools/convert/qwen3_5.py": {
+      "deepstack_visual_indexes": "a Hugging Face config key of the source checkpoint",
+      "final_logit_softcapping": "a Hugging Face config key of the source checkpoint",
+      "full_attention_interval": "a Hugging Face config key of the source checkpoint",
+      "gelu_pytorch_tanh": "a Hugging Face config key of the source checkpoint",
+      "in_proj_a": "a Hugging Face config key of the source checkpoint",
+      "in_proj_b": "a Hugging Face config key of the source checkpoint",
+      "input_embedding_scale": "a Hugging Face config key of the source checkpoint",
+      "mamba_ssm_dtype": "a Hugging Face config key of the source checkpoint",
+      "mtp_use_dedicated_embeddings": "a Hugging Face config key of the source checkpoint",
+      "num_target_layers": "a Hugging Face config key of the source checkpoint",
+      "out_hidden_size": "a Hugging Face config key of the source checkpoint",
+      "post_attention_layernorm": "a Hugging Face config key of the source checkpoint",
+      "pre_fc_norm_embedding": "a Hugging Face config key of the source checkpoint",
+      "pre_fc_norm_hidden": "a Hugging Face config key of the source checkpoint",
+      "sample_from_anchor": "a Hugging Face config key of the source checkpoint",
+      "shared_expert_gate": "a Hugging Face config key of the source checkpoint"
+    },
+    "tools/convert/verify_artifact.py": {
+      "qwen3_8_27b_nvfp4nvidia": "an artifact name in prose"
+    },
+    "tools/release/bench_opencode_settings.py": {
+      "debug_first_index": "the tool's own task labels",
+      "fix_off_by_one": "the tool's own task labels"
+    },
+    "tools/release/check_profile_consistency.py": {
+      "download_model_under_test": "the launcher and matrix names this gate checks for",
+      "hf_hub_download": "the launcher and matrix names this gate checks for",
+      "matrix_under_test": "the launcher and matrix names this gate checks for",
+      "start_ninfer_v3_mtp5": "the launcher and matrix names this gate checks for",
+      "start_quasar_fp8_vision": "the launcher and matrix names this gate checks for"
+    },
+    "tools/release/check_retired_names.py": {
+      "shared_stable_prefix": "the gate's own docstring examples, which have to name the names it exists to catch"
+    },
+    "tools/release/per_domain_kl.py": {
+      "mean_kl_nats": "the tool's own report key"
+    },
+    "tools/release/probe_reasoning_effort.py": {
+      "effort_probe_artifact": "the tool's own artifact tag"
+    },
+    "tools/release/profiles.py": {
+      "can_release_continuation": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "dflash2_real_test": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "private_owners_evicted": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "private_response_replay": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "search_budget_exhaustions": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "shared_owners_evicted": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "shared_reuse_candidates": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "shared_reuse_declined": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "shared_reuse_key_mismatch": "the tool's own counter and lane names, including counters retired with the subsystem",
+      "shared_stable_prefix": "the tool's own counter and lane names, including counters retired with the subsystem"
+    },
+    "tools/release/v3_profile_matrix.py": {
+      "drafts_by_spec": "the tool's own series and artifact names",
+      "vram_peak_mib": "the tool's own series and artifact names"
+    },
+    "tools/release/verify_launchers_v3.py": {
+      "model_id_ok": "the tool's own check labels"
+    },
+    "tools/smoke/serve_contract.py": {
+      "anthropic_input_tokens": "the tool's own contract keys, written and read back by this tool",
+      "continuation_prompt_tokens": "the tool's own contract keys, written and read back by this tool",
+      "ninfer_serve_contract_v2": "the tool's own contract keys, written and read back by this tool",
+      "response_output_tokens": "the tool's own contract keys, written and read back by this tool",
+      "response_prompt_tokens": "the tool's own contract keys, written and read back by this tool",
+      "response_stream_terminal": "the tool's own contract keys, written and read back by this tool",
+      "streamed_input_tokens": "the tool's own contract keys, written and read back by this tool",
+      "streamed_output_tokens": "the tool's own contract keys, written and read back by this tool"
+    }
+  }
+}

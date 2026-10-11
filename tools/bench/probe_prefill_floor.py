@@ -3,7 +3,7 @@
 The open item (docs/research/lane-coverage-2026-10-08.md) recorded a ~45 ms floor on near-zero-work
 requests and ruled out KV page allocation and per-conversation restores. This is the instrument that
 reproduces it and separates it from its neighbours: it starts a lane with its request log on, fires
-requests whose prompts differ (an identical repeat takes `private_response_replay` and never decodes), and
+requests whose prompts differ (an identical repeat takes a replay and never decodes), and
 prints the phase fields by name from the log's own schema.
 
 Measured 2026-10-10 on the NVIDIA lane as it ships (fp8, DFlash2 d9), one variable per run:
