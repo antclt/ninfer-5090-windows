@@ -20,6 +20,10 @@ Design decisions, each one a lesson already paid for:
   * **One port per arm, and the serve is stopped, never a profiler killed.** A profiler terminated
     instead of its subject writes no report and leaves the subject alive holding the port, which is how
     a whole profile came back void.
+  * **The lane's flags are composed, never restated.** `--lane` selects a launcher profile and
+    `profiles.launcher_args` renders its flags, so a record describes a configuration that ships. A
+    hand-written list here once drifted to a depth and a KV dtype that no lane runs, and it omitted the
+    lane's environment entirely.
   * **Acceptance is parsed tolerantly** of thousands separators: `accepted 351/1,112 (31.6%)` silently
     failing a `\\d+` pattern reads exactly like a missing line.
 
@@ -46,10 +50,22 @@ REPO = Path(__file__).resolve().parents[2]
 SERVE = REPO / "build" / "apps" / ("ninfer-serve.exe" if sys.platform == "win32" else "ninfer-serve")
 DEFAULT_TEMPLATE = REPO / "tools" / "chat_templates" / "qwen3_8.jinja"
 
-LANE_FLAGS = ["--vision", "--spec", "dflash2", "--draft-tokens", "7", "--lm-head-draft",
-              "--max-context", "262144", "--device-state-slots", "1", "--kv-capacity", "auto",
-              "--kv-dtype", "fp8", "--prefill-chunk", "8192", "--max-concurrency", "1",
-              "--host-context-mib", "8192", "--preserve-thinking", "--default-thinking-budget", "4096"]
+sys.path.insert(0, str(REPO / "tools" / "release"))
+from profiles import PROFILES, launcher_args, launcher_environment  # noqa: E402
+
+
+def set_flag(flags: list[str], flag: str, value: str | None) -> None:
+    """Substitute a lane flag's value in place, or append it when the lane does not pass it.
+
+    Substituting rather than appending is not cosmetic: a duplicate flag is refused, and appending
+    would silently leave the lane's own value in front of the probe's.
+    """
+    if value is None:
+        return
+    if flag in flags:
+        flags[flags.index(flag) + 1] = value
+    else:
+        flags.extend([flag, value])
 
 
 def default_text() -> tuple[Path, str]:
@@ -112,30 +128,44 @@ def post_json(port: int, body: dict, timeout: float) -> dict:
 
 
 def run_arm(artifact: Path, port: int, blocks: list[str], args: argparse.Namespace,
-            run_dir: Path) -> dict:
+            run_dir: Path, profile: dict) -> dict:
     run_dir.mkdir(parents=True, exist_ok=True)
     log_path = run_dir / "serve.log"
     result_path = run_dir / "result.json"
-    if result_path.is_file():
-        return json.loads(result_path.read_text(encoding="utf-8"))
-    lane_flags = list(LANE_FLAGS)
-    if args.draft_tokens != 7:
-        # The lane's own depth is 7. A depth A/B is the same artifact under two flag sets, so a flag is
-        # substituted rather than appended and the shipped value stays the default.
-        lane_flags[lane_flags.index("--draft-tokens") + 1] = str(args.draft_tokens)
+    lane_flags = launcher_args(profile, port=port)
+    if args.draft_tokens is not None:
+        # A depth A/B is the same artifact under two flag sets, so the lane's own value is substituted
+        # rather than left in front of the probe's.
+        set_flag(lane_flags, "--draft-tokens", str(args.draft_tokens))
     if args.kv_capacity is not None:
-        # Same reasoning: the lane ships --kv-capacity auto, and a probe that asks whether a per-request
-        # cost tracks capacity needs to shrink it without changing anything else. A capacity below
-        # --max-context is refused, so shrinking the reservation means shrinking the context too.
-        lane_flags[lane_flags.index("--kv-capacity") + 1] = str(args.kv_capacity)
+        # Same reasoning: a probe that asks whether a per-request cost tracks capacity needs to shrink
+        # it without changing anything else. A capacity below --max-context is refused, so shrinking
+        # the reservation means shrinking the context too.
+        set_flag(lane_flags, "--kv-capacity", str(args.kv_capacity))
     if args.max_context is not None:
-        lane_flags[lane_flags.index("--max-context") + 1] = str(args.max_context)
-    flags = [*lane_flags, "--chat-template", str(args.template)]
+        set_flag(lane_flags, "--max-context", str(args.max_context))
+    if args.no_lm_head_draft:
+        # A boolean lane flag is removed rather than substituted. The bench corpus cannot decide this
+        # one from either end of its range (it saturates acceptance), so the comparison has to run on
+        # real text, and the lane's own proposal-head setting has to be able to change without
+        # changing anything else.
+        if "--lm-head-draft" in lane_flags:
+            lane_flags.remove("--lm-head-draft")
+    set_flag(lane_flags, "--chat-template", str(args.template))
+    flags = lane_flags
+    if result_path.is_file():
+        cached = json.loads(result_path.read_text(encoding="utf-8"))
+        # The flags are the experiment, so a cached arm answers only for the flags it ran under: a
+        # directory reused across configurations would otherwise report the previous one's result.
+        if cached.get("flags") == flags:
+            return cached
+        print(f"        cached {result_path.parent.name} ignored: its flags differ", flush=True)
     model_id = None
     with log_path.open("w", encoding="utf-8", newline="\n") as handle:
-        process = subprocess.Popen([str(SERVE), str(artifact), *flags, "--host", "127.0.0.1",
-                                    "--port", str(port)], cwd=str(REPO), stdout=handle,
-                                   stderr=subprocess.STDOUT)
+        # The lane's own environment, exactly as its launcher sets it: NINFER_CUDA_SYNC is part of the
+        # configuration being measured, and a harness that omits it measures a lane nobody ships.
+        process = subprocess.Popen([str(SERVE), str(artifact), *flags], cwd=str(REPO), stdout=handle,
+                                   stderr=subprocess.STDOUT, env=launcher_environment(profile))
         try:
             if not wait_for_port(port, time.time() + args.startup_timeout):
                 raise SystemExit(f"{artifact.name}: serve never listened on {port}")
@@ -159,6 +189,7 @@ def run_arm(artifact: Path, port: int, blocks: list[str], args: argparse.Namespa
     records = [{"accepted": int(a.replace(",", "")), "drafted": int(d.replace(",", "")),
                 "percent": float(p)} for a, d, p in ACCEPT.findall(body)]
     result = {"artifact": artifact.name,
+              "flags": flags,
               "model_id": model_id,
               "requests": len(records),
               "accepted": sum(record["accepted"] for record in records),
@@ -174,19 +205,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--artifact", type=Path, action="append", required=True,
                         help="repeatable: one arm per artifact, labelled by its file stem")
+    parser.add_argument("--lane", default="nvidia_v3_dflash2_vision",
+                        help="substring of the launcher profile file to run; the lane's own flags are "
+                             "composed through profiles.launcher_args, so a record describes a "
+                             "configuration that ships")
     parser.add_argument("--label", action="append", default=[],
                         help="repeatable, positionally matched to --artifact, to name the arms")
     parser.add_argument("--text", type=Path, help="real-text source; defaults to the perplexity corpus")
     parser.add_argument("--prompts", type=int, default=3, help="fixed prompts to pool over")
     parser.add_argument("--prompt-chars", type=int, default=12000)
     parser.add_argument("--max-tokens", type=int, default=512)
-    parser.add_argument("--draft-tokens", type=int, default=7,
-                        help="the draft depth to run the lane at; 7 is the shipped DFlash2 lane's")
+    parser.add_argument("--draft-tokens", type=int,
+                        help="override the lane's own draft depth, for a depth A/B")
     parser.add_argument("--kv-capacity",
                         help="override the lane's --kv-capacity auto, so a probe can ask whether a "
                              "per-request cost tracks the capacity the lane reserves")
     parser.add_argument("--max-context", type=int,
                         help="override the lane's --max-context, which a sub-context capacity requires")
+    parser.add_argument("--no-lm-head-draft", action="store_true",
+                        help="drop the lane's --lm-head-draft, so the optimized proposal head can be "
+                             "compared with the full head on real text; ADR-0005 asks for a per-profile "
+                             "record and the bench corpus cannot supply it")
     parser.add_argument("--temperature", type=float, default=0.0,
                         help="0 makes each arm's generation identical, which is what makes arms comparable")
     parser.add_argument("--rounds", type=int, default=2)
@@ -196,6 +235,9 @@ def main() -> int:
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
+    profile = next((candidate for candidate in PROFILES if args.lane in candidate["file"]), None)
+    if profile is None:
+        raise SystemExit(f"no launcher profile matches {args.lane!r}")
 
     if args.text:
         text = args.text.read_text(encoding="utf-8", errors="replace")
@@ -208,6 +250,7 @@ def main() -> int:
     labels = [args.label[index] if index < len(args.label) else artifact.stem
               for index, artifact in enumerate(args.artifact)]
     cjk = sum(1 for char in text if "\u4e00" <= char <= "\u9fff") / max(1, len(text))
+    print(f"    lane: {profile['file']}")
     print(f"    text: {source} ({len(text):,} chars, cjk {cjk:.2%})")
     print(f"    {len(args.artifact)} arm(s) x {args.rounds} round(s) x {args.prompts} prompt(s), "
           f"temperature {args.temperature}, max_tokens {args.max_tokens}")
@@ -216,8 +259,8 @@ def main() -> int:
     for round_index in range(1, args.rounds + 1):
         for index, (label, artifact) in enumerate(zip(labels, args.artifact)):
             print(f"\n=== {label} round {round_index}: {artifact.name}", flush=True)
-            results[label].append(run_arm(artifact, args.port_base + index,
-                                          blocks, args, args.output_dir / f"{label}-r{round_index}"))
+            results[label].append(run_arm(artifact, args.port_base + index, blocks, args,
+                                          args.output_dir / f"{label}-r{round_index}", profile))
 
     print()
     print(f"    {'arm':<22} {'round':>5} {'accepted':>9} {'drafted':>8} {'accept %':>9} {'decode':>8}")
