@@ -84,6 +84,7 @@ gate "stream-default ratchet" "$PY" tools/release/check_production_stream_defaul
 gate "rule count" "$PY" tools/release/check_rule_count.py
 gate "dead types" "$PY" tools/release/check_dead_types.py
 gate "retired names" "$PY" tools/release/check_retired_names.py
+gate "activity predicate" "$PY" tools/release/check_activity_predicate.py
 gate "new duplication" "$PY" tools/release/check_duplication.py
 # The upstream remote is a local-only ref: actions/checkout clones origin alone, so CI has no
 # upstream/dev and the gate would fail there on a machine that cannot fetch it. Skip loudly,
@@ -118,7 +119,7 @@ echo "pre-commit: converter tests"
 # so collecting the directory would abort the run instead of adding to it. The calibration-corpus and
 # perturbation tests are named for the same reason, and because a gate whose failure paths have never
 # been run is indistinguishable from one that always passes.
-"$PY" -m pytest tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/bench/test_request_log_reader.py -q
+"$PY" -m pytest tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/release/test_activity_predicate.py tests/bench/test_request_log_reader.py -q
 echo "pre-commit: ruff"
 "$PY" -m ruff check tools tests --quiet
 echo "pre-commit: mypy"
