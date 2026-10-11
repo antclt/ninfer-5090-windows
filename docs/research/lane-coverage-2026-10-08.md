@@ -338,8 +338,12 @@ mean by 7.6%. At the new format the published cell reads **367.9 tok/s at 58.0%*
   was taken before commit 8306f79d changed that lane's depth, so the row paired one depth's figures with
   the other's setting. The other seven lanes measure 4-15% faster than published, which is drift rather
   than a defect, and the acceptance columns reproduce exactly.
-- **item 1-5, 8 of the coverage list are now closed.** Still open and instrument-ready: the
-  cancellation and queue cases, and cross-path determinism.
+- **item 1-5, 8 of the coverage list are now closed.** The last two instrument-ready items closed on
+  2026-10-11 and the text here said "still open" until then: the cancellation and queue cases (upstream
+  #184 does not reproduce; an abandoned 158,447-token prefill stopped after four chunks and a follower
+  waited 0.81 s against 26.42 s behind live work) and cross-path determinism (cold and shared-prefix
+  paths produced byte-identical output). Both are recorded below. **Needing build work**: the
+  precision-assignment search is not exhausted, and `PromptLookup`'s tree integration is not built.
   **Cancellation closed 2026-10-10, and upstream #184's symptom does not reproduce here.** With
   `--max-concurrency 1` on the QUASAR DFlash2 lane, a cold 158,447-token prompt whose client sent RST
   2 s in was stopped after **32,768 of 158,447 tokens** — four 8,192-token prefill chunks — and the

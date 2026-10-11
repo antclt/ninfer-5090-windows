@@ -3010,3 +3010,80 @@ Reachability: the drafter calls SwiGLU with T=(k+1)*batch, so batch 1 keeps T<=1
 15-column tree; the decomposition needs batch>=2, i.e. `--max-concurrency > 1`, which every shipped lane
 leaves at 1. Fix: a fused A16 kernel above T=16, or a route-aware criterion if the contract is meant to
 allow the decomposition's accuracy - the second is a contract change and was not taken.
+## 2026-10-11 - every open item, consolidated, after the review and the v1.2.0 cut
+
+Written because a release went out with one of these disclosed and the question was fair: what else is
+open, and why ship with any of it. Each item names its home; none of them is a defect in a shipped
+configuration unless it says so.
+
+**Disclosed in the release, with a reproduction in this file**
+
+1. **The A16 SwiGLU decomposition above T=16 exceeds its profile's criterion.** 8.1e-3 against 6.3e-3,
+   systematic at 17/32/64/129. Reachable only when the draft batch exceeds one, i.e.
+   `--max-concurrency > 1`; every shipped lane runs 1. The fix is a fused A16 kernel above T=16, not a
+   wider criterion. See the entry below and RELEASE_NOTES.md's known limitations.
+2. **ninfer_topk_logprobs_test is order-dependent.** It failed once inside the full suite and passes 1/1
+   and 5/5 under `--repeat until-fail:5`. Cause unattributed. The op is on the scoring route
+   (`Engine::score_topk`, `apps/perplexity --topk-record`), so a recurrence is worth attributing.
+
+**Unattributed causes, stated as such**
+
+3. **The calibration does not reproduce the fork's published profile.** 6 of 287 comparable sites are
+   byte-equal and the worst is 1.49x, while this port's artifacts carry the JSON's values exactly
+   (317/317 and 344/344). `tools/convert/calibration.py`'s docstring and the corpus gate now say so.
+4. **The incremental-encode splice fix has no counterexample.** Spans below the window are compared now,
+   which declines a splice whose cached ids were computed under different spans; no input was
+   constructed that reaches the old path, so the gap was closed conservatively rather than reproduced.
+
+**Deferred, each named in its own home**
+
+5. **The cache-hitting race condition** - `docs/research/server-open-items.md` section 1, status
+   "Deferred - not reproduced, not refuted".
+6. **Cancellation during a checkpoint capture** - the one window the engine's transaction guard covers.
+   Bounded by a capture rather than a prefill; not measured. Serving doc and server-open-items section 8.
+7. **The generation-abandoned cancellation arm** - VOID twice, because the subject finished before the
+   socket closed. That half of upstream #111 is upstream's own verified fix, not a measurement here.
+8. **Warm TTFT** - attributed rather than measured: the only shape that would move it is a first request
+   after a cold start, and the launchers' warmup covers it.
+
+**Planned work, not defects**
+
+9. **The precision-assignment search is not exhausted** - no arm isolates q/k from v/o, and none moves
+   MLP activations from A8 to A16. `docs/research/lane-coverage-2026-10-08.md`.
+10. **PromptLookup's tree-draft integration is not built** - the proposer is ported and tested; the
+    verify tree that would consume it does not exist in this tree.
+
+**Upstream, out of this port's hands**
+
+11. #208 (intermittent CUDA illegal access under sustained MTP - the shipped MTP lanes are the
+    configuration it concerns), #333 (a launch timeout on k8v4 + DFlash2), #229 (the materialization
+    grant, removed upstream with the planner that held it).
+
+**The review's suggestions - fifteen, none of them a defect**
+
+12. Each is a one-liner or a reader-load fix, and none is in a shipped path except where noted: a
+    duplicated translation unit in `src/ops/candidate_selector/sources.cmake`; duplicated includes in
+    two headers; a hardcoded grid z-extent in `materialize_nvfp4.cu`; no regression assertion for the
+    `prefill_chunk` default (1024 -> 8192); **the DFlash2 recall instrumentation runs unconditionally**
+    in every decode round (two synchronous D2H copies, ~544 bytes at window 7, batch 1 - an idle cost,
+    not a correctness one); an orphaned comment above `token_ids` in `prepared_prompt.h`; no test
+    for `src/core/uint128.h`; an unreachable 405 branch in `src/serve/http_server.cpp`; a stale
+    format comment in `apps/perplexity/topk_record.h`; a keepalive guarded by a transitive include;
+    a system header included inside a function body in `src/serve/request_log.cpp`; the perplexity
+    report hardcoding `prefill_chunk_tokens`; an unquoted per-token CSV field; three recall metrics
+    carried onto the serving path and never read; and the timer's idle wakeups (about 15.6x, inferred
+    rather than measured).
+
+**Why the release shipped with item 1.** It is disclosed in the release notes' known limitations and
+reproducible from this file; no shipped configuration reaches it; the fix is a fused kernel rather than a
+patch; widening the criterion is forbidden by this repository's own rules; and reverting the route would
+restore a fallback that violated its compute policy. The publish is still pending, so the decision to
+ship with it is still open.
+**Two of the review's warnings were false positives, and both are recorded here so they are not
+re-raised.** The FP8 MMA split-K block is unreachable in this tree -- every schedule with
+`kSplitWaveCtas > 0` is a TMA one and takes the other launcher, and no shape file carries a
+non-Windows arm -- but it is upstream's shared source, so removing it would grow this port's divergence
+to delete inert code; kept, with the finding in the comment. And
+`tools/upgrade_ninfer_v2_to_v3.py` does call `os.fdatasync`, inside the POSIX branch of a
+`sys.platform` split whose own comment explains why Windows uses `os.fsync` instead; the review read
+the branch without its guard.
