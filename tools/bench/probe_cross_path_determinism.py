@@ -61,6 +61,7 @@ args = parser.parse_args()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
+from engine import spawn_engine, stop_engine  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 request_log = LOG_DIR / f"requests-{args.tag}.jsonl"
@@ -130,8 +131,7 @@ def start_lane(tag: str) -> tuple[subprocess.Popen, str]:
     flags = launcher_args(profile, port=args.port, model_id="qwen3.8-27b-crosspath") + [
         "--request-log-jsonl", str(request_log)]
     handle = (LOG_DIR / f"lane-{tag}.log").open("w", encoding="utf-8", errors="replace")
-    process = subprocess.Popen([str(SERVE), args.artifact, *flags], cwd=str(REPO), stdout=handle,
-                               stderr=subprocess.STDOUT)
+    process = spawn_engine([str(SERVE), args.artifact, *flags], handle, cwd=str(REPO))
     deadline = time.time() + args.startup_timeout
     while time.time() < deadline:
         time.sleep(2.0)
@@ -142,15 +142,6 @@ def start_lane(tag: str) -> tuple[subprocess.Popen, str]:
             if process.poll() is not None:
                 raise SystemExit(f"lane exited early; see {LOG_DIR / f'lane-{tag}.log'}")
     raise SystemExit("lane never listened")
-
-
-def stop_lane(process: subprocess.Popen) -> None:
-    time.sleep(2.0)
-    process.terminate()
-    try:
-        process.wait(timeout=120)
-    except subprocess.TimeoutExpired:
-        pass
 
 
 def last_record(mark: int) -> dict:
@@ -186,7 +177,7 @@ process, model_id = start_lane("cold")
 cold_mark = len([r for r in phases(request_log) if r.get("event") != "request_start"])
 cold = ask(args.port, model_id, conversation(prefix, CONTINUATION))
 cold_record = last_record(cold_mark)
-stop_lane(process)
+stop_engine(process)
 print(f"  http {cold['status']}, {len(cold['text'])} characters of output; "
       f"prefix_cache_hit_tokens {hit_tokens(cold_record)}", flush=True)
 
@@ -198,7 +189,7 @@ seed = ask(args.port, model_id, conversation(prefix, ALTERNATE))
 seed_record = last_record(warm_mark)
 warm = ask(args.port, model_id, conversation(prefix, CONTINUATION))
 warm_record = last_record(warm_mark)
-stop_lane(process)
+stop_engine(process)
 print(f"  seed: prefix_cache_hit_tokens {hit_tokens(seed_record)}", flush=True)
 print(f"  warm: http {warm['status']}, {len(warm['text'])} characters of output; "
       f"prefix_cache_hit_tokens {hit_tokens(warm_record)}, a checkpoint reuse counter "

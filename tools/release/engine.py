@@ -93,20 +93,32 @@ def lane_command(profile: dict[str, Any], exe: Path, artifact: Path | str,
             *(extra_flags or [])]
 
 
+def spawn_engine(args: list[str], stdout, cwd: str | None = None,
+                 env: dict[str, str] | None = None) -> subprocess.Popen:
+    """Start the engine with a caller-owned output stream, and return the process.
+
+    For a harness that already holds a handle -- or has a `with` block around one, which is the shape
+    most of the probes have -- and only wants the two things that are easy to get wrong: the lane
+    environment, because `Popen` replaces it wholesale, and the child's own console process group,
+    which is what makes `stop_engine`'s CTRL_BREAK reach the lane alone.
+    """
+    return subprocess.Popen(  # noqa: S603
+        args,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=stdout,
+        stderr=subprocess.STDOUT,
+        env={**launcher_environment(None), **(env or {})},
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    )
+
+
 def _spawn(args: list[str], log_path: Path, cwd: str | None,
            env: dict[str, str] | None) -> tuple[subprocess.Popen, Any]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handle = log_path.open("wb")
     try:
-        proc = subprocess.Popen(  # noqa: S603
-            args,
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            env=env,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        )
+        proc = spawn_engine(args, handle, cwd=cwd, env=env)
     except Exception:
         handle.close()
         raise

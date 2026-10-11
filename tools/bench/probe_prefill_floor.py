@@ -50,7 +50,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 import urllib.error
@@ -77,6 +76,7 @@ args = parser.parse_args()
 
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
+from engine import spawn_engine, stop_engine  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 print(f"lane: {profile['file']}", flush=True)
@@ -101,8 +101,7 @@ if os.environ.get("PROBE_DRAFT0"):
 lane_log_path = LOG_DIR / f"probe-prefill-floor-lane-{run_stamp}.log"
 lane_log = lane_log_path.open("w", encoding="utf-8", errors="replace")
 print(f"lane log: {lane_log_path}", flush=True)
-proc = subprocess.Popen([args.serve, args.artifact, *flags], cwd=str(REPO), stdout=lane_log,
-                        stderr=subprocess.STDOUT)
+proc = spawn_engine([args.serve, args.artifact, *flags], lane_log, cwd=str(REPO))
 try:
     deadline = time.time() + 240
     while time.time() < deadline:
@@ -161,10 +160,8 @@ try:
               f"      host_exposed={str(engine.get('host_exposed_seconds'))[:420]}\n"
               f"      first_full={str(first_simple)[:420]}", flush=True)
 finally:
-    proc.terminate()
-    try:
-        proc.wait(timeout=60)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+    # stop_engine asks before it kills, so the lane writes its shutdown tail record; a probe that
+    # terminates the process outright reads a log with the final record missing.
+    stop_engine(proc)
     lane_log.close()
     print("lane stopped", flush=True)

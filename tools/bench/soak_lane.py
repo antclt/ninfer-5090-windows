@@ -51,6 +51,7 @@ args = parser.parse_args()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
+from engine import spawn_engine, stop_engine  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 flags = launcher_args(profile, port=args.port, model_id="qwen3.8-27b-soak")
@@ -61,8 +62,7 @@ print(f"lane log: {lane_log_path}", flush=True)
 print(f"soak log: {soak_log_path}", flush=True)
 
 with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
-    proc = subprocess.Popen([str(SERVE), args.artifact, *flags],
-                            cwd=str(REPO), stdout=lane_log, stderr=subprocess.STDOUT)
+    proc = spawn_engine([str(SERVE), args.artifact, *flags], lane_log, cwd=str(REPO))
     try:
         deadline = time.time() + 300
         while time.time() < deadline:
@@ -89,9 +89,7 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
         for line in soak_log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-10:]:
             print(f"    {line}", flush=True)
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        # stop_engine asks before it kills, so the lane writes its shutdown throughput record -- the
+        # RSS and cache counters a soak is read for -- rather than being terminated without one.
+        stop_engine(proc)
         print("lane stopped", flush=True)

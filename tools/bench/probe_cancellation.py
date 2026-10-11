@@ -46,7 +46,6 @@ import http.client
 import json
 import socket
 import struct
-import subprocess
 import sys
 import threading
 import time
@@ -79,6 +78,7 @@ args = parser.parse_args()
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tools" / "release"))
 from profiles import PROFILES, launcher_args  # noqa: E402
+from engine import spawn_engine, stop_engine  # noqa: E402
 
 profile = next(p for p in PROFILES if args.lane in p["file"])
 request_log = LOG_DIR / f"requests-{args.tag}.jsonl"
@@ -224,8 +224,7 @@ def capture_state() -> dict:
 
 
 with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
-    process = subprocess.Popen([str(SERVE), args.artifact, *flags],
-                               cwd=str(REPO), stdout=lane_log, stderr=subprocess.STDOUT)
+    process = spawn_engine([str(SERVE), args.artifact, *flags], lane_log, cwd=str(REPO))
     try:
         deadline = time.time() + args.startup_timeout
         model_id = None
@@ -373,8 +372,6 @@ with lane_log_path.open("w", encoding="utf-8", errors="replace") as lane_log:
         print(f"\nwrote {result_path}", flush=True)
     finally:
         time.sleep(2.0)
-        process.terminate()
-        try:
-            process.wait(timeout=120)
-        except subprocess.TimeoutExpired:
-            pass
+        # stop_engine asks the lane to stop before it kills it, so the shutdown tail record -- the
+        # one carrying the scheduler's capture/terminal counters this probe reads -- is written.
+        stop_engine(process)
