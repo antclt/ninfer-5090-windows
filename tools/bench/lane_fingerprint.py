@@ -23,7 +23,11 @@ Usage:
     python tools/bench/lane_fingerprint.py --file <launcher> --cell code
     python tools/bench/lane_fingerprint.py --no-write --tolerance-tok 12
 
-Exit status: 0 clean, 1 drift, 2 a lane refused to serve -- a scan that did not run is not a pass.
+Exit status: 0 clean or drift-reported, 2 a lane refused to serve -- a scan that did not run is not a
+pass. A *drift* is reported rather than failed, and that is measured: it compares against a recorded
+number, and this card's session-to-session spread is the size of the tolerance -- one lane read 216.6,
+230.5 and 239.0 within six hours (10.3%) while each run's own spread was 0.3 to 5.1%, so nothing inside
+a run can size it. A drift means the committed provenance no longer describes the lanes.
 """
 
 from __future__ import annotations
@@ -212,10 +216,19 @@ def main() -> int:
             print(f"        {line}")
         return 2
     if drift:
-        print(f"    {len(drift)} drift(s) beyond tolerance:")
+        # Reported, not fatal, and that is a measured decision rather than a preference. The card's
+        # session-to-session spread is the size of the tolerance: one lane read 216.6 (the committed
+        # table), 230.5 and 239.0 within six hours -- a 10.3% span -- while each of those runs measured
+        # a within-run spread of 0.3 to 5.1%, so no statistic available inside a run can size this. And
+        # a drift check compares against a *past* number, which cannot be interleaved with the present,
+        # so the honest verdict is "this no longer matches the record": an instruction to re-measure and
+        # commit the provenance, not a failed gate. A lane that refuses to serve is still exit 2.
+        print(f"    {len(drift)} drift(s) beyond tolerance, reported not fatal:")
         for line in drift[:12]:
             print(f"        {line}")
-        return 1
+        print("    re-run the fingerprint where the artifacts live, then commit the new "
+              "tools/release/lane_figures.json")
+        return 0
     print("    every measured cell is inside tolerance")
     return 0
 

@@ -133,9 +133,12 @@ jobs:
       # them with the provenance committed in tools/release/lane_figures.json.
       #
       # --serve and --models point OUTSIDE the checkout for the same reason the FFmpeg tree does: the job
-      # checks out a fresh tree, which has no build/, and the artifacts live at C:\AI\models. A red result
-      # means the committed provenance no longer describes the lanes: re-run the fingerprint on the machine
-      # that owns the artifacts and commit the new file, with whatever the table refreshes.
+      # checks out a fresh tree, which has no build/, and the artifacts live at C:\AI\models. A reported
+      # drift means the committed provenance no longer describes the lanes: re-run the fingerprint where
+      # the artifacts live and commit the new file, with whatever the table refreshes. It does not fail
+      # the job, because the card's session-to-session spread is the size of the tolerance -- measured
+      # 2026-10-11: one lane read 216.6, 230.5 and 239.0 within six hours, and the 10.3% one used to
+      # fail this step for a reason that was not the product.
       - name: lane fingerprint
         shell: cmd
         run: |
