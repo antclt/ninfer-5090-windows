@@ -178,7 +178,7 @@ Measured in this tree, the endpoints are indeed `q8_g32_fp16` on both shipping a
 (`qwen3_8_27b_nvfp4full_noex`, `qwen3_8_27b_nvfp4swift15`) — read off each artifact's own
 `.conversion.json`, where `text/token_embedding` and `text/output_head` both carry
 `"format": "q8_g32_fp16"` — so the *format* is right, but the *justification* was not.
-**The line citation this used to carry, `official_recipes.py:512` and `:518-519`, is only right for
+**The line citation this used to carry, `tools/convert/official_recipes.py:512` and `:518-519`, is only right for
 the first of the two.** Those lines are in `qwen3_8_27b_nvfp4_unsloth_noex`, which is what
 `qwen3_8_27b_nvfp4full_noex` was built from. The swift15 artifact records
 `"recipe": "qwen3_8_27b_nvfp4_swift15_nvdraft"` in the same file, and that recipe assigns the two

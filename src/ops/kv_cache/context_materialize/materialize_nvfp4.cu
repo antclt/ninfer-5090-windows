@@ -22,7 +22,9 @@ using namespace context_kv;
 
 constexpr int kHidden = 5120;
 
-// The port's own staging swizzle, from HEAD context_kv_common.cuh:35 (`swizzle_128`). It permutes in
+// The port's own staging swizzle, from the pre-merge tree's
+// src/ops/context_kv_materialize/context_kv_common.cuh:35 (`swizzle_128`, removed by this merge --
+// `git show 133bff91:src/ops/context_kv_materialize/context_kv_common.cuh`). It permutes in
 // 8-element units: (((column >> 3) ^ (row & 7)) << 3) | (column & 7). It is NOT
 // common::swizzle_xor_128, which permutes in 16-element units (col ^ ((row & 7) << 4)); this kernel
 // was written against the 8-element form, and substituting the 16-element one while moving the file
