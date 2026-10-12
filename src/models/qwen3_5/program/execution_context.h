@@ -143,7 +143,7 @@ struct TargetVerifyFrameView {
 };
 
 void configure_text_card(TextContext& card, const ExecutionCore& execution);
-void target_verify_forward(ExecutionCore&, TextContext&, TargetVerifyFrameView,
+void target_verify_forward(TextContext&, TargetVerifyFrameView,
                            ops::CausalAttentionExecutionEnvelope);
 void target_accept(ExecutionCore&, Tensor& continuation_hidden_store, TargetVerifyFrameView);
 

@@ -1,6 +1,10 @@
 #include "core/cpu/executor.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/resource.h>
+#endif
 
 #include <algorithm>
 #include <charconv>
@@ -24,10 +28,26 @@ std::uint32_t number(std::string_view text) {
 }
 
 double process_cpu_us() {
+#ifdef _WIN32
+    // GetProcessTimes reports user and kernel time in 100-nanosecond units, so dividing by 10
+    // yields microseconds -- the same quantity getrusage's ru_utime + ru_stime reports.
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    if (::GetProcessTimes(::GetCurrentProcess(), &creation, &exit, &kernel, &user) == FALSE) {
+        throw std::runtime_error("read process CPU time");
+    }
+    const auto ticks = [](const FILETIME& time) {
+        ULARGE_INTEGER value{};
+        value.LowPart  = time.dwLowDateTime;
+        value.HighPart = time.dwHighDateTime;
+        return value.QuadPart;
+    };
+    return static_cast<double>(ticks(kernel) + ticks(user)) / 10.0;
+#else
     rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) != 0) throw std::runtime_error("read process CPU time");
     return (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1e6 + usage.ru_utime.tv_usec +
            usage.ru_stime.tv_usec;
+#endif
 }
 
 void measure(std::string_view name, CpuExecutionView execution, CpuWork work, std::uint32_t samples,

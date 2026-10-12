@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/device.h"
 #include "core/weight.h"
 #include "core/arena.h"
 #include "core/tensor.h"
@@ -18,8 +19,8 @@ namespace ninfer::ops::detail {
 void nvfp4_dynamic_grouped_conv_prepare_dispatch(const Tensor& residual, const Tensor& norm,
                                                 float eps, const Tensor& base,
                                                 const Weight& kernel_projection, Tensor& prepared,
-                                                Tensor& finish_delta, WorkspaceArena& workspace,
-                                                cudaStream_t stream);
+                                                Tensor& finish_delta, MemoryArena& workspace,
+                                                CudaExecutionView execution);
 
 // NVFP4 route of linear_dynamic_grouped_conv_add: the projection parent is the weight-only NVFP4
 // [5120,C] matrix (C in {4096,17408}). The route materializes the projection in BF16 through the
@@ -28,7 +29,7 @@ void nvfp4_dynamic_grouped_conv_prepare_dispatch(const Tensor& residual, const T
 void nvfp4_linear_dynamic_grouped_conv_add_dispatch(const Tensor& x, const Weight& projection,
                                                     const Tensor& base_kernel,
                                                     const Tensor& finish_delta, Tensor& residual,
-                                                    WorkspaceArena& workspace,
-                                                    cudaStream_t stream);
+                                                    MemoryArena& workspace,
+                                                    CudaExecutionView execution);
 
 } // namespace ninfer::ops::detail

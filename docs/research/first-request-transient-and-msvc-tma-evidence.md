@@ -234,7 +234,7 @@ different runs." **[vendor-claimed]** -- and, read against SGLang's own FAQ, tha
 > RNG state or dependence on the compact row index**."
 
 **[read in source]** -- and the kernel agrees
-([`src/ops/kernel/sampling_device.cuh:92-101`](../../src/ops/kernel/sampling_device.cuh)):
+([`src/ops/kernel/sampling_device.cuh:92-101`](../../src/ops/sampling/kernels/random.cuh)):
 
 ```cpp
 __device__ __forceinline__ float sampling_uniform(unsigned long long seed, int position,
@@ -535,7 +535,7 @@ upstream/dev:src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:96:union alignas(128) Nvfp4A4
 Only the first three are the C2719 sites. Lines 85, 87 and 96 are `__shared__` staging buffers inside
 `Nvfp4A4TmaTensorStorage` and `Nvfp4A4TmaScratch`, which live in dynamic shared memory and are
 reinterpret_cast from an `extern __shared__ __align__(128)` block
-([`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:86-116`](../../src/ops/linear/nvfp4/nvfp4_a4_tma.cuh),
+([`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:86-116`](../../src/ops/linear/kernels/nvfp4/nvfp4_a4_tma.cuh),
 **[read in source]**) -- they are not kernel parameters and cannot trigger C2719. A merge that
 reintroduces the defect reintroduces exactly those three struct declarations.
 
@@ -701,7 +701,7 @@ alignof(FourMaps)=64 offsetof(d)=384
 
 **(c) What that means for the port's shipped kernel.** The port's NVFP4 W4A4 kernel takes the
 descriptors as its first parameter
-([`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:145-150`](../../src/ops/linear/nvfp4/nvfp4_a4_tma.cuh)):
+([`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:145-150`](../../src/ops/linear/kernels/nvfp4/nvfp4_a4_tma.cuh)):
 
 ```cpp
 __global__
@@ -868,8 +868,8 @@ noted). ONNX Runtime's `main` CMake and commit `291311e7`.
 
 **One finding that bears on the port's own record rather than on upstream.** The port's comments and
 research note justify the fix as "inheriting `TENSOR_MAP_ALIGN`, which is 64 under MSVC"
-([`src/ops/linear/bf16/bf16_a16_tma_mma.cuh:14-19`](../../src/ops/linear/bf16/bf16_a16_tma_mma.cuh),
-[`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:24-26`](../../src/ops/linear/nvfp4/nvfp4_a4_tma.cuh),
+([`src/ops/linear/bf16/bf16_a16_tma_mma.cuh:14-19`](../../src/ops/linear/kernels/bf16/bf16_a16_tma_mma.cuh),
+[`src/ops/linear/nvfp4/nvfp4_a4_tma.cuh:24-26`](../../src/ops/linear/kernels/nvfp4/nvfp4_a4_tma.cuh),
 `docs/research/grid-constant-tma-descriptor-msvc.md:99-112`). **[measured here]** On this port's build
 flags the wrapper inherits alignment **8**, not 64, because nvcc's host pass reports
 `__cplusplus = 199711L` without `/Zc:__cplusplus` and `cuda.h`'s `alignas` is inside a

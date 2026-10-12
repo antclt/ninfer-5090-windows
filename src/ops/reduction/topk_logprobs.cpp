@@ -1,7 +1,7 @@
 // ninfer::ops - topk_logprobs wrapper: public contract validation and launcher dispatch.
 #include "ninfer/ops/topk_logprobs.h"
 
-#include "ops/launcher/topk_logprobs.h"
+#include "ops/reduction/topk_logprobs_launch.h"
 
 #include <cstddef>
 #include <cstdint>

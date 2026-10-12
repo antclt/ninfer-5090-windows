@@ -191,6 +191,8 @@ void context_kv_materialize(
         validate_cache(layer.cache, padded, lane_capacity, execution.device());
     }
 
+    if (envelope.max_count == 0) return;
+    const int columns = envelope.max_count * batch;
     // The NVFP4-encoded drafter parents select a separate implementation family; the decoder is
     // chosen from layer 0's format, which the guard above has already proved every layer shares.
     const auto selected = layers.front().key_weight.qtype == QType::NVFP4

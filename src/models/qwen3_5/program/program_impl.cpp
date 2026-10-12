@@ -346,17 +346,17 @@ CausalTopk ProgramImpl::causal_score_topk(PreparedPromptData&& prompt,
                 Tensor topk_logprobs = work.alloc(DType::FP32, {columns, topk});
                 ops::topk_logprobs(
                     logits, dimension(parameters.model.resources().public_token_count), topk,
-                    topk_indices, topk_logprobs, device.stream);
+                    topk_indices, topk_logprobs, device.stream());
                 const auto entry_bytes =
                     static_cast<std::size_t>(staged_columns) * static_cast<std::size_t>(topk);
                 CUDA_CHECK(cudaMemcpyAsync(score_topk_host->data(), topk_indices.data,
                                            entry_bytes * sizeof(TokenId),
-                                           cudaMemcpyDeviceToHost, device.stream));
+                                           cudaMemcpyDeviceToHost, device.stream()));
                 CUDA_CHECK(cudaMemcpyAsync(
                     static_cast<std::byte*>(score_topk_host->data()) +
                         entry_bytes * sizeof(TokenId),
                     topk_logprobs.data, entry_bytes * sizeof(float), cudaMemcpyDeviceToHost,
-                    device.stream));
+                    device.stream()));
                 device.synchronize();
                 const auto* host_indices =
                     static_cast<const TokenId*>(score_topk_host->data());

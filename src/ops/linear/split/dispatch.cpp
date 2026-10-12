@@ -40,7 +40,8 @@ const SplitShape& select_split_shape(Weights weights) {
         return match(shapes, weights);
     }
     case QType::NVFP4: {
-        const std::array shapes{&kNvfp4SplitN14336K5120, &kNvfp4SplitN16384K5120};
+        const std::array shapes{&kNvfp4SplitN14336K5120, &kNvfp4SplitN16384K5120,
+                                &kNvfp4SplitN6144K5120};
         return match(shapes, weights);
     }
     default:

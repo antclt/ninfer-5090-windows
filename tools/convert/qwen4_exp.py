@@ -10,7 +10,7 @@ import torch
 from .model import Model, Parameter
 from .resources import load_resources
 from .sources.logical import LogicalSource, select_rows, transpose_source
-from .sources.safetensors import SafetensorsSource, tensor_source
+from .sources.safetensors import tensor_source
 
 
 def _positive(raw, key):

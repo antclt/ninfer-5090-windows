@@ -117,7 +117,7 @@ void geometry_and_views() {
     const auto geometry = weight_geometry(QType::NVFP4, QuantLayout::BlockScaleK16M128x4,
                                           std::array<std::uint64_t, 2>{6144, 5120});
     std::vector<std::byte> qkv(geometry.bytes);
-    WeightParent qkv_parent{geometry, qkv.data(), 2.0F};
+    WeightParent qkv_parent{geometry, Device::cpu(), qkv.data(), 2.0F};
     for (const std::uint64_t begin : {4096U, 5120U}) {
         const WeightView view{{1024, 5120},
                               {{&qkv_parent, begin * 5120, (begin + 1024) * 5120}}};

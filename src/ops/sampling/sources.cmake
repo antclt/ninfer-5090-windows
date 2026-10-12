@@ -8,5 +8,6 @@ target_sources(ninfer_ops PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/candidate_path/entry.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/candidate_path/execute.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/candidate_path/launch.cu"
+  "${CMAKE_CURRENT_LIST_DIR}/candidate_path/nvfp4/path.cu"
   "${CMAKE_CURRENT_LIST_DIR}/token_counts.cu"
 )

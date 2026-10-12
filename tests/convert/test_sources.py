@@ -106,6 +106,33 @@ def test_modelopt_nvfp4_preserves_words_and_inverts_the_stored_multiplier(tmp_pa
         assert source.input_divisor() == struct.pack("<f", 4.0)
 
 
+
+def test_modelopt_preserves_words_and_converts_multiplier_to_divisor(tmp_path):
+    codes = torch.tensor(
+        [[0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE]], dtype=torch.uint8
+    )
+    scales = torch.tensor([[0x40]], dtype=torch.uint8)
+    save_file(
+        {
+            "proj.weight": codes,
+            "proj.weight_scale": scales.view(torch.float8_e4m3fn),
+            "proj.weight_scale_2": torch.tensor(0.375),
+            "proj.input_scale": torch.tensor(0.125),
+        },
+        str(tmp_path / "model.safetensors"),
+    )
+    with SafetensorsSource(tmp_path) as store:
+        source = ModelOptNvfp4(store).matrix("proj", (1, 16))
+        words = source.read_encoded(0, 1)
+        assert torch.equal(words.codes, codes) and torch.equal(words.scales, scales)
+        assert words.weight_divisor == struct.pack("<f", 1 / 0.375)
+        assert source.input_divisor() == struct.pack("<f", 8.0)
+        expected = torch.tensor(
+            [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0.0, -0.5, -1, -1.5, -2, -3, -4, -6],
+            dtype=torch.float64,
+        )
+        expected *= 2.0 / struct.unpack("<f", words.weight_divisor)[0]
+        assert torch.equal(source.values(), expected)
 def test_modelopt_fp8_restates_one_tensor_scale_on_every_row(tmp_path):
     """A per-tensor multiplier broadcast to rows, not a per-row scale invented."""
     codes = torch.tensor([[0x38, 0xB8], [0x30, 0xB0]], dtype=torch.uint8)

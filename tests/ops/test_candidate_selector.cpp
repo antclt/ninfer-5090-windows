@@ -852,8 +852,8 @@ int run_nvfp4() {
     DeviceBuffer anchor_device    = to_device(anchors);
     DeviceBuffer position_device  = to_device(base_positions);
     DeviceBuffer config_device    = to_device(configs);
-    DeviceBuffer predecessor_device(book.payload.size());
-    DeviceBuffer successor_device(successor_book.payload.size());
+    DeviceBuffer predecessor_device(ninfer::test::cuda_environment().context.device(), book.payload.size());
+    DeviceBuffer successor_device(ninfer::test::cuda_environment().context.device(), successor_book.payload.size());
     predecessor_device.copy_from_host(book.payload.data(), book.payload.size());
     successor_device.copy_from_host(successor_book.payload.data(), successor_book.payload.size());
 
@@ -887,14 +887,18 @@ int run_nvfp4() {
             ops::candidate_selector_path_workspace_capacity_bytes(kSteps, kSteps, batch_size,
                                                                   batch_size);
         GuardedDeviceBuffer scratch(std::max<std::size_t>(capacity, 1));
-        MemoryArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
+        MemoryArena workspace(scratch.span());
         ops::candidate_selector_path(ids, unary, hidden, anchor, predecessor, successor, position,
                                      static_cast<const ops::SamplingConfig*>(config_device.data()),
-                                     drafts, q, workspace, nullptr);
+                                     drafts, q, workspace, ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
+        // The route the Op selects is the merged selector's; its name is only a label.
+        const auto route        = ops::candidate_path_detail::select_candidate_path(kSteps, batch_size);
         const std::string label = "nvfp4 B=" + std::to_string(batch_size) + " K=" +
                                   std::to_string(kSteps) + " route=" +
-                                  ops::detail::candidate_selector_path_route_name(kSteps, batch_size);
+                                  (route == ops::candidate_path_detail::SelectorRoute::Direct
+                                       ? "direct.t512"
+                                       : "lattice.t512");
         const auto actual_d = from_device<int>(draft_device.data(), draft_count);
         const auto actual_q = from_device<float>(q_device.data(), q_count);
         failures += verify_exact((label + " drafts").c_str(), actual_d,
@@ -919,7 +923,7 @@ int run_nvfp4() {
         Nvfp4Codebook bf16_source = successor_book;
         bf16_source.payload.assign(static_cast<std::size_t>(kCodebookRows) * kRank * sizeof(std::uint16_t),
                                   0U);
-        DeviceBuffer bf16_device(bf16_source.payload.size());
+        DeviceBuffer bf16_device(ninfer::test::cuda_environment().context.device(), bf16_source.payload.size());
         Weight bf16_successor{};
         bf16_successor.payload      = bf16_device.data();
         bf16_successor.payload_bytes = bf16_source.payload.size();
@@ -933,7 +937,10 @@ int run_nvfp4() {
         bf16_successor.padded_shape[0] = kCodebookRows;
         bf16_successor.padded_shape[1] = kRank;
         bf16_successor.qdata        = bf16_device.data();
-        GuardedDeviceBuffer d1(1 * sizeof(std::int32_t)), q1(1 * kCandidates * sizeof(float));
+        // Sized for the shapes declared below, which span kSteps rows: a negative case still has to
+        // construct its operands, or the Tensor ctor throws before the Op can refuse.
+        GuardedDeviceBuffer d1(static_cast<std::size_t>(kSteps) * sizeof(std::int32_t)),
+            q1(static_cast<std::size_t>(kSteps) * kCandidates * sizeof(float));
         Tensor t_ids(candidate_device.span(), DType::I32, {kCandidates, kSteps, 1});
         Tensor t_unary(unary_device.span(), DType::FP32, {kCandidates, kSteps, 1});
         Tensor t_hidden(hidden_device.span(), DType::BF16, {kRank, kSteps, 1});
@@ -943,13 +950,13 @@ int run_nvfp4() {
         const auto mixed_capacity =
             ops::candidate_selector_path_workspace_capacity_bytes(kSteps, kSteps, 1, 1);
         GuardedDeviceBuffer sw(std::max<std::size_t>(mixed_capacity, 1));
-        MemoryArena ws(DeviceSpan{sw.data(), sw.bytes()});
+        MemoryArena ws(sw.span());
         bool refused = false;
         try {
             ops::candidate_selector_path(t_ids, t_unary, t_hidden, t_anchor, predecessor,
                                          bf16_successor, t_pos,
                                          static_cast<const ops::SamplingConfig*>(config_device.data()), t_d,
-                                         t_q, ws, nullptr);
+                                         t_q, ws, ninfer::test::cuda_environment().default_execution);
             cuda_synchronize();
         } catch (const std::invalid_argument&) {
             refused = true;
@@ -966,12 +973,17 @@ int run_nvfp4() {
 } // namespace
 
 int main() {
+    // Which sweep a failure came from: both loops below sweep kSteps 1..15, so the
+    // exception's own text does not say, and the arena's "bad allocation" is not
+    // distinguishable from a system allocation failure until the iteration is named.
+    const char* section = "startup";
     try {
         if (cuda_unavailable()) {
             std::cout << "SKIP: no usable CUDA device\n";
             return 77;
         }
         int failures = 0;
+        section = "run";
         for (kSteps = 1; kSteps <= 15; ++kSteps) failures += run();
         {
             kSteps = 1;
@@ -985,11 +997,13 @@ int main() {
         }
         // The NVFP4 route is only reachable with an NVFP4 predecessor, so it gets its own sweep
         // across the route boundary: kSteps <= 4 takes the direct walk, above it the lattice pair.
+        section = "nvfp4";
         for (kSteps = 1; kSteps <= 15; ++kSteps) failures += run_nvfp4();
         std::cout << (failures == 0 ? "OK" : "FAIL") << " candidate_selector_path\n";
         return failures == 0 ? 0 : 1;
     } catch (const std::exception& error) {
-        std::cerr << "candidate_selector_path test: " << error.what() << '\n';
+        std::cerr << "candidate_selector_path test (" << section << " kSteps=" << kSteps
+                  << "): " << error.what() << '\n';
         return 1;
     }
 }

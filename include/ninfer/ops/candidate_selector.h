@@ -20,7 +20,7 @@ namespace ninfer::ops {
  *
  * For K in [1,15] and B in [1,8], the inputs are contiguous candidate_ids I32 [16,K,B],
  * unary_scores FP32 [16,K,B], projected_hidden BF16 [256,K,B], anchors I32 [B],
- * predecessor_codebook and successor_codebook weights of logical shape [256,248320] in either
+ * predecessor_codebook and successor_codebook weights of logical shape [248320,256] in either
  * BF16_CTRL Contiguous or weight-only NVFP4 BlockScaleK16M128x4 form, base_positions I32 [B],
  * and a device-resident SamplingConfig[B]. Candidate rank is the fastest axis. The 16 candidate
  * ids in each row are distinct, and all candidate and anchor token ids lie in [0,248077); the

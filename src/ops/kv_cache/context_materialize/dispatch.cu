@@ -39,24 +39,7 @@ void launch_grouped(const Tensor& x, const Tensor& positions, const Tensor& coun
     CUDA_CHECK(cudaGetLastError());
 }
 
-DeviceLayers make_device_layers(
-    const std::array<ContextKVMaterializeLayerView, kContextKVMaterializeLayers>& layers) {
-    DeviceLayers result{};
-    for (int index = 0; index < kLayers; ++index) {
-        const ContextKVMaterializeLayerView& source = layers[static_cast<std::size_t>(index)];
-        result.layer[index]                         = {
-            static_cast<const std::uint8_t*>(source.key_weight.qdata),
-            static_cast<const std::uint8_t*>(source.key_weight.scales),
-            static_cast<const std::uint8_t*>(source.value_weight.qdata),
-            static_cast<const std::uint8_t*>(source.value_weight.scales),
-            static_cast<const __nv_bfloat16*>(source.key_norm_weight.data),
-            static_cast<__nv_bfloat16*>(source.cache.k.data),
-            static_cast<__half*>(source.cache.v.data),
-            static_cast<std::int32_t>(source.cache.padded_capacity),
-        };
-    }
-    return result;
-}
+// make_device_layers lives in epilogue.cuh; the port's NVFP4 route shares it.
 
 template <auto Projection, bool KeyPost>
 void launch_materialize(

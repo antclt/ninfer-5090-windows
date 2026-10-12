@@ -16,4 +16,9 @@ struct ContextKVMaterializeImplementation {
 // Columns count the envelope's live prefix capacity across requests, not physical padding.
 ContextKVMaterializeImplementation select_context_kv_materialize(std::int32_t columns);
 
+// The NVFP4-encoded key/value parents' implementation family. Port-only: upstream registers no
+// NVFP4 parent here. Selected from the layer weights' format rather than from `columns`, because
+// the two families are exclusive per call.
+ContextKVMaterializeImplementation select_context_kv_materialize_nvfp4(std::int32_t columns);
+
 } // namespace ninfer::ops::detail

@@ -902,7 +902,7 @@ struct SparseAcceptSuite {
         DeviceBuffer d_proposal_q    = to_device(proposal_q);
         DeviceBuffer d_token_counts  = to_device(token_counts);
         ops::SamplingConfig host     = config;
-        host.token_counts            = static_cast<std::int32_t*>(d_token_counts.p);
+        host.token_counts            = static_cast<std::int32_t*>(d_token_counts.data());
         DeviceBuffer d_configs       = to_device(std::vector<ops::SamplingConfig>{host});
         DeviceBuffer d_targets       = to_device(std::vector<std::int32_t>(
             kSparseColumns * kSparseBatch, 0));
@@ -913,25 +913,25 @@ struct SparseAcceptSuite {
         GuardedDeviceBuffer d_licensed_counts(sizeof(std::int32_t));
         GuardedDeviceBuffer d_accepted(sizeof(std::int32_t));
 
-        Tensor targets_tensor(d_targets.p, DType::I32, {kSparseColumns, kSparseBatch});
-        Tensor logits_tensor(d_logits.p, DType::BF16,
+        Tensor targets_tensor(d_targets.span(), DType::I32, {kSparseColumns, kSparseBatch});
+        Tensor logits_tensor(d_logits.span(), DType::BF16,
                              {kSparsePhysicalRows, kSparseColumns, kSparseBatch});
-        Tensor drafts_tensor(d_drafts.p, DType::I32, {kSparseDrafts, kSparseBatch});
-        Tensor candidate_tensor(d_candidate_ids.p, DType::I32,
+        Tensor drafts_tensor(d_drafts.span(), DType::I32, {kSparseDrafts, kSparseBatch});
+        Tensor candidate_tensor(d_candidate_ids.span(), DType::I32,
                                 {kSparseCandidates, kSparseDrafts, kSparseBatch});
-        Tensor q_tensor(d_proposal_q.p, DType::FP32,
+        Tensor q_tensor(d_proposal_q.span(), DType::FP32,
                         {kSparseCandidates, kSparseDrafts, kSparseBatch});
-        Tensor extent_tensor(d_extents.p, DType::I32, {kSparseBatch});
-        Tensor lengths_tensor(d_lengths.data(), DType::I32, {kSparseBatch});
-        Tensor anchors_tensor(d_anchors.data(), DType::I32, {kSparseBatch});
-        Tensor licensed_tensor(d_licensed.data(), DType::I32, {kSparseColumns, kSparseBatch});
-        Tensor licensed_counts_tensor(d_licensed_counts.data(), DType::I32, {kSparseBatch});
-        Tensor accepted_tensor(d_accepted.data(), DType::I32, {kSparseBatch});
+        Tensor extent_tensor(d_extents.span(), DType::I32, {kSparseBatch});
+        Tensor lengths_tensor(d_lengths.span(), DType::I32, {kSparseBatch});
+        Tensor anchors_tensor(d_anchors.span(), DType::I32, {kSparseBatch});
+        Tensor licensed_tensor(d_licensed.span(), DType::I32, {kSparseColumns, kSparseBatch});
+        Tensor licensed_counts_tensor(d_licensed_counts.span(), DType::I32, {kSparseBatch});
+        Tensor accepted_tensor(d_accepted.span(), DType::I32, {kSparseBatch});
         const ops::SpeculativeAcceptExecutionEnvelope envelope{false};
 
         int failures = 0;
         for (const int extent : {0, 1}) {
-            cuda_check(cudaMemcpy(d_extents.p, &extent, sizeof(std::int32_t),
+            cuda_check(cudaMemcpy(d_extents.data(), &extent, sizeof(std::int32_t),
                                   cudaMemcpyHostToDevice),
                        "extent");
             const std::size_t workspace_bytes =
@@ -939,12 +939,12 @@ struct SparseAcceptSuite {
                     kSparseTokenDomain, envelope, kSparseDrafts, kSparseDrafts, kSparseBatch,
                     kSparseBatch);
             GuardedDeviceBuffer scratch(std::max<std::size_t>(workspace_bytes, 1));
-            WorkspaceArena arena(DeviceSpan{scratch.data(), scratch.bytes()});
+            MemoryArena arena(scratch.span());
             std::vector<std::int32_t> counts(static_cast<std::size_t>(kSparseTokenDomain), 0);
             int acceptances = 0;
             for (int trial = 0; trial < kTrials; ++trial) {
                 host.seed = 0x9E3779B97F4A7C15ull * static_cast<unsigned long long>(trial + 1);
-                cuda_check(cudaMemcpy(d_configs.p, &host, sizeof(ops::SamplingConfig),
+                cuda_check(cudaMemcpy(d_configs.data(), &host, sizeof(ops::SamplingConfig),
                                       cudaMemcpyHostToDevice),
                            "seed");
                 initialize(d_lengths, lengths);
@@ -953,7 +953,8 @@ struct SparseAcceptSuite {
                     targets_tensor, logits_tensor, drafts_tensor, candidate_tensor, q_tensor,
                     extent_tensor, lengths_tensor, anchors_tensor, licensed_tensor,
                     licensed_counts_tensor, accepted_tensor, kSparseTokenDomain,
-                    static_cast<const ops::SamplingConfig*>(d_configs.p), envelope, arena, nullptr);
+                    static_cast<const ops::SamplingConfig*>(d_configs.data()), envelope, arena,
+                    ninfer::test::cuda_environment().default_execution);
                 cuda_synchronize();
                 const std::vector<std::int32_t> got = read<std::int32_t>(d_licensed, 2);
                 ++counts[static_cast<std::size_t>(got[0])];

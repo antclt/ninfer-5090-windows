@@ -7,7 +7,7 @@
 // slots and a fixed-width bitonic sort orders them. No device allocation; all scratch is static
 // shared memory sized for K<=256.
 
-#include "ops/common/warp.cuh"
+#include "ops/common/cuda/reduce.cuh"
 
 #include <cuda_bf16.h>
 #include <math_constants.h>
@@ -16,6 +16,10 @@
 #include <cstdint>
 
 namespace ninfer::ops {
+
+// Upstream's shared device primitives (kWarpSize, warp reductions, cp.async) live in
+// ops/common; these kernels were written against the port's pre-reorganisation headers.
+using namespace common;
 
 inline constexpr int kTopkLogprobsBlock = 256;
 inline constexpr int kTopkLogprobsBins  = 256;

@@ -18,7 +18,7 @@ class ModelOptNvfp4:
 
     @lru_cache(maxsize=None)
     def scales(self, prefix: str) -> tuple[bytes, bytes, bytes, bytes]:
-        result = []
+        result: list[bytes] = []
         for suffix in ("weight_scale_2", "input_scale"):
             name = f"{prefix}.{suffix}"
             info = self.store.describe(name)
@@ -31,7 +31,8 @@ class ModelOptNvfp4:
             if not valid_positive_fp32_word(struct.unpack("<I", divisor)[0]):
                 raise ValueError(f"{name}: reciprocal is not positive finite FP32")
             result.extend((raw, divisor))
-        return tuple(result)
+        first, second, third, fourth = result
+        return first, second, third, fourth
 
     def matrix(self, prefix: str, shape: tuple[int, int]) -> LogicalSource:
         n, k = shape

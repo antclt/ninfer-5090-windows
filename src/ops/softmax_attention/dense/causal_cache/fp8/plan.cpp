@@ -1,3 +1,4 @@
+#include "ops/softmax_attention/dense/causal_cache/partition.h"
 #include "ops/softmax_attention/dense/causal_cache/fp8/plan.h"
 #include "ops/softmax_attention/kernels/causal/operands.h"
 #include "ops/softmax_attention/dense/causal_cache/fp8/instances.h"
@@ -20,15 +21,17 @@ constexpr int kGroupedPrefillMaxWidth = 80;
 // Minimize waves per KV partition, retaining fewer partitions on a tie.
 // The bound limits FP32 partial traffic; live rows cap the count at
 // ceil(visible_keys / 512). Count changes work and storage, never kernel topology.
+//
 CausalKvPartition select_tiled_partition(int heads, int width, int visible_capacity,
                                          int multiprocessor_count) {
     const std::int64_t tiles =
         (static_cast<std::int64_t>(width) + Fp8KvTiledInstance::kQueryRows - 1) /
         Fp8KvTiledInstance::kQueryRows;
     const std::int64_t ctas = heads * tiles;
+    const auto saturated = tiled_partition_saturated(ctas, multiprocessor_count);
     int selected            = 1;
     auto waves              = (ctas + multiprocessor_count - 1) / multiprocessor_count;
-    for (int splits = 2; splits <= 8; ++splits) {
+    for (int splits = 2; !saturated && splits <= 8; ++splits) {
         const auto next = (ctas * splits + multiprocessor_count - 1) / multiprocessor_count;
         if (next * selected < waves * splits) {
             selected = splits;

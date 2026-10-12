@@ -76,27 +76,27 @@ void launch_finish(const Tensor& base, const Tensor& dynamic, Tensor& prepared, 
 void nvfp4_dynamic_grouped_conv_prepare_dispatch(const Tensor& residual, const Tensor& norm,
                                                 float eps, const Tensor& base,
                                                 const Weight& kernel_projection, Tensor& prepared,
-                                                Tensor& finish_delta, WorkspaceArena& workspace,
-                                                cudaStream_t stream) {
+                                                Tensor& finish_delta, MemoryArena& workspace,
+                                                CudaExecutionView execution) {
     auto scope       = workspace.scope();
     const int tokens = residual.ne[1] * residual.ne[2];
     Tensor dynamic   = workspace.alloc(DType::BF16, {kCoefficientRows, tokens});
-    rmsnorm(residual, norm, eps, false, prepared, stream);
-    linear(prepared.view({kHidden, tokens}), kernel_projection, dynamic, stream);
-    launch_finish(base, dynamic, prepared, finish_delta, stream);
+    rmsnorm(residual, norm, eps, false, prepared, execution);
+    linear(prepared.view({kHidden, tokens}), kernel_projection, dynamic, execution);
+    launch_finish(base, dynamic, prepared, finish_delta, execution.stream());
 }
 
 void nvfp4_linear_dynamic_grouped_conv_add_dispatch(const Tensor& x, const Weight& projection,
                                                     const Tensor& base_kernel,
                                                     const Tensor& finish_delta, Tensor& residual,
-                                                    WorkspaceArena& workspace,
-                                                    cudaStream_t stream) {
+                                                    MemoryArena& workspace,
+                                                    CudaExecutionView execution) {
     auto scope       = workspace.scope();
     const int tokens = x.ne[1] * x.ne[2];
     Tensor projected = workspace.alloc(DType::BF16, {5120, tokens});
-    linear(x.view({x.ne[0], tokens}), projection, projected, stream);
+    linear(x.view({x.ne[0], tokens}), projection, projected, execution);
     dynamic_grouped_conv_add_finish_launch(projected, base_kernel, finish_delta, residual,
-                                           stream);
+                                           execution.stream());
 }
 
 } // namespace ninfer::ops::detail

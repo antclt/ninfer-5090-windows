@@ -1,10 +1,10 @@
 // Implements: include/ninfer/ops/topk_logprobs.h
 // Match: wrapper-validated contiguous tensors and valid vocabulary rows.
 // Algorithm assumptions: one independent CTA per column; no global workspace.
-#include "ops/launcher/topk_logprobs.h"
+#include "ops/reduction/topk_logprobs_launch.h"
 
 #include "core/device.h"
-#include "ops/kernel/topk_logprobs.cuh"
+#include "ops/reduction/topk_logprobs_kernel.cuh"
 
 #include <cstdlib>
 

@@ -3,12 +3,13 @@
 // serves every column count: e2m1 codes stage raw and decode to exactly-representable BF16, the
 // stored E4M3 scales apply in FP32 per 16-value group after each group's MMA accumulation, and
 // the payload divisor folds into the captured scales. The activation staging, envelope filtering,
-// key scratch, and cache stores are shared with the W8 family through context_kv_common.cuh.
+// key scratch, and cache stores are shared with the W8 family through epilogue.cuh.
 #include "ops/kv_cache/context_materialize/dispatch.h"
 #include "core/device.h"
 #include "ops/common/cuda/memory.cuh"
-#include "ops/common/mma.cuh"
-#include "ops/kv_cache/context_materialize/context_kv_common.cuh"
+#include "ops/common/cuda/pipeline.cuh"
+#include "ops/common/cuda/mma.cuh"
+#include "ops/kv_cache/context_materialize/epilogue.cuh"
 #include "ops/common/quant/nvfp4.cuh"
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -16,7 +17,28 @@
 namespace ninfer::ops::detail {
 namespace {
 
-constexpr int kHidden = 5120, kRows = kContextKVRows, kHeadDim = kContextKVHeadDim;
+using namespace common;
+using namespace context_kv;
+
+constexpr int kHidden = 5120;
+
+// The port's own staging swizzle, from HEAD context_kv_common.cuh:35 (`swizzle_128`). It permutes in
+// 8-element units: (((column >> 3) ^ (row & 7)) << 3) | (column & 7). It is NOT
+// common::swizzle_xor_128, which permutes in 16-element units (col ^ ((row & 7) << 4)); this kernel
+// was written against the 8-element form, and substituting the 16-element one while moving the file
+// is what broke the >256 route: with the substitution in place the FP64 oracle passes at W=256 and
+// fails at W=257 and W=512, which is the same boundary the served lanes showed as acceptance
+// collapsing to exactly zero above 256 context tokens.
+__device__ __forceinline__ int swizzle_stage_128(int row, int column) {
+    return (((column >> 3) ^ (row & 7)) << 3) | (column & 7);
+}
+
+// Eight BF16 values decoded from one K16 NVFP4 group, in the alignment the MMA's operand
+// swizzle expects.
+union alignas(16) ContextKVBf16x8 {
+    uint4 raw;
+    __nv_bfloat162 pair[4];
+};
 
 template <int Rows, int Columns, int BlockK>
 union alignas(16) MaterializeNvfp4Storage {
@@ -69,7 +91,7 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
             for (int item = tid; item < kItems; item += kThreads) {
                 const int column  = item / (kBlockK / 8);
                 const int k8      = item - column * (kBlockK / 8);
-                auto* destination = &mainloop.activations[column][swizzle_128(column, k8 * 8)];
+                auto* destination = &mainloop.activations[column][swizzle_stage_128(column, k8 * 8)];
                 if (column < live_columns) {
                     cp_async<16, Cache::ca>(
                         destination,
@@ -133,7 +155,7 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
                 }
 #pragma unroll
                 for (int vec = 0; vec < 4; ++vec) {
-                    store_vec(&mainloop.code_values[row][swizzle_128(row, col + vec * 8)],
+                    store_vec(&mainloop.code_values[row][swizzle_stage_128(row, col + vec * 8)],
                               decoded[vec].raw);
                 }
             }
@@ -155,10 +177,10 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
             float top_scales[kGroupsPerTile], bottom_scales[kGroupsPerTile];
 #pragma unroll
             for (int g = 0; g < kGroupsPerTile; ++g) {
-                top_scales[g] = decode_nvfp4_e4m3(mainloop.scales[warp_row * 16 + gid][g]) *
+                top_scales[g] = decode_e4m3(mainloop.scales[warp_row * 16 + gid][g]) *
                                 inverse_divisor;
                 bottom_scales[g] =
-                    decode_nvfp4_e4m3(mainloop.scales[warp_row * 16 + gid + 8][g]) * inverse_divisor;
+                    decode_e4m3(mainloop.scales[warp_row * 16 + gid + 8][g]) * inverse_divisor;
             }
             __syncthreads();
             const int next = k_tile + 1;
@@ -174,13 +196,13 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
                 ldmatrix_x4(
                     a[0], a[1], a[2], a[3],
                     smem_addr(
-                        &mainloop.code_values[weight_row][swizzle_128(weight_row, weight_col)]));
+                        &mainloop.code_values[weight_row][swizzle_stage_128(weight_row, weight_col)]));
 #pragma unroll
                 for (int token_mma = 0; token_mma < kTokenMmas; ++token_mma) {
                     const int activation_row = warp_col * kWarpColumns + token_mma * 8 + b_row;
                     const int activation_col = k_step * 16 + b_coloff;
                     ldmatrix_x2(b[token_mma][0], b[token_mma][1],
-                                smem_addr(&mainloop.activations[activation_row][swizzle_128(
+                                smem_addr(&mainloop.activations[activation_row][swizzle_stage_128(
                                     activation_row, activation_col)]));
                 }
             };
@@ -331,15 +353,26 @@ void context_kv_materialize_nvfp4_launch(
                                     envelope, key_scratch, stream);
         return;
     case Route::Mma64:
+        // The port's own shape for this route, restored: it was never the defect. The >256 route
+        // failed because the staging swizzle this file was moved onto (common::swizzle_xor_128) is
+        // not the one the kernel was written against -- see swizzle_stage_128 above. Changing this
+        // shape to the 128-wide K tile "fixed" the oracle by routing around the wrong swizzle, which
+        // would have left the same defect waiting at any shape that reached the differing bit.
         launch_mma<64, 64, 64, 2>(context, positions, counts, state_slots, device_layers,
                                   envelope, key_scratch, stream);
         break;
     }
-    context_kv_key_post_launch(key_scratch, positions, counts, state_slots, device_layers,
-                               context.ne[2], context.ne[1], envelope, stream);
+    context_kv_key_post_kernel<<<dim3(envelope.max_count * context.ne[2], kLayers), 256, 0,
+                                 stream>>>(
+        static_cast<const float*>(key_scratch.data), static_cast<const int*>(positions.data),
+        static_cast<const int*>(counts.data), static_cast<const int*>(state_slots.data),
+        device_layers, context.ne[2], context.ne[1], envelope.min_count, envelope.max_count);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 ContextKVMaterializeImplementation select_context_kv_materialize_nvfp4(std::int32_t columns) {
+    // The port's contract, restored: the fused route needs no key scratch, every other route runs
+    // the key-post pass and does.
     return {context_kv_materialize_nvfp4_launch, route_for(columns) != Route::Fused64};
 }
 

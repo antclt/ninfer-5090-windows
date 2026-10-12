@@ -157,9 +157,9 @@ int run_case(const std::string& label, std::int32_t physical_rows, std::int32_t 
     device_indices.fill(0xcd);
     device_logprobs.fill(0xcd);
 
-    Tensor logits_tensor(device_logits.data(), DType::BF16, {physical_rows, columns});
-    Tensor indices_tensor(device_indices.data(), DType::I32, {columns, k});
-    Tensor logprobs_tensor(device_logprobs.data(), DType::FP32, {columns, k});
+    Tensor logits_tensor(device_logits.span(), DType::BF16, {physical_rows, columns});
+    Tensor indices_tensor(device_indices.span(), DType::I32, {columns, k});
+    Tensor logprobs_tensor(device_logprobs.span(), DType::FP32, {columns, k});
     ops::topk_logprobs(logits_tensor, valid_rows, k, indices_tensor, logprobs_tensor, nullptr);
     cuda_synchronize();
 
@@ -197,18 +197,23 @@ int expect_invalid(const char* label, Function&& function) {
 }
 
 int run_validation_cases() {
-    DeviceBuffer logits_data(8 * 3 * sizeof(std::uint16_t));
-    DeviceBuffer indices_data(3 * 2 * sizeof(std::int32_t));
-    DeviceBuffer logprobs_data(3 * 2 * sizeof(float));
+    const auto device = ninfer::test::cuda_environment().context.device();
+    // Sized for the largest shape any case below declares. A negative case has to reach the Op's own
+    // validation, and Tensor construction rejects a span that cannot back the declared shape -- so
+    // logits is sized for the FP32 redeclaration at one case (8*3*4) rather than for the BF16 one
+    // every other case uses, and both outputs for their kTopkLogprobsMaxK + 1 redeclaration.
+    DeviceBuffer logits_data(device, 8 * 3 * sizeof(float));
+    DeviceBuffer indices_data(device, 3 * (ops::kTopkLogprobsMaxK + 1) * sizeof(std::int32_t));
+    DeviceBuffer logprobs_data(device, 3 * (ops::kTopkLogprobsMaxK + 1) * sizeof(float));
 
-    Tensor logits(logits_data.p, DType::BF16, {8, 3});
-    Tensor indices(indices_data.p, DType::I32, {3, 2});
-    Tensor logprobs(logprobs_data.p, DType::FP32, {3, 2});
-    Tensor fp32_indices(indices_data.p, DType::FP32, {3, 2});
+    Tensor logits(logits_data.span(), DType::BF16, {8, 3});
+    Tensor indices(indices_data.span(), DType::I32, {3, 2});
+    Tensor logprobs(logprobs_data.span(), DType::FP32, {3, 2});
+    Tensor fp32_indices(indices_data.span(), DType::FP32, {3, 2});
 
     int failures = 0;
     failures += expect_invalid("wrong logits dtype", [&] {
-        Tensor wrong(logits_data.p, DType::FP32, {8, 3});
+        Tensor wrong(logits_data.span(), DType::FP32, {8, 3});
         ops::topk_logprobs(wrong, 8, 2, indices, logprobs, nullptr);
     });
     failures += expect_invalid("wrong indices dtype", [&] {
@@ -218,8 +223,8 @@ int run_validation_cases() {
         ops::topk_logprobs(logits, 8, 0, indices, logprobs, nullptr);
     });
     failures += expect_invalid("k above the supported maximum", [&] {
-        Tensor big_indices(indices_data.p, DType::I32, {3, ops::kTopkLogprobsMaxK + 1});
-        Tensor big_logprobs(logprobs_data.p, DType::FP32, {3, ops::kTopkLogprobsMaxK + 1});
+        Tensor big_indices(indices_data.span(), DType::I32, {3, ops::kTopkLogprobsMaxK + 1});
+        Tensor big_logprobs(logprobs_data.span(), DType::FP32, {3, ops::kTopkLogprobsMaxK + 1});
         ops::topk_logprobs(logits, 8, ops::kTopkLogprobsMaxK + 1, big_indices, big_logprobs, nullptr);
     });
     failures += expect_invalid("k above valid_rows", [&] {
@@ -229,15 +234,15 @@ int run_validation_cases() {
         ops::topk_logprobs(logits, 9, 2, indices, logprobs, nullptr);
     });
     failures += expect_invalid("indices shape disagrees with columns", [&] {
-        Tensor wrong(indices_data.p, DType::I32, {4, 2});
+        Tensor wrong(indices_data.span(), DType::I32, {4, 2});
         ops::topk_logprobs(logits, 8, 2, wrong, logprobs, nullptr);
     });
     failures += expect_invalid("outputs alias logits", [&] {
-        Tensor aliased(logits_data.p, DType::I32, {3, 2});
+        Tensor aliased(logits_data.span(), DType::I32, {3, 2});
         ops::topk_logprobs(logits, 8, 2, aliased, logprobs, nullptr);
     });
     failures += expect_invalid("outputs alias each other", [&] {
-        Tensor shared(logprobs_data.p, DType::I32, {3, 2});
+        Tensor shared(logprobs_data.span(), DType::I32, {3, 2});
         ops::topk_logprobs(logits, 8, 2, shared, logprobs, nullptr);
     });
     return failures;

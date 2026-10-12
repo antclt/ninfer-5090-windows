@@ -1,5 +1,6 @@
 #pragma once
 #include "core/tensor.h"
+#include "core/weight.h"
 #include "core/layout.h"
 #include "core/arena.h"
 #include "ninfer/ops/sampling.h"
@@ -25,8 +26,19 @@ SelectorWorkspace allocate_selector_workspace(Allocator& allocator, SelectorRout
 
 void execute_candidate_path(const Tensor& candidate_ids, const Tensor& unary_scores,
                             const Tensor& projected_hidden, const Tensor& anchors,
-                            const Tensor& predecessor_codebook, const Tensor& successor_codebook,
+                            const Weight& predecessor_codebook, const Weight& successor_codebook,
                             const Tensor& base_positions, const SamplingConfig* configs,
                             Tensor& drafts, Tensor& proposal_q, MemoryArena& workspace,
                             cudaStream_t stream);
+
+// The NVFP4-encoded codebook route of the same walk. The Op's contract admits either codebook
+// format, and a packed parent cannot be described as a BF16 tensor, so the route is selected from
+// the weight's own format rather than from a second entry point.
+void execute_candidate_path_nvfp4(const Tensor& candidate_ids, const Tensor& unary_scores,
+                                  const Tensor& projected_hidden, const Tensor& anchors,
+                                  const Weight& predecessor_codebook,
+                                  const Weight& successor_codebook, const Tensor& base_positions,
+                                  const SamplingConfig* configs, Tensor& drafts,
+                                  Tensor& proposal_q, const SelectorWorkspace& workspace,
+                                  cudaStream_t stream);
 } // namespace ninfer::ops::candidate_path_detail

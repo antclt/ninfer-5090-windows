@@ -40,27 +40,95 @@ DEFAULT_BASE = "037b7a2c"
 # The commit that shipped the dead-clause regression, used by --self-test as the control.
 CONTROL_REV = "4244b0d9"
 
+# The files whose ladders this gate reads. Upstream's ops reorganisation moved every one of them
+# (linear/fp8/shapes -> linear/projection/fp8/shapes, and the K-templated linear_add and the three
+# split/swiglu families into their own shape manifests), and split fp8_linear_add_a8.cu into the two
+# K-specific files below, which is why this list is longer than it was.
 FILES: tuple[str, ...] = (
-    "src/ops/linear/fp8/shapes/n14336_k5120.cu",
-    "src/ops/linear/fp8/shapes/n16384_k5120.cu",
-    "src/ops/linear/fp8/shapes/n34816_k5120.cu",
-    "src/ops/linear/fp8/shapes/n5120_k17408.cu",
-    "src/ops/linear/fp8/shapes/n5120_k6144.cu",
-    "src/ops/linear_add/fp8/fp8_linear_add_a8.cu",
-    "src/ops/attn_input_proj/fp8/fp8_attn_input_a8.cu",
-    "src/ops/gdn_input_proj/fp8/fp8_gdn_input_a8.cu",
-    "src/ops/linear_swiglu/fp8/fp8_linear_swiglu_a8.cu",
+    "src/ops/linear/projection/fp8/shapes/n14336_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n16384_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n34816_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n5120_k17408.cu",
+    "src/ops/linear/projection/fp8/shapes/n5120_k6144.cu",
+    "src/ops/linear/add/fp8/shapes/n5120_k6144.cu",
+    "src/ops/linear/add/fp8/shapes/n5120_k17408.cu",
+    "src/ops/linear/split/fp8/shapes/n14336_k5120/a8.cu",
+    "src/ops/linear/split/fp8/shapes/n16384_k5120/a8.cu",
+    "src/ops/linear/swiglu/fp8/shapes/n34816_k5120/a8.cu",
 )
+# Where each ladder lived before upstream's ops reorganisation. The gate reads the base revision,
+# which predates it, at the file's OLD path -- the question it asks ("does this ladder still select
+# what it selected then?") is about the ladder, not about the path it now sits at.
+BASE_PATHS: dict[str, str] = {
+    "src/ops/linear/projection/fp8/shapes/n14336_k5120.cu": "src/ops/linear/fp8/shapes/n14336_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n16384_k5120.cu": "src/ops/linear/fp8/shapes/n16384_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n34816_k5120.cu": "src/ops/linear/fp8/shapes/n34816_k5120.cu",
+    "src/ops/linear/projection/fp8/shapes/n5120_k17408.cu": "src/ops/linear/fp8/shapes/n5120_k17408.cu",
+    "src/ops/linear/projection/fp8/shapes/n5120_k6144.cu": "src/ops/linear/fp8/shapes/n5120_k6144.cu",
+    "src/ops/linear/split/fp8/shapes/n14336_k5120/a8.cu":
+        "src/ops/attn_input_proj/fp8/fp8_attn_input_a8.cu",
+    "src/ops/linear/split/fp8/shapes/n16384_k5120/a8.cu":
+        "src/ops/gdn_input_proj/fp8/fp8_gdn_input_a8.cu",
+    "src/ops/linear/swiglu/fp8/shapes/n34816_k5120/a8.cu":
+        "src/ops/linear_swiglu/fp8/fp8_linear_swiglu_a8.cu",
+}
+
+# Upstream split fp8_linear_add_a8.cu into one file per K. Each successor is therefore a contiguous
+# run inside the base's ladder list, and its capacity function is that K's half of the base's, so
+# both are compared against the run and neither against the whole file.
+# successor -> (the file it came out of, how many CONDITIONAL branches its A8 ladder has). The count
+# is the ladder, not the whole file: both successors also hold a select_a16 chain, and the base's A8
+# ladder is a contiguous run inside a list that also holds both K's ladders.
+#
+# The count is 4 and not 5 because each ladder ends in an unconditional
+# `return {nullptr, launch...<Bulk>, partial_bytes};`, and the matcher keys on `if (cond)`, so the
+# terminal return is outside this comparison -- on the base side too, which is why the two agree. A
+# change to only the terminal selection would not be caught here; a change to any band bound is.
+SPLIT_OF: dict[str, tuple[str, int]] = {
+    "src/ops/linear/add/fp8/shapes/n5120_k6144.cu":
+        ("src/ops/linear_add/fp8/fp8_linear_add_a8.cu", 4),
+    "src/ops/linear/add/fp8/shapes/n5120_k17408.cu":
+        ("src/ops/linear_add/fp8/fp8_linear_add_a8.cu", 4),
+}
+for _successor, (_split, _count) in SPLIT_OF.items():
+    BASE_PATHS[_successor] = _split
+
+# Same tile, two spellings: the base prefixes each K's schedules, and the merged tree uses upstream's
+# per-geometry names. Aliased so a renamed schedule does not read as a changed selection.
+SCHEDULE_ALIAS: dict[str, str] = {
+    "K6144Tma32x64": "SmallTile",
+    "K6144Tma64x128": "MidTile",
+    "K6144MidBulk": "MidBulk",
+    "K6144Bulk": "Bulk",
+    "K17408Tma32x64": "SmallTile",
+    "K17408Small": "Small",
+    "K17408Mid": "Mid",
+    "K17408Wide": "Wide",
+    "K17408Bulk": "Bulk",
+}
+
+
+def alias(name: str) -> str:
+    return SCHEDULE_ALIAS.get(name, name)
+
 
 CONST = re.compile(r"constexpr\s+std::int32_t\s+(kBand\w+)\s*=\s*(\d+)\s*;")
 LADDER = re.compile(
     r"if\s*\((?P<cond>[^)]*(?:\([^)]*\))?[^)]*)\)\s*\n?\s*"
-    r"(?:return\s+)?launch(?:\.template)?\s*(?:_fp8_a8\w*)?\s*"
-    r"(?:<Geometry,\s*|\.template\s+operator\(\)\s*<)(?P<sched>[\w:<>,\s]+?)[>;]",
+    # `launch\w*` rather than `_fp8_a8\w*`: the add shapes name the launcher `launch_fp8_add_a8`,
+    # which the narrower alternation could not reach, and a branch it cannot reach is a branch the
+    # check silently does not cover.
+    r"(?:return\s+)?(?:\{[^,}]*,\s*)?launch\w*(?:\.template)?\s*"
+    # the schedule is the whole argument after `<Geometry,`, the one after `operator()<`, or the
+    # innermost of `Instance<...>` in the plan-returning form.
+    r"(?:<Geometry,\s*|operator\(\)\s*<|<Instance<)(?P<sched>[\w:<>,\s]+?)[>;]",
     re.S,
 )
 CAPACITY = re.compile(
-    r"(?:partial_capacity_bytes|fp8_\w*_partial_capacity_bytes)\s*\([^)]*\)\s*\{(.*?)\n\}", re.S
+    # `partial_capacity` is upstream's name for the per-shape half of what this Op's merged
+    # capacity function does; the longer spellings are the port's pre-reorganisation ones.
+    r"(?:partial_capacity|partial_capacity_bytes|fp8_\w*_partial_capacity_bytes)\s*\([^)]*\)\s*\{(.*?)\n\}",
+    re.S
 )
 BOUNDARY_TOKENS = (1, 64, 129, 192, 193, 257, 385, 513, 769)
 
@@ -114,12 +182,37 @@ def capacity_branch(text: str, tokens: int) -> int:
     return taken
 
 
-def compare(base: str, new: str) -> list[str]:
-    """Differences between two revisions of one file, dispatch-agnostically."""
+def _find_run(haystack: list[str], needle: list[str]) -> int | None:
+    """Index of `needle` as a contiguous run of `haystack`, matched on schedule names."""
+    if not needle or len(needle) > len(haystack):
+        return None
+    for start in range(len(haystack) - len(needle) + 1):
+        if haystack[start:start + len(needle)] == needle:
+            return start
+    return None
+
+
+def compare(base: str, new: str, *, split: int | None = None) -> list[str]:
+    """Differences between two revisions of one file, dispatch-agnostically.
+
+    With `split`, `new` is one ladder of a file the base holds several of: its conditions are located
+    as a contiguous run of the base's (matched on schedule names, which encode the K), and the
+    capacity function is not compared because it too is one half of the base's.
+    """
     old_branches, new_branches = branches(base), branches(new)
+    if split:
+        old_branches = [(cond, alias(sched)) for cond, sched in old_branches]
+        new_branches = [(cond, alias(sched)) for cond, sched in new_branches]
+        new_branches = new_branches[-split:]
     notes: list[str] = []
     if len(old_branches) != len(new_branches):
-        return [f"branch count {len(old_branches)} -> {len(new_branches)}"]
+        if not split:
+            return [f"branch count {len(old_branches)} -> {len(new_branches)}"]
+        offset = _find_run([sched for _, sched in old_branches],
+                           [sched for _, sched in new_branches])
+        if offset is None:
+            return ["this ladder is not a contiguous run of the base file's ladders"]
+        old_branches = old_branches[offset:offset + len(new_branches)]
     old_consts, new_consts = constants(base), constants(new)
     for index, ((old_cond, old_sched), (new_cond, new_sched)) in enumerate(
         zip(old_branches, new_branches, strict=True)
@@ -131,10 +224,11 @@ def compare(base: str, new: str) -> list[str]:
             )
         if old_sched != new_sched:
             notes.append(f"ladder[{index}] selects {old_sched} -> {new_sched}")
-    for tokens in BOUNDARY_TOKENS:
-        if capacity_branch(base, tokens) != capacity_branch(new, tokens):
-            notes.append(f"capacity branch differs at t={tokens}")
-            break
+    if not split:
+        for tokens in BOUNDARY_TOKENS:
+            if capacity_branch(base, tokens) != capacity_branch(new, tokens):
+                notes.append(f"capacity branch differs at t={tokens}")
+                break
     return notes
 
 
@@ -151,13 +245,18 @@ def main() -> int:
             # revision NAME -- made branches() see the string "037b7a2c", find no branches at all,
             # and report every file as changed. The control then passed for entirely the wrong
             # reason, which is the same failure this gate exists to prevent.
+            base_path = BASE_PATHS.get(relative, relative)
             notes = compare(
-                blob(arguments.base, relative), blob(CONTROL_REV, relative)
+                blob(arguments.base, base_path),
+                blob(CONTROL_REV, base_path),
+                split=SPLIT_OF[relative][1] if relative in SPLIT_OF else None,
             )
             if notes:
                 caught += 1
                 print(f"  control caught {relative.split('/')[-1]}: {notes[0]}")
-        if caught != 2:
+        # 3, not 2: the control's two defective ladders are still two ladders, but upstream split
+        # fp8_linear_add_a8.cu into one file per K, so the control now sees that file's defect twice.
+        if caught != 3:
             print(
                 f"  FAIL: the control caught {caught} file(s). Exactly 2 is correct -- those are the"
                 f" two ladders that commit {CONTROL_REV} shipped with a dead band clause. A different"
@@ -172,7 +271,11 @@ def main() -> int:
     failures = 0
     for relative in FILES:
         try:
-            notes = compare(blob(arguments.base, relative), Path(relative).read_bytes().decode("utf-8"))
+            notes = compare(
+                blob(arguments.base, BASE_PATHS.get(relative, relative)),
+                Path(relative).read_bytes().decode("utf-8"),
+                split=SPLIT_OF[relative][1] if relative in SPLIT_OF else None,
+            )
         except subprocess.CalledProcessError:
             print(f"  FAIL {relative}: base revision {arguments.base} has no such file")
             failures += 1

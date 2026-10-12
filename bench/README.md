@@ -328,7 +328,7 @@ cmake --build build -j --target ninfer_linear_topk_bench
 ## CandidateSelectorPath Op benchmark
 
 `ninfer_candidate_selector_bench` measures the complete public conditional selector for
-`K=1..15`, `B=1..8`, 16 candidates and rank 256, with full BF16 codebooks `[256,248320]`.
+`K=1..15`, `B=1..8`, 16 candidates and rank 256, with full BF16 codebooks `[248320,256]`.
 The default sweep covers all K/B pairs in greedy, stochastic and mixed modes (B=1 omits the
 redundant mixed case). Each cold-cache CUDA Graph sample follows a 256 MiB L2 eviction read.
 It reports the selected route's required caller workspace and actual Graph node count. The timed

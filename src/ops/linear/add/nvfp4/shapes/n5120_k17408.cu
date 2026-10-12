@@ -49,6 +49,16 @@ Nvfp4LinearAddPlan select_nvfp4_add_n5120_k17408(LinearPolicy policy, std::int32
     if (!allows_a4(policy) || tokens < 8) return {select_a16(tokens)};
     if (tokens >= 1024)
         return {nullptr, launch_nvfp4_add_n5120_k17408_tma, Nvfp4ScaleLayout::Tiled256};
+    // The [5120, 17408] down projection has 5120 output rows, so at 64 rows per CTA it launches 80
+    // CTAs on this card's 170 SMs and a speculative verify streams its 50 MB of weights from under half
+    // the device. Halving the tile fills it, and the longer K loop wants a deeper pipeline. Measured
+    // 2026-10-12 on that route, median of 20, two interleaved rounds of the two binaries: T=8
+    // 42.37 -> 38.27 us and T=12..32 44.38 -> 39.7..40.3 us (-9.3 to -10.5 %), with T<=4 and T>=33
+    // unchanged and ninfer_linear_add_nvfp4_test passing at the 32/33 seam. Same per-row K order, so
+    // the outputs do not change -- the oracle test is what says so.
+    if (tokens <= 32)
+        return {nullptr,
+                launch_nvfp4_add_a4<Instance<Nvfp4A4MmaSchedule<32, 32, 256, 2, 4, 4, 2>>>};
     if (tokens <= 64)
         return {nullptr,
                 launch_nvfp4_add_a4<Instance<Nvfp4A4MmaSchedule<32, 64, 256, 2, 4, 2, 2>>>};

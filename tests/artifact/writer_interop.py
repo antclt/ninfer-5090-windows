@@ -45,9 +45,8 @@ def main() -> int:
                 max_file_bytes=limit,
             ) as writer:
                 writer.write_object("matrix", data)
+                writer.write_object("nf4", bytes(nf4))
             result = subprocess.run([executable, "--writer-fixture", str(path)], check=False)
-                writer.write_object("nf4", nf4)
-            result = subprocess.run([executable, "--writer-fixture", str(path)])
             if result.returncode:
                 return result.returncode
     return 0

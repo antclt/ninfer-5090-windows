@@ -16,6 +16,8 @@ target_sources(ninfer_ops PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/nvfp4/shapes/n16384_k5120/a16.cu"
   "${CMAKE_CURRENT_LIST_DIR}/nvfp4/shapes/n16384_k5120/a4.cu"
   "${CMAKE_CURRENT_LIST_DIR}/nvfp4/shapes/n16384_k5120/shape.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/nvfp4/shapes/n6144_k5120/dflash2.cu"
+  "${CMAKE_CURRENT_LIST_DIR}/nvfp4/shapes/n6144_k5120/shape.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/operands.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/q4_q5/shapes/n4096_n12288_k5120/mma.cu"
   "${CMAKE_CURRENT_LIST_DIR}/q4_q5/shapes/n4096_n12288_k5120/shape.cpp"

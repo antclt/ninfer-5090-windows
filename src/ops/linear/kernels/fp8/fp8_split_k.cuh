@@ -16,7 +16,6 @@
 
 #include "ops/common/numeric/math.cuh"
 #include "ops/linear/common/output.cuh"
-#include "ops/linear/common/output.cuh"
 #include "ops/linear/kernels/fp8/fp8_a8_mma_common.cuh"
 #include "ops/linear/kernels/fp8/fp8_operands.h"
 
@@ -109,8 +108,8 @@ __global__ void fp8_a8_split_k_reduce(Fp8A8Operands p, const float* partials, Ou
     const int tail               = blockIdx.x / Schedule::kReductionBlocks;
     const int chunk              = blockIdx.x % Schedule::kReductionBlocks;
     int row_tile, token_tile;
-    fp8_mma_tile_coordinates<Schedule>(plan.full_tiles + tail, p.rows / BR, div_up(count, BT),
-                                       row_tile, token_tile);
+    fp8_mma_tile_coordinates<Schedule>(plan.full_tiles + tail, p.rows / BR,
+                                       common::div_up(count, BT), row_tile, token_tile);
     const int first = plan.first_part(tail), parts = plan.parts(tail);
     const int row_begin    = row_tile * stored_rows;
     const auto tile_output = linear_output_tile<stored_rows>(output, row_begin);

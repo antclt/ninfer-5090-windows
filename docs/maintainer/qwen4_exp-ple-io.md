@@ -301,7 +301,7 @@ Mmax=4096 时两槽 E 分别为 40 MiB pinned Host 与 40 MiB Device；B=1、T=R
 
 ## 8. 独立 SSD 实验：结果与适用范围
 
-保留的证据为 [2026-10-07 完整报告](../../profiles/bench/ple-io-20261007/REPORT.md)，
+保留的证据为 `2026-10-07 完整报告`，
 复跑方法和原始汇总从该报告进入。实验运行于 Ryzen 9 9950X3D、RTX 5090、驱动
 617.14、CUDA Runtime 13.4.92，WSL2 Linux 6.6.87.1/ext4 虚拟磁盘；未确认物理 SSD
 型号。单 I/O worker 使用 liburing 2.5、O_DIRECT、固定文件/buffer 注册和最多 128 个

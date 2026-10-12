@@ -165,7 +165,9 @@
       "unmarked_second_vs_first": "the tool's own case and comparison labels, which it writes and reads back"
     },
     "tools/convert/__main__.py": {
-      "ninfer_user_recipe": "the tool's own report key"
+      "ninfer_user_recipe": "the tool's own report key",
+      "build_qwen3_5": "a function this tool defines and calls itself (its --build dispatch); retired_names.py asks whether a tool names a symbol of THIS tree, and a tool-local helper is not one",
+      "build_qwen4_exp": "a function this tool defines and calls itself (its --build dispatch); retired_names.py asks whether a tool names a symbol of THIS tree, and a tool-local helper is not one"
     },
     "tools/convert/calibration.py": {
       "gate_up_projection": "an artifact name in prose",
@@ -176,7 +178,12 @@
     "tools/convert/official_recipes.py": {
       "in_proj_a": "a source-checkpoint module name",
       "in_proj_b": "a source-checkpoint module name",
-      "qwen3_8_27b_nvfp4nvidia": "a source-checkpoint module name"
+      "qwen3_8_27b_nvfp4nvidia": "a source-checkpoint module name",
+      "all_query_heads_then_all_gate_heads": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "expert_activation_divisors": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "g16_fp64_exhaustive_e4m3fn_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "preserve_codes_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "qwen4_exp_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol"
     },
     "tools/convert/qwen3_5.py": {
       "deepstack_visual_indexes": "a Hugging Face config key of the source checkpoint",
@@ -247,6 +254,48 @@
       "response_stream_terminal": "the tool's own contract keys, written and read back by this tool",
       "streamed_input_tokens": "the tool's own contract keys, written and read back by this tool",
       "streamed_output_tokens": "the tool's own contract keys, written and read back by this tool"
+    },
+    "tools/convert/qwen4_exp.py": {
+      "attn_hyper_connection": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "block_inject_weight": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "deepstack_visual_indexes": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "heads_per_ngram": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "image_token_id": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "indexer_compress_ratio": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "input_mix_weight_down": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "input_mix_weight_up": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "mamba_ssm_dtype": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "mlp_hyper_connection": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "mtp_use_dedicated_embeddings": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "mtp_use_hidden_state_from_layer": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "ngram_heads_offsets": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "ngram_heads_vocab_sizes": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "norm_topk_prob": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "normalized_hidden_streams": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "out_hidden_size": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "output_gate_type": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "ple_conv_dilation": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "ple_conv_kernel_size": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "ple_hash_controls": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "pre_fc_embedding_norm": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "pre_fc_hidden_norm": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "pre_fc_norm_embedding": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "pre_fc_norm_hidden": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "qwen4_exp_mtp": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "qwen4_exp_text": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "qwen4_exp_vision": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "shared_expert_gate": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "video_token_id": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "vision_end_token_id": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority",
+      "vision_start_token_id": "a checkpoint config key read out of the Qwen4Exp config, not a symbol this tree defines; upstream's converter is where the name enters and the config is its authority"
+    },
+    "tools/release/check_fp8_band_ladders.py": {
+      "fp8_attn_input_a8": "the pre-reorganisation path of the file a ladder moved from: the gate reads the base revision there, which is the only way to compare a moved ladder against what it selected before the move, and the name survives nowhere else in the tree by design",
+      "fp8_gdn_input_a8": "the pre-reorganisation path of the file a ladder moved from: the gate reads the base revision there, which is the only way to compare a moved ladder against what it selected before the move, and the name survives nowhere else in the tree by design",
+      "fp8_linear_add_a8": "the pre-reorganisation path of the file a ladder moved from: the gate reads the base revision there, which is the only way to compare a moved ladder against what it selected before the move, and the name survives nowhere else in the tree by design"
+    },
+    "tools/convert/quantization/stored_scale.py": {
+      "ninfer_stored_scale": "the label this codec writes into the artifact's provenance; it names a conversion output, not a symbol in this tree"
     }
   }
 }

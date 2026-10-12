@@ -102,17 +102,19 @@ class Recipe:
 
     def __init__(self, model: Model):
         self.model = model
-        self.provenance = {}
+        self.provenance: dict[str, str] = {}
         self.selections: dict[str, list[Selection]] = {}
         self.policies: dict[tuple[str, str], str] = {}
         self.auxiliary_overrides: dict[tuple[str, ...], AuxiliaryValue] = {}
         self.aliases: dict[str, str] = {}
         self.separate_parameters: set[str] = set()
         self.explicit_groups: list[tuple[tuple[str, ...], tuple[int, ...] | None]] = []
-        self.explicit_parents = []
-        self.placements = {}
-        self.auxiliary_tensors = {}
-        self.auxiliary_references = {}
+        self.explicit_parents: list[
+            tuple[tuple[tuple[str, int, int], ...], tuple[int, ...], tuple[int, ...]]
+        ] = []
+        self.placements: dict[str, tuple[int, ...]] = {}
+        self.auxiliary_tensors: dict[str, AuxiliaryValue] = {}
+        self.auxiliary_references: dict[tuple[str, ...], AuxiliaryReference] = {}
         for parameter in model.parameters.values():
             self.add_parameter(parameter.name)
 
@@ -473,7 +475,7 @@ class Recipe:
                 fragments[name].append((value.begin, spec.id, cursor, cursor + count))
                 cursor += count
 
-        covered = {name: [] for name in self.selections}
+        covered: dict[str, list[tuple[int, int]]] = {name: [] for name in self.selections}
         for regions, chosen, order in self.explicit_parents:
             items = []
             for name, begin, end in regions:
@@ -505,14 +507,14 @@ class Recipe:
                     raise ValueError(f"{name}: incomplete explicit parent coverage")
                 used.add(name)
 
-        for names, chosen in self.explicit_groups:
+        for names, group_order in self.explicit_groups:
             if any(name in used or name in self.aliases for name in names):
                 raise ValueError("explicit groups overlap or include a shared alias")
             if any(len(self.selections[name]) != 1 for name in names):
                 raise ValueError(
                     "explicit grouping requires unsplit logical selections"
                 )
-            emit([(name, self.selections[name][0]) for name in names], chosen)
+            emit([(name, self.selections[name][0]) for name in names], group_order)
             used.update(names)
         # Only the methods defined in this package may auto-merge a packing group: a recipe-supplied
         # method's behaviour over a fused parent is unknown. A new built-in method that is missing
@@ -609,7 +611,7 @@ class Recipe:
             ):
                 raise ValueError(f"{name}: provide its independent activation divisor")
             use: dict[str, Any] = {"parameter": name, "input": input_name, "activation_policy": policy}
-            referenced = {}
+            referenced: dict[str, dict[str, Any]] = {}
             for (parameter, source_input, role), value in auxiliary_values.items():
                 if (parameter, source_input) != (name, input_name):
                     continue

@@ -26,6 +26,8 @@ extern const SplitShape kQ8SplitN6144K2048, kQ8SplitN6144K5120, kQ8SplitN12288K2
 extern const SplitShape kQ4Q5SplitN7168N7168K5120, kQ4Q5SplitN4096N12288K5120;
 extern const SplitShape kFp8SplitN14336K5120, kFp8SplitN16384K5120;
 extern const SplitShape kNvfp4SplitN14336K5120, kNvfp4SplitN16384K5120;
+// The port's NVFP4-encoded DFlash2 drafter geometry: one [6144,5120] parent, three outputs.
+extern const SplitShape kNvfp4SplitN6144K5120;
 
 const SplitShape& select_split_shape(Weights weights);
 } // namespace ninfer::ops::detail::linear_split

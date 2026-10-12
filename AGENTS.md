@@ -379,7 +379,7 @@ Sixty-seven rules, each earned by a failure rather than chosen:
 - **A selection ladder and the function that sizes its buffers must read the same named
   constants.** Naming the boundaries removes a drift class; it introduces one, because a bound
   substituted with the wrong constant compiles and stays correct in value. `n5120_k17408.cu`
-  and `fp8_linear_add_a8.cu` shipped `tokens > 512 && tokens <= 384` -- false for every token
+  and the `linear_add` FP8 shapes shipped `tokens > 512 && tokens <= 384` -- false for every token
   count -- sending 513-768 to `Bulk` instead of `Wide`. **No oracle here asserts which tile a
   token count selects**, so the suite stayed green.
 - **Reach for the indexed tool before a manual search.** `.codegraph/` exists here, so a code

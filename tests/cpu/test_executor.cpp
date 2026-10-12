@@ -1,7 +1,11 @@
 #include "core/cpu/executor.h"
 
 #include <immintrin.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sched.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -12,6 +16,17 @@
 #include <stdexcept>
 
 namespace {
+// The logical processor this thread is running on, in the same (group * 64 + index) numbering
+// core/cpu/system.h uses for CpuAffinity -- so the assertion below compares like with like.
+unsigned current_processor() {
+#ifdef _WIN32
+    PROCESSOR_NUMBER number{};
+    ::GetCurrentProcessorNumberEx(&number);
+    return static_cast<unsigned>(number.Group) * 64U + number.Number;
+#else
+    return static_cast<unsigned>(sched_getcpu());
+#endif
+}
 using namespace ninfer;
 
 void require(bool value, const char* message) {
@@ -40,7 +55,7 @@ void compute(void* pointer, const CpuWorkerContext& worker) noexcept {
     const auto check = [&](bool value) {
         if (!value) work.failed.store(true, std::memory_order_relaxed);
     };
-    check(static_cast<unsigned>(sched_getcpu()) == work.plan->worker_cpus[worker.rank()]);
+    check(current_processor() == work.plan->worker_cpus[worker.rank()]);
     check((_mm_getcsr() & 0xffc0U) == 0x1f80U && std::fegetround() == FE_TONEAREST);
     work.features[worker.rank()] = current_cpu_features();
     const auto range             = worker.range(work.items);

@@ -81,10 +81,9 @@ public:
                 const qwen3_5::PagedKVCache& batch_text_kv, LinearAttentionStatePool& state,
                 qwen3_5::RoundState& io, Tensor& prefill_hidden, std::uint32_t prefill_chunk,
                 std::uint32_t text_kv_base,
-                qwen3_5::PagedKVCacheView mtp_kv           = qwen3_5::PagedKVCacheView(),
-                const qwen3_5::PagedKVCache* batch_text_kv = nullptr,
-                const qwen3_5::PagedKVCache* batch_mtp_kv  = nullptr,
-                TextCallConfig call                        = {});
+                qwen3_5::PagedKVCacheView mtp_kv          = qwen3_5::PagedKVCacheView(),
+                const qwen3_5::PagedKVCache* batch_mtp_kv = nullptr,
+                TextCallConfig call                       = {});
     ~TextContext();
 
     TextContext(const TextContext&)            = delete;

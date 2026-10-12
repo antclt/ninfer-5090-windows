@@ -64,7 +64,7 @@ CELLS = [
 # the FFmpeg tree. Everything below is tracked, so the fingerprint has no inputs outside the repository.
 #
 # A cell built from tracked source is only as stable as those sources. `long-code` includes
-# `src/ops/linear/nvfp4/nvfp4_a4_tma.cuh`, which this port edits: on 2026-10-10 a ten-line alignment fix
+# `src/ops/linear/kernels/nvfp4/nvfp4_a4_tma.cuh`, which this port edits: on 2026-10-10 a ten-line alignment fix
 # in that file's first 12,000 characters produced fourteen drifts across six lanes -- acceptance down 5
 # to 27 points, decode both ways -- that were a prompt change and not a code effect. What identified it
 # was that the other two cells did not move, `code` being a slice of a file the change did not touch.
@@ -72,7 +72,7 @@ CELLS = [
 # `code` for a claim about a code change.
 CELL_SOURCES = {
     "long-code": [("tools/release/v3_profile_matrix.py", 12_000),
-                  ("src/ops/linear/nvfp4/nvfp4_a4_tma.cuh", 12_000),
+                  ("src/ops/linear/kernels/nvfp4/nvfp4_a4_tma.cuh", 12_000),
                   ("tools/convert/official_recipes.py", 12_000)],
     "long-chinese": [("eval/corpora/perplexity-1m/data/zhwiki/01.txt", 36_000)],
 }

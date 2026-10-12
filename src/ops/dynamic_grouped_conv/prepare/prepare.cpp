@@ -1,5 +1,6 @@
 #include "ninfer/ops/dynamic_grouped_conv.h"
 #include "ninfer/ops/rmsnorm.h"
+#include "ops/dynamic_grouped_conv/nvfp4/nvfp4_dynamic_grouped_conv_prepare_plan.h"
 #include "ops/dynamic_grouped_conv/prepare/launch.h"
 
 #include <algorithm>
@@ -41,6 +42,14 @@ void rmsnorm_dynamic_grouped_conv_prepare(const Tensor& residual, const Tensor& 
     const auto stream = execution.stream();
     dc::validate_prepare(residual, norm_weight, epsilon, base_kernel, projection, prepared,
                          finish_delta, workspace, execution);
+    if (projection.qtype == QType::NVFP4) {
+        // Port-only NVFP4 route: the coefficients materialize through the generic A16 Linear and
+        // the shared format-neutral finish then applies, exactly as the BF16 route's does.
+        detail::nvfp4_dynamic_grouped_conv_prepare_dispatch(residual, norm_weight, epsilon,
+                                                            base_kernel, projection, prepared,
+                                                            finish_delta, workspace, execution);
+        return;
+    }
     const auto plan = dc::prepare::select_plan(residual.ne[1], residual.ne[2]);
     auto scope      = workspace.scope();
     auto* partials  = static_cast<float*>(workspace.alloc_bytes(plan.workspace_bytes).data);

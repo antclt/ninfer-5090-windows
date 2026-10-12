@@ -20,6 +20,17 @@ void require_tensor(const Tensor& tensor, DType dtype, std::int32_t d0, std::int
 }
 
 void validate_prepare_weight(const Weight& weight) {
+    if (weight.qtype == QType::NVFP4) {
+        // The port's NVFP4 draft modules store this projection as weight-only NVFP4 [1280,5120].
+        // The full payload contract belongs to the Linear route that materializes it; checked here
+        // only for the geometry this Op indexes.
+        if (weight.n != kCoefficientRows || weight.k != kHidden) {
+            throw std::invalid_argument(
+                "dynamic grouped conv prepare: invalid kernel_projection_weight");
+        }
+        (void)common::validate_nvfp4_weight(weight, "dynamic grouped conv prepare");
+        return;
+    }
     constexpr std::uint64_t kPayloadBytes =
         static_cast<std::uint64_t>(kCoefficientRows) * kHidden * sizeof(std::uint16_t);
     if (weight.qtype != QType::BF16 || weight.layout != QuantLayout::Contiguous ||
@@ -43,6 +54,16 @@ std::uint64_t required_q8_payload_bytes(std::int32_t input_rows) {
 }
 
 void validate_add_weight(const Weight& weight, std::int32_t input_rows) {
+    if (weight.qtype == QType::NVFP4) {
+        // Same as prepare: the port's NVFP4 draft modules store this projection as weight-only
+        // NVFP4 [5120,C]. The geometry this Op indexes is checked here; the payload contract
+        // belongs to the Linear route that materializes it.
+        if (weight.n != kHidden || weight.k != input_rows) {
+            throw std::invalid_argument("linear dynamic grouped conv add: invalid projection_weight");
+        }
+        (void)common::validate_nvfp4_weight(weight, "linear dynamic grouped conv add");
+        return;
+    }
     const std::uint64_t payload_bytes = required_q8_payload_bytes(input_rows);
     if (weight.qtype != QType::Q8_G32_FP16 || weight.layout != QuantLayout::RowSplit ||
         weight.scale_dtype != DType::FP16 || weight.group_size != 32 || weight.group != 32 ||
@@ -60,10 +81,18 @@ void validate_add_weight(const Weight& weight, std::int32_t input_rows) {
 void require_add_nonoverlap(const Tensor& x, const Weight& projection_weight,
                             const Tensor& base_kernel, const Tensor& finish_delta,
                             const Tensor& residual, const MemoryArena& workspace) {
-    const std::size_t code_bytes =
-        static_cast<std::size_t>(kHidden) * static_cast<std::size_t>(x.ne[0]);
-    const std::size_t scale_bytes = static_cast<std::size_t>(kHidden) *
-                                    static_cast<std::size_t>(x.ne[0] / 32) * sizeof(std::uint16_t);
+    // Size each weight plane by the weight's own format. The Q8 extraction (one byte per element,
+    // an FP16 scale per 32) is not an NVFP4 parent's layout -- 4-bit codes and an E4M3 scale per 16
+    // -- so using it for the port's NVFP4 route misplaces the weight's extent and can invent an
+    // overlap that is not there. Same convention as LinearSplit's weight_ranges.
+    const auto elements = static_cast<std::size_t>(kHidden) * static_cast<std::size_t>(x.ne[0]);
+    const bool quantized_4bit = projection_weight.qtype == QType::NVFP4;
+    const std::size_t code_bytes  = quantized_4bit ? elements / 2 : elements;
+    const std::size_t scale_bytes = quantized_4bit
+                                        ? elements / 16
+                                        : static_cast<std::size_t>(kHidden) *
+                                              static_cast<std::size_t>(x.ne[0] / 32) *
+                                              sizeof(std::uint16_t);
     const std::array<common::operand::Range, 7> ranges{{
         common::operand::range(x.data, x.bytes(), "dynamic grouped conv"),
         common::operand::range(projection_weight.qdata, code_bytes, "dynamic grouped conv"),
@@ -81,13 +110,20 @@ void require_prepare_nonoverlap(const Tensor& residual, const Tensor& norm_weigh
                                 const Tensor& base_kernel, const Weight& kernel_projection_weight,
                                 const Tensor& prepared, const Tensor& finish_delta,
                                 const MemoryArena& workspace) {
-    constexpr std::size_t kWeightBytes =
-        static_cast<std::size_t>(kCoefficientRows) * kHidden * sizeof(std::uint16_t);
+    // Size the projection by its own format. A BF16 parent is two bytes per element; the port's
+    // NVFP4 parent is 4-bit codes plus an E4M3 scale per 16 values in one payload, which is less
+    // than half the BF16 extent -- so the BF16 figure would reach past the weight and report an
+    // overlap that is not there.
+    constexpr std::size_t kElements =
+        static_cast<std::size_t>(kCoefficientRows) * static_cast<std::size_t>(kHidden);
+    const std::size_t weight_bytes = kernel_projection_weight.qtype == QType::NVFP4
+                                         ? kElements / 2 + kElements / 16
+                                         : kElements * sizeof(std::uint16_t);
     const std::array<common::operand::Range, 7> ranges{{
         common::operand::range(residual.data, residual.bytes(), "dynamic grouped conv"),
         common::operand::range(norm_weight.data, norm_weight.bytes(), "dynamic grouped conv"),
         common::operand::range(base_kernel.data, base_kernel.bytes(), "dynamic grouped conv"),
-        common::operand::range(kernel_projection_weight.qdata, kWeightBytes,
+        common::operand::range(kernel_projection_weight.qdata, weight_bytes,
                                "dynamic grouped conv"),
         common::operand::range(prepared.data, prepared.bytes(), "dynamic grouped conv"),
         common::operand::range(finish_delta.data, finish_delta.bytes(), "dynamic grouped conv"),

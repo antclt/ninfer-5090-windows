@@ -2,11 +2,11 @@
   "what": "The shipped lanes' measured figures, each with the identity of what it was measured on.",
   "engine": {
     "file": "C:\\AI\\ninfer-v3-windows\\build\\apps\\ninfer-serve.exe",
-    "sha256": "54ae88ee3c88c5d52dcf95dd74692c4114b1f9ee9e787632e7124fc86a9582c9",
-    "bytes": 242844160,
-    "built_utc": "2026-10-12T06:02:36Z"
+    "sha256": "dc33f6f08bfec2c8b4a256044f0ad2e9a051c6bd0264db5e2e1aee1b1b7ae01b",
+    "bytes": 272673792,
+    "built_utc": "2026-10-12T18:22:45Z"
   },
-  "measured_utc": "2026-10-12T06:12:24Z",
+  "measured_utc": "2026-10-12T18:32:38Z",
   "lanes": {
     "start_quasar_v3_dflash2_vision.bat": {
       "artifact": {
@@ -16,20 +16,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 401.6,
-          "accept_rate": 0.5799,
+          "decode_avg": 342.6,
+          "accept_rate": 0.4909,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 186.9,
-          "accept_rate": 0.2134,
+          "decode_avg": 184.9,
+          "accept_rate": 0.2069,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 180.6,
-          "accept_rate": 0.2127,
+          "decode_avg": 186.2,
+          "accept_rate": 0.2105,
           "sampling": "default",
           "source": "measured"
         }
@@ -43,20 +43,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 224.4,
-          "accept_rate": 0.6398,
+          "decode_avg": 224.7,
+          "accept_rate": 0.6035,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 146.3,
-          "accept_rate": 0.3123,
+          "decode_avg": 141.7,
+          "accept_rate": 0.2864,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 139.9,
-          "accept_rate": 0.314,
+          "decode_avg": 135.6,
+          "accept_rate": 0.2806,
           "sampling": "default",
           "source": "measured"
         }
@@ -70,20 +70,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 381.8,
-          "accept_rate": 0.5673,
+          "decode_avg": 361.4,
+          "accept_rate": 0.5175,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 176.9,
-          "accept_rate": 0.1989,
+          "decode_avg": 193.8,
+          "accept_rate": 0.2231,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 254.3,
-          "accept_rate": 0.3654,
+          "decode_avg": 211.3,
+          "accept_rate": 0.2603,
           "sampling": "default",
           "source": "measured"
         }
@@ -97,20 +97,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 199.5,
-          "accept_rate": 0.5271,
+          "decode_avg": 207.1,
+          "accept_rate": 0.5505,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 173.6,
-          "accept_rate": 0.4612,
+          "decode_avg": 139.5,
+          "accept_rate": 0.3024,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 158.6,
-          "accept_rate": 0.411,
+          "decode_avg": 157.2,
+          "accept_rate": 0.3916,
           "sampling": "default",
           "source": "measured"
         }
@@ -124,20 +124,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 310.4,
-          "accept_rate": 0.5183,
+          "decode_avg": 346.9,
+          "accept_rate": 0.5923,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 185.7,
-          "accept_rate": 0.2512,
+          "decode_avg": 206.2,
+          "accept_rate": 0.2945,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 191.4,
-          "accept_rate": 0.2749,
+          "decode_avg": 193.3,
+          "accept_rate": 0.2752,
           "sampling": "default",
           "source": "measured"
         }
@@ -151,20 +151,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 205.4,
-          "accept_rate": 0.5089,
+          "decode_avg": 227.7,
+          "accept_rate": 0.5804,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 149.6,
-          "accept_rate": 0.3108,
+          "decode_avg": 139.7,
+          "accept_rate": 0.2807,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 150.3,
-          "accept_rate": 0.3333,
+          "decode_avg": 161.9,
+          "accept_rate": 0.3745,
           "sampling": "default",
           "source": "measured"
         }
@@ -178,20 +178,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 334.6,
-          "accept_rate": 0.4592,
+          "decode_avg": 333.2,
+          "accept_rate": 0.4493,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 203.1,
-          "accept_rate": 0.2386,
+          "decode_avg": 187.7,
+          "accept_rate": 0.2107,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 305.3,
-          "accept_rate": 0.4512,
+          "decode_avg": 162.5,
+          "accept_rate": 0.1758,
           "sampling": "default",
           "source": "measured"
         }
@@ -205,20 +205,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 213.1,
-          "accept_rate": 0.5726,
+          "decode_avg": 207.9,
+          "accept_rate": 0.5221,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 132.4,
-          "accept_rate": 0.257,
+          "decode_avg": 144.6,
+          "accept_rate": 0.3233,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 158.6,
-          "accept_rate": 0.3733,
+          "decode_avg": 159.5,
+          "accept_rate": 0.377,
           "sampling": "default",
           "source": "measured"
         }

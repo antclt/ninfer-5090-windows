@@ -1,3 +1,4 @@
+#include <cuda_fp16.h>
 #pragma once
 
 #include "ninfer/ops/qsa.h"
@@ -21,9 +22,9 @@ inline std::uint32_t hash(std::uint32_t x) {
 
 inline float sample(std::uint32_t i) { return (int(hash(i) % 10001) - 5000) / 3000.0F; }
 
-inline std::uint16_t half(float x) { return std::bit_cast<std::uint16_t>(_Float16(x)); }
+inline std::uint16_t half_bits(float x) { return std::bit_cast<std::uint16_t>(__float2half_rn(x)); }
 
-inline float unhalf(std::uint16_t x) { return float(std::bit_cast<_Float16>(x)); }
+inline float half_value(std::uint16_t x) { return __half2float(std::bit_cast<__half>(x)); }
 
 struct Plane {
     int leading;
@@ -160,7 +161,7 @@ struct Fixture {
                             keys.host[keys.offset(d, h, j % 64, page)] =
                                 f32_to_bf16(sample(seed + 701) * magnitude);
                             values.host[values.offset(d, h, j % 64, page)] =
-                                half(sample(seed + 1311));
+                                half_bits(sample(seed + 1311));
                         }
                 }
             }
@@ -203,7 +204,7 @@ struct Fixture {
                     ->decode(d, h, token % 64, physical);
             const auto word = plane.host[plane.offset(d, h, token % 64, physical)];
             return plane.view.dtype == DType::BF16 ? double(bf16_to_f32(word))
-                                                   : double(unhalf(word));
+                                                   : double(half_value(word));
         };
         const auto run = [&](int first, int last) {
             for (int m = first; m < last; ++m) {

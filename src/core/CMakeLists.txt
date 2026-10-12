@@ -1,15 +1,38 @@
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
-   NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
-  message(FATAL_ERROR "NInfer CPU execution currently requires Linux x86-64")
+# The CPU execution layer is x86-64 only, and upstream implements it against hwloc on Linux. The
+# port supplies a native Windows implementation of the same core/cpu/system.h interface in
+# cpu/system_windows.cpp (Win32 processor groups and MSVC intrinsics), so the architecture ceiling
+# stands while the platform one widens. CMAKE_SYSTEM_PROCESSOR is empty under some Windows
+# generators, so an 8-byte pointer stands in for it when it is.
+set(NINFER_CPU_X86_64 FALSE)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+  set(NINFER_CPU_X86_64 TRUE)
+elseif(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+  set(NINFER_CPU_X86_64 TRUE)
+endif()
+if(NOT NINFER_CPU_X86_64)
+  message(FATAL_ERROR "NInfer CPU execution currently requires x86-64")
+endif()
+
+if(WIN32)
+  set(NINFER_CPU_SYSTEM_SOURCE cpu/system_windows.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(NINFER_CPU_SYSTEM_SOURCE cpu/system.cpp)
+else()
+  message(FATAL_ERROR "NInfer CPU execution requires Linux x86-64 or Windows x86-64")
 endif()
 
 add_library(ninfer_cpu STATIC
-  cpu/system.cpp
+  ${NINFER_CPU_SYSTEM_SOURCE}
   cpu/task_pool.cpp
   cpu/executor.cpp
 )
 ninfer_internal_includes(ninfer_cpu)
-target_link_libraries(ninfer_cpu PRIVATE PkgConfig::HWLOC Threads::Threads)
+if(WIN32)
+  # hwloc backs upstream's Linux implementation only; the Windows path needs no external library.
+  target_link_libraries(ninfer_cpu PRIVATE Threads::Threads)
+else()
+  target_link_libraries(ninfer_cpu PRIVATE PkgConfig::HWLOC Threads::Threads)
+endif()
 
 add_library(ninfer_core STATIC
   arena.cpp

@@ -58,6 +58,30 @@ else
 fi
 echo "pre-commit: interpreter $PY"
 
+# On Windows two things a test needs are not on PATH in a plain shell, and both fail as an
+# environment error that reads like a test failure:
+#   * ninja, which lives in the interpreter's own Scripts directory and which torch's
+#     cpp_extension shells out to when a test builds a C++/CUDA extension at run time
+#     (tests/convert/quantization/test_stored_scale.py does exactly that);
+#   * the CUDA runtime DLLs, from CUDA_PATH, which the built .pyd loads at import.
+# Found the hard way: all three of that file's extension tests failed here with "Ninja is required"
+# and "DLL load failed while importing ninfer_stored_scale", and passed with these two on PATH.
+if [ -n "${WINDIR:-}" ]; then
+    # cygpath, because a Windows-form path pasted into PATH is not a path this shell can resolve:
+    # `command -v ninja` answered nothing while `PATH` looked right, and the test then failed with
+    # "Ninja is required" for an environment reason. Doing it the other way round is how that cost
+    # an hour.
+    if command -v cygpath >/dev/null 2>&1; then
+        PATH="$(cygpath -u "$(dirname "$PY")"):$PATH"
+        if [ -n "${CUDA_PATH:-}" ]; then
+            PATH="$(cygpath -u "$CUDA_PATH")/bin:$PATH"
+        fi
+        export PATH
+    else
+        echo "pre-commit: WARNING cygpath not found; a test that builds an extension may not find ninja" >&2
+    fi
+fi
+
 # A gate is run through this so a failure shows its reason. The two gates that print a report are
 # quiet when they agree, which is what keeps a commit clean, but their output used to be discarded
 # outright -- so a gate that *crashed* rather than disagreed produced one silent line and no
@@ -119,7 +143,17 @@ echo "pre-commit: converter tests"
 # so collecting the directory would abort the run instead of adding to it. The calibration-corpus and
 # perturbation tests are named for the same reason, and because a gate whose failure paths have never
 # been run is indistinguishable from one that always passes.
-"$PY" -m pytest tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/release/test_activity_predicate.py tests/release/test_reference_audit.py tests/bench/test_request_log_reader.py -q
+#
+# Through tools/scripts/precommit_pytest.cmd on Windows, which supplies the MSVC environment: one of
+# these tests builds a torch extension at run time and torch finds the compiler with `where cl`,
+# which is not on PATH in a plain shell. The argument list stays here so there is one definition of
+# what this step runs.
+PYTEST_ARGS="tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/release/test_activity_predicate.py tests/release/test_reference_audit.py tests/bench/test_request_log_reader.py"
+if [ -n "${WINDIR:-}" ] && [ -f tools/scripts/precommit_pytest.cmd ]; then
+    NINFER_PYTHON="$PY" cmd //c "tools\\scripts\\precommit_pytest.cmd $PYTEST_ARGS -q"
+else
+    "$PY" -m pytest $PYTEST_ARGS -q
+fi
 echo "pre-commit: ruff"
 "$PY" -m ruff check tools tests --quiet
 echo "pre-commit: mypy"

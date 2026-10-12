@@ -1,6 +1,6 @@
 {
-  "recorded": "2026-10-07",
-  "suite_size": 157,
+  "recorded": "2026-10-12",
+  "suite_size": 174,
   "known_failures": {
     "ninfer_qwen3_5_dflash_real_test": {
       "case": "dflash real route",
@@ -62,6 +62,11 @@
       "date": "2026-10-07",
       "count": 3,
       "note": "upstream constrained tool calling adds three ctest entries and removes none: ninfer_qwen3_5_tool_constraints_test, ninfer_qwen3_5_tool_schema_oracle_test, ninfer_qwen3_5_tools_real_test. Measured with ctest -N against the merged tree (152) and attributed from the previous run list (149). 149 -> 152."
+    },
+    {
+      "date": "2026-10-12",
+      "count": 17,
+      "note": "upstream's 40 commits (81c8ce09..74671a4e) add 17 ctest entries, and remove none net. Measured: ctest -N against the merged tree gives 174 against the recorded 157. Attributed from the manifests upstream adds: gated_residual (hc_expand_norm, hc_grouped_rmsnorm, hc_combine, hc_combine_norm, hc_mix), gdn_control (control, control_proj, norm_control_proj), QSA (tail_extract, prepare, indexer, sparse_gqa), PLE (conv, state_extract), rmsnorm (rmsnorm, gated_rmsnorm), gated_delta_net, plus the CPU execution layer (system, task_pool, executor) and test_memory. Two entries registered in this port's tree are renames rather than losses, which is why the net is 17 and not the 22 the added manifests register: ninfer_attn_input_proj_test became the three linear_split entries and ninfer_gdn_input_proj_test the gdn_input_proj conv_snapshot/conv_record pair, and both of the port's sources (test_attn_input_proj.cpp, test_gdn_input_proj.cpp) no longer exist."
     }
   ]
 }

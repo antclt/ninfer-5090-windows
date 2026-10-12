@@ -1,4 +1,5 @@
 #include "ninfer/ops/dynamic_grouped_conv.h"
+#include "ops/dynamic_grouped_conv/nvfp4/nvfp4_dynamic_grouped_conv_prepare_plan.h"
 #include "ops/dynamic_grouped_conv/add/launch.h"
 
 namespace ninfer::ops::detail::dynamic_grouped_conv::add {
@@ -29,6 +30,15 @@ void linear_dynamic_grouped_conv_add(const Tensor& x, const Weight& projection,
                                      CudaExecutionView execution) {
     const auto stream = execution.stream();
     dc::validate_add(x, projection, base_kernel, finish_delta, residual, workspace, execution);
+    if (projection.qtype == QType::NVFP4) {
+        // Port-only NVFP4 route: the projection materializes through the generic A16 Linear and
+        // the shared format-neutral finish then applies. Its transient footprint matches the W8
+        // route's exactly.
+        detail::nvfp4_linear_dynamic_grouped_conv_add_dispatch(x, projection, base_kernel,
+                                                               finish_delta, residual, workspace,
+                                                               execution);
+        return;
+    }
     const auto plan    = dc::add::select_plan(x.ne[1], x.ne[2]);
     auto scope         = workspace.scope();
     const auto storage = workspace.alloc_bytes(plan.workspace_bytes);

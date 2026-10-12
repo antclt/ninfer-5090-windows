@@ -27,11 +27,43 @@ struct DeviceLayerView {
     __nv_bfloat16* cache_k;
     __half* cache_v;
     std::int32_t padded_capacity;
+    // The port's NVFP4 key/value parents are slices of a packed draft payload whose stored divisor
+    // the captured E4M3 scales do not include, so the decode has to fold `1 / weight_scale_divisor`
+    // back in. Both are 1.0 for every registered non-NVFP4 format.
+    float key_inverse_divisor   = 1.0F;
+    float value_inverse_divisor = 1.0F;
 };
 
 struct DeviceLayers {
     DeviceLayerView layer[kContextKVMaterializeLayers];
 };
+
+// Builds the device-side views from the Op's host layer array. Both the registered projections here
+// and the port's NVFP4 materialize route stage the same caches, so the builder is shared rather
+// than duplicated; the divisors stay 1.0 for every non-NVFP4 format.
+inline DeviceLayers make_device_layers(
+    const std::array<ContextKVMaterializeLayerView, kContextKVMaterializeLayers>& layers) {
+    DeviceLayers result{};
+    for (int index = 0; index < kLayers; ++index) {
+        const ContextKVMaterializeLayerView& source = layers[static_cast<std::size_t>(index)];
+        const auto inverse_divisor                  = [](const Weight& weight) {
+            return weight.qtype == QType::NVFP4 ? 1.0F / weight.weight_scale_divisor : 1.0F;
+        };
+        result.layer[index] = {
+            static_cast<const std::uint8_t*>(source.key_weight.qdata),
+            static_cast<const std::uint8_t*>(source.key_weight.scales),
+            static_cast<const std::uint8_t*>(source.value_weight.qdata),
+            static_cast<const std::uint8_t*>(source.value_weight.scales),
+            static_cast<const __nv_bfloat16*>(source.key_norm_weight.data),
+            static_cast<__nv_bfloat16*>(source.cache.k.data),
+            static_cast<__half*>(source.cache.v.data),
+            static_cast<std::int32_t>(source.cache.padded_capacity),
+            inverse_divisor(source.key_weight),
+            inverse_divisor(source.value_weight),
+        };
+    }
+    return result;
+}
 
 __device__ __forceinline__ void store_key_head(const float* input, DeviceLayerView layer,
                                                const int* positions, const int* slots, int column,
@@ -103,7 +135,10 @@ struct ContextPrefixColumns {
     }
 };
 
-__global__ __launch_bounds__(256) void context_kv_key_post_kernel(
+// Internal linkage: this header is included by more than one translation unit (the registered
+// projections in dispatch.cu and the port's NVFP4 materialize route), and a __global__ with external
+// linkage in a header is a duplicate device symbol at nvlink time.
+static __global__ __launch_bounds__(256) void context_kv_key_post_kernel(
     const float* __restrict__ key_scratch, const std::int32_t* __restrict__ positions,
     const std::int32_t* __restrict__ counts, const std::int32_t* __restrict__ state_slots,
     DeviceLayers layers, std::int32_t batch_size, std::int32_t width, std::int32_t min_count,

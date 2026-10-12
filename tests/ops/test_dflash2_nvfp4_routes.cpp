@@ -4,7 +4,7 @@
 // inputs, decoding the packed weights through quantized_weight::logical_weight_fp64.
 #include <cuda_runtime.h>
 
-#include "ninfer/ops/attn_input_proj.h"
+#include "ninfer/ops/linear_split.h"
 #include "ninfer/ops/context_kv_materialize.h"
 #include "ninfer/ops/dynamic_grouped_conv.h"
 
@@ -30,7 +30,7 @@ constexpr int kHidden = 5120;
 constexpr double kRelative = 2.0e-2;
 
 DeviceBuffer payload_device(const std::vector<std::uint8_t>& payload) {
-    DeviceBuffer buffer(payload.size());
+    DeviceBuffer buffer(ninfer::test::cuda_environment().context.device(), payload.size());
     buffer.copy_from_host(payload.data(), payload.size());
     return buffer;
 }
@@ -72,7 +72,7 @@ PackedWeight nvfp4_weight(std::int32_t rows, std::int32_t columns, std::uint32_t
 int verify_attn_input() {
     const PackedWeight packed = nvfp4_weight(6144, kHidden, 501U);
     DeviceBuffer weight_device = payload_device(packed.payload);
-    const Weight weight = packed.device_weight(weight_device.p);
+    const Weight weight = packed.device_weight(weight_device.span());
     int failures        = 0;
     for (const std::int32_t tokens : {1, 8, 33}) {
         std::vector<float> host(static_cast<std::size_t>(kHidden) * tokens);
@@ -83,14 +83,15 @@ int verify_attn_input() {
             }
         }
         DeviceBuffer x_device = to_device_bf16(host);
-        DeviceBuffer q_device(static_cast<std::size_t>(4096) * tokens * sizeof(std::uint16_t));
-        DeviceBuffer k_device(static_cast<std::size_t>(1024) * tokens * sizeof(std::uint16_t));
-        DeviceBuffer v_device(static_cast<std::size_t>(1024) * tokens * sizeof(std::uint16_t));
-        Tensor x(x_device.p, DType::BF16, {kHidden, tokens});
-        Tensor q(q_device.p, DType::BF16, {4096, tokens});
-        Tensor k(k_device.p, DType::BF16, {1024, tokens});
-        Tensor v(v_device.p, DType::BF16, {1024, tokens});
-        ops::attn_input_proj(x, weight, q, k, v, nullptr);
+        DeviceBuffer q_device(ninfer::test::cuda_environment().context.device(), static_cast<std::size_t>(4096) * tokens * sizeof(std::uint16_t));
+        DeviceBuffer k_device(ninfer::test::cuda_environment().context.device(), static_cast<std::size_t>(1024) * tokens * sizeof(std::uint16_t));
+        DeviceBuffer v_device(ninfer::test::cuda_environment().context.device(), static_cast<std::size_t>(1024) * tokens * sizeof(std::uint16_t));
+        Tensor x(x_device.span(), DType::BF16, {kHidden, tokens});
+        Tensor q(q_device.span(), DType::BF16, {4096, tokens});
+        Tensor k(k_device.span(), DType::BF16, {1024, tokens});
+        Tensor v(v_device.span(), DType::BF16, {1024, tokens});
+        ops::linear_split(x, weight, std::array<const Tensor, 3>{q, k, v},
+                          ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
         const auto q_got = from_device_bf16(q_device, static_cast<std::size_t>(4096) * tokens);
         const auto k_got = from_device_bf16(k_device, static_cast<std::size_t>(1024) * tokens);
@@ -152,15 +153,16 @@ int verify_dynamic_conv(const PackedWeight& kernel_projection, const PackedWeigh
     const std::size_t prepare_bytes = ops::rmsnorm_dynamic_grouped_conv_prepare_workspace_capacity_bytes(
         width, width, batch, batch);
     GuardedDeviceBuffer scratch(std::max<std::size_t>(prepare_bytes, 1));
-    WorkspaceArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
-    Tensor residual_tensor(residual_device.p, DType::BF16, {kHidden, width, batch});
-    Tensor norm_tensor(norm_device.p, DType::BF16, {kHidden});
-    Tensor base_tensor(base_device.p, DType::BF16, {kHidden, 2, 2});
-    Tensor prepared_tensor(prepared_device.data(), DType::BF16, {kHidden, width, batch});
-    Tensor finish_tensor(finish_device.data(), DType::BF16, {320, 2, width, batch});
+    MemoryArena workspace(scratch.span());
+    Tensor residual_tensor(residual_device.span(), DType::BF16, {kHidden, width, batch});
+    Tensor norm_tensor(norm_device.span(), DType::BF16, {kHidden});
+    Tensor base_tensor(base_device.span(), DType::BF16, {kHidden, 2, 2});
+    Tensor prepared_tensor(prepared_device.span(), DType::BF16, {kHidden, width, batch});
+    Tensor finish_tensor(finish_device.span(), DType::BF16, {320, 2, width, batch});
     ops::rmsnorm_dynamic_grouped_conv_prepare(residual_tensor, norm_tensor, 1.0e-6F, base_tensor,
-                                              kernel_projection.device_weight(weight_device.p),
-                                              prepared_tensor, finish_tensor, workspace, nullptr);
+                                              kernel_projection.device_weight(weight_device.span()),
+                                              prepared_tensor, finish_tensor, workspace,
+                                              ninfer::test::cuda_environment().default_execution);
     cuda_synchronize();
 
     // FP64 oracle: rmsnorm, projected coefficients, in-place conv application, finish delta.
@@ -240,13 +242,14 @@ int verify_dynamic_conv(const PackedWeight& kernel_projection, const PackedWeigh
     const std::size_t add_bytes = ops::linear_dynamic_grouped_conv_add_workspace_capacity_bytes(
         input_rows, width, width, batch, batch);
     GuardedDeviceBuffer add_scratch(std::max<std::size_t>(add_bytes, 1));
-    WorkspaceArena add_workspace(DeviceSpan{add_scratch.data(), add_scratch.bytes()});
-    Tensor input_tensor(input_device.p, DType::BF16, {input_rows, width, batch});
-    Tensor residual_out_tensor(residual_out_device.data(), DType::BF16, {kHidden, width, batch});
+    MemoryArena add_workspace(add_scratch.span());
+    Tensor input_tensor(input_device.span(), DType::BF16, {input_rows, width, batch});
+    Tensor residual_out_tensor(residual_out_device.span(), DType::BF16, {kHidden, width, batch});
     ops::linear_dynamic_grouped_conv_add(input_tensor,
-                                         projection.device_weight(projection_device.p),
+                                         projection.device_weight(projection_device.span()),
                                          base_tensor, finish_tensor, residual_out_tensor,
-                                         add_workspace, nullptr);
+                                         add_workspace,
+                                         ninfer::test::cuda_environment().default_execution);
     cuda_synchronize();
     const auto out_got = from_device_bf16(residual_out_device.data(), columns * kHidden);
     for (std::size_t column = 0; column < columns; ++column) {
@@ -350,12 +353,12 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
         cache_k[layer].fill(0x5a);
         cache_v[layer].fill(0x5a);
         views[layer] = ops::ContextKVMaterializeLayerView{
-            keys[layer].device_weight(key_device[layer].p),
-            values[layer].device_weight(value_device[layer].p),
-            Tensor(norm_device[layer].p, DType::BF16, {128}),
+            keys[layer].device_weight(key_device[layer].span()),
+            values[layer].device_weight(value_device[layer].span()),
+            Tensor(norm_device[layer].span(), DType::BF16, {128}),
             CyclicKVCacheLayerView{
-                Tensor(cache_k[layer].data(), DType::BF16, {128, kCachePadded, 8, kCacheLanes}),
-                Tensor(cache_v[layer].data(), DType::FP16, {128, kCachePadded, 8, kCacheLanes}),
+                Tensor(cache_k[layer].span(), DType::BF16, {128, kCachePadded, 8, kCacheLanes}),
+                Tensor(cache_v[layer].span(), DType::FP16, {128, kCachePadded, 8, kCacheLanes}),
                 2048U, static_cast<std::uint32_t>(kCachePadded), 8U, 128U,
                 static_cast<std::uint32_t>(kCacheLanes)},
         };
@@ -363,15 +366,15 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
     const std::size_t capacity = ops::context_kv_materialize_workspace_capacity_bytes(
         batch, width, width);
     GuardedDeviceBuffer scratch(std::max<std::size_t>(capacity, 1));
-    WorkspaceArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
-    Tensor context_tensor(context_device.p, DType::BF16, {kHidden, width, batch});
-    Tensor positions_tensor(positions_device.p, DType::I32, {width, batch});
-    Tensor counts_tensor(counts_device.p, DType::I32, {batch});
-    Tensor slots_tensor(slots_device.p, DType::I32, {batch});
+    MemoryArena workspace(scratch.span());
+    Tensor context_tensor(context_device.span(), DType::BF16, {kHidden, width, batch});
+    Tensor positions_tensor(positions_device.span(), DType::I32, {width, batch});
+    Tensor counts_tensor(counts_device.span(), DType::I32, {batch});
+    Tensor slots_tensor(slots_device.span(), DType::I32, {batch});
     if (!graph) {
         ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor, slots_tensor,
                                     views, {0U, static_cast<std::uint32_t>(width)}, workspace,
-                                    nullptr);
+                                    ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
     } else {
         // Mirror the W8 test's replay contract: capture with the b%3 mixed-count pattern in the
@@ -405,7 +408,7 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
             ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor,
                                         slots_tensor, views,
                                         {0U, static_cast<std::uint32_t>(width)}, workspace,
-                                        capture_stream);
+                                        ninfer::test::cuda_environment().context.execution_view(capture_stream));
         });
         executable.instantiate(definition);
         counts_device.copy_from_host(counts.data(), batch * 4);
@@ -524,6 +527,13 @@ int main() {
     failures += verify_context_kv(1, 1, 801U, false);
     failures += verify_context_kv(16, 1, 803U, false);
     failures += verify_context_kv(3, 2, 805U, false);
+    // The served boundary measured this session sits between 228 and 265 context tokens: acceptance
+    // is healthy at 228 and exactly zero at 265, with 256 the only round quantum in between. The set
+    // above reaches 16, so the oracle could not see it. These three put it on the boundary, one past
+    // it, and well past it -- a step at 256 and a progressive decay are different defects.
+    failures += verify_context_kv(256, 1, 811U, false);
+    failures += verify_context_kv(257, 1, 813U, false);
+    failures += verify_context_kv(512, 1, 815U, false);
     std::cerr << "section: context graph\n";
     failures += verify_context_kv(1, 1, 801U, true);
     failures += verify_context_kv(8, 1, 807U, true);

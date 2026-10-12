@@ -1,7 +1,7 @@
 # Qwen4Exp：模型执行与状态提交
 
 本文维护 Qwen4Exp 的层级调用、跨 Op 表示边界、Main/MTP 特征和可恢复状态，以及
-[当前执行进度](#implementation-status)。架构、实例参数、权重表示与驻留方案见
+`当前执行进度`。架构、实例参数、权重表示与驻留方案见
 [模型与权重](qwen4_exp-model.md)；PLE 的 hash、NF4 行解码、读取服务和设备交接见
 [PLE I/O](qwen4_exp-ple-io.md)。
 

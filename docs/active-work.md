@@ -2994,11 +2994,12 @@ Found by a blast-radius review of the port's own divergence, and confirmed by me
 through `LinearA16Post`, which materializes the gate/up projection in BF16 (`:96-104`) and applies
 `silu_mul` to that, where the fused routes through T=16 apply the nonlinearity to FP32 accumulators.
 `include/ninfer/ops/linear_swiglu.h:30` documents that decomposition as the design, and `linear()`'s
-output contract is BF16 (`include/ninfer/ops/linear.h:129`), so the rounding is not avoidable without a
+output contract is BF16 (`include/ninfer/ops/linear.h:54`), so the rounding is not avoidable without a
 fused A16 kernel above T=16.
 
-Measured: with the A16 oracle profile extended to 17/32/64/129 (`tests/ops/linear_swiglu/test_nvfp4.cpp:81`
-stops at 16), every T>16 fails the profile's own criterion at the same index with the same values -
+Measured: with the A16 oracle profile extended to 17/32/64/129 (`tests/ops/linear_swiglu/test_nvfp4.cpp:52`,
+whose `kA16Cases` stopped at 16 when this was measured and which the upstream merge has since taken the
+port's 19-extent list from), every T>16 fails the profile's own criterion at the same index with the same values -
 actual 4.59375 against reference 4.55671, a relative error of 8.1e-3 against the A16 tail bound of
 6.3e-3, about 29% over. Identical at all four extents, so it is the rounding and not an extent-dependent
 bug. The cases were reverted rather than committed red; this is the reproduction: change

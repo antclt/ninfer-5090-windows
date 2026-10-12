@@ -3,18 +3,22 @@
 // walk structure, draw, and lattice are shared with the BF16 family; only row access decodes.
 // Successor rows stage raw codes and scales through cp_async and decode to BF16 after the wait;
 // predecessor elements decode inline at their point of use.
-#include "ops/candidate_selector/nvfp4/candidate_selector_path_nvfp4.h"
+#include "ops/sampling/candidate_path/nvfp4/path.h"
 
 #include "core/device.h"
-#include "ops/common/memory.cuh"
-#include "ops/common/warp.cuh"
-#include "ops/kernel/sampling_device.cuh"
-#include "ops/linear/nvfp4/nvfp4_codec.cuh"
+#include "ops/common/cuda/memory.cuh"
+#include "ops/common/cuda/pipeline.cuh"
+#include "ops/common/cuda/reduce.cuh"
+#include "ops/sampling/kernels/random.cuh"
+#include "ops/common/quant/nvfp4.cuh"
 #include <cuda_bf16.h>
 #include <stdexcept>
 
-namespace ninfer::ops::detail {
+namespace ninfer::ops::candidate_path_detail {
 namespace {
+
+using namespace common;
+using sampling_detail::sampling_uniform;
 
 constexpr int kCandidates = 16, kRank = 256;
 
@@ -61,7 +65,7 @@ __device__ __forceinline__ float decode_rank(const std::uint8_t* codes,
                                              const std::uint8_t* scales, int token, int rank) {
     const float2 pair = decode_nvfp4_e2m1x2(codes[token * kCodeBytesPerRow + (rank >> 1)]);
     const float code  = (rank & 1) != 0 ? pair.y : pair.x;
-    return code * decode_nvfp4_e4m3(scales[codebook_scale_offset(token, rank >> 4)]);
+    return code * decode_e4m3(scales[codebook_scale_offset(token, rank >> 4)]);
 }
 
 // The probabilities written here are the same FP32 values consumed by the draw.
@@ -127,7 +131,7 @@ __device__ void score_row(const DeviceArgs& a, int column, SelectorShared& share
             shared.successor_staged[candidate * kCodeBytesPerRow + (rank >> 1)]);
         const float code = (rank & 1) != 0 ? pair.y : pair.x;
         const float scale =
-            decode_nvfp4_e4m3(shared.successor_staged_scales[candidate * kScaleBytesPerRow +
+            decode_e4m3(shared.successor_staged_scales[candidate * kScaleBytesPerRow +
                                                              (rank >> 4)]);
         shared.successors[item] =
             __float2bfloat16_rn(code * scale * a.successor_inverse_divisor);
@@ -208,7 +212,7 @@ __global__ __launch_bounds__(32) void selector_lattice_walk_nvfp4_kernel(DeviceA
 
 } // namespace
 
-void candidate_selector_path_nvfp4_launch(SelectorRoute route, const Tensor& candidate_ids,
+void launch_candidate_path_nvfp4(SelectorRoute route, const Tensor& candidate_ids,
                                           const Tensor& unary_scores,
                                           const Tensor& projected_hidden, const Tensor& anchors,
                                           const Weight& predecessor_codebook,
@@ -244,22 +248,22 @@ void candidate_selector_path_nvfp4_launch(SelectorRoute route, const Tensor& can
     CUDA_CHECK(cudaGetLastError());
 }
 
-void candidate_selector_path_nvfp4_dispatch(const Tensor& candidate_ids, const Tensor& unary_scores,
+void execute_candidate_path_nvfp4(const Tensor& candidate_ids, const Tensor& unary_scores,
                                             const Tensor& projected_hidden, const Tensor& anchors,
                                             const Weight& predecessor_codebook,
                                             const Weight& successor_codebook,
                                             const Tensor& base_positions,
                                             const SamplingConfig* configs, Tensor& drafts,
-                                            Tensor& proposal_q, WorkspaceArena& workspace,
+                                            Tensor& proposal_q,
+                                            const SelectorWorkspace& workspace,
                                             cudaStream_t stream) {
-    const auto route = candidate_selector_path_route(candidate_ids.ne[1], candidate_ids.ne[2]);
-    auto scope       = workspace.scope();
-    const auto scratch =
-        allocate_selector_workspace(workspace, route, candidate_ids.ne[1], candidate_ids.ne[2]);
-    candidate_selector_path_nvfp4_launch(route, candidate_ids, unary_scores, projected_hidden,
-                                         anchors, predecessor_codebook, successor_codebook,
-                                         base_positions, configs, drafts, proposal_q, scratch,
-                                         stream);
+    // The route and its edges buffer are the caller's: execute_candidate_path allocates once
+    // so the capacity query covers the whole call.
+    const auto route = select_candidate_path(candidate_ids.ne[1], candidate_ids.ne[2]);
+    launch_candidate_path_nvfp4(route, candidate_ids, unary_scores, projected_hidden,
+                                anchors, predecessor_codebook, successor_codebook,
+                                base_positions, configs, drafts, proposal_q, workspace,
+                                stream);
 }
 
-} // namespace ninfer::ops::detail
+} // namespace ninfer::ops::candidate_path_detail

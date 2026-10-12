@@ -28,7 +28,7 @@ void launch_sliced(const Tensor& x, const Weight& weight, Tensor& out, cudaStrea
     launch_nvfp4_a16_sliced_k_mma<S>(
         nvfp4_a16_operands(x, weight),
         LinearBf16Output{static_cast<__nv_bfloat16*>(out.data), kIntermediate},
-        Nvfp4SwiGluEpilogue{}, stream, Nvfp4SwiGluRows<8>{});
+        SwiGluPairEpilogue{}, stream, SwiGluBranchRows<8>{});
 }
 
 template <class Schedule>

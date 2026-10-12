@@ -111,7 +111,7 @@ Covers the problem (GDN state size, the snapshot baseline, raw-input ReplaySSM),
 what the raw inputs are sufficient for (limited-precision ordering, grouped q/k heads, sufficiency of
 the transition), and accepted-prefix replay including verify inputs and outputs.
 
-### 6. [linear-benchmark.md](linear-benchmark.md) — the authority for `linear_bench.cu`
+### 6. `linear-benchmark.md` — the authority for `linear_bench.cu`
 
 Defines the commands, timing contract, metrics, preset suites and extension rules for the pure-Linear
 benchmark. It deliberately **does not** change the production Linear route and does not re-select any

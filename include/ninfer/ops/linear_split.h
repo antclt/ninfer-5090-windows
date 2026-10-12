@@ -23,6 +23,13 @@ namespace ninfer::ops {
  * Registered forms include BF16, Q8-G32/FP16, FP8 row-scale, NVFP4 block-scale and
  * paired Q4-G64/FP16 + Q5-G64/FP16. Single-parent activation permissions follow
  * LinearPolicy; paired forms use A16.
+ *
+ * This port additionally registers one NVFP4 drafter geometry upstream does not carry: the
+ * BlockScaleK16M128x4 `[6144,5120]` parent writing the three ordered segments q `[4096,T]`,
+ * k `[1024,T]` and v `[1024,T]`, weight-only A16. Our QUASAR artifacts' draft modules are
+ * NVFP4-encoded and upstream's NVFP4 split registry carries no drafter geometry, so no
+ * upstream route serves them. It writes the three allocations directly with no transient
+ * workspace and serves extents above its fused small-T family in 32-token chunks.
  * Workspace is caller-owned, call-scoped and disjoint from all operands. The Op
  * allocates no hidden device memory, owns no persistent state and supports Graph replay.
  */
