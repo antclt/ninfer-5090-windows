@@ -13,6 +13,14 @@ namespace ninfer::ops::detail {
 namespace {
 
 using M32N64            = Nvfp4A4MmaSchedule<32, 64, 256, 2, 4, 2, 2>;
+// The [5120, 17408] down projection has 5120 output rows, so at 64 rows per CTA it launches 80 CTAs on
+// this card's 170 SMs and a speculative verify streams its 50 MB of weights from under half the device.
+// Halving the tile fills it, and the longer K loop wants a deeper pipeline. Measured here 2026-10-12 on
+// that route, median of 20, two interleaved rounds of the two binaries: T=8 42.37 -> 38.27 us and
+// T=12..32 44.38 -> 39.7..40.3 us (-9.3 to -10.5 %), with T<=4 and T>=33 unchanged and
+// ninfer_linear_add_nvfp4_test passing at the 32/33 seam. Same per-row K order, so the outputs do not
+// change -- the oracle test is what says so.
+using M32N32Deep        = Nvfp4A4MmaSchedule<32, 32, 256, 2, 4, 4, 2>;
 using M32N128           = Nvfp4A4MmaSchedule<32, 128, 256, 2, 4, 2, 1>;
 using M64N128           = Nvfp4A4MmaSchedule<64, 128, 256, 4, 2, 2, 1>;
 using M128N128Pipelined = Nvfp4A4MmaSchedule<128, 128, 256, 4, 2, 2, 1>;
@@ -34,7 +42,9 @@ void launch_gemm(const Weight& weight, Tensor& residual, Nvfp4A4Workspace worksp
 template <class Geometry>
 void launch_problem(const Weight& weight, Tensor& residual, Nvfp4A4Workspace workspace,
                     std::int32_t tokens, cudaStream_t stream) {
-    if (tokens <= 64) {
+    if (Geometry::kInputRows == 17408 && tokens <= 32) {
+        launch_gemm<Geometry, M32N32Deep>(weight, residual, workspace, tokens, stream);
+    } else if (tokens <= 64) {
         launch_gemm<Geometry, M32N64>(weight, residual, workspace, tokens, stream);
     } else if (tokens <= 128) {
         launch_gemm<Geometry, M32N128>(weight, residual, workspace, tokens, stream);

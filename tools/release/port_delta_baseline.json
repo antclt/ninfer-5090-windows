@@ -945,6 +945,12 @@
       "review": "product",
       "reason": "Cited in the diff -- item: 12. Open it before changing this path."
     },
+    "src/ops/linear_add/nvfp4/nvfp4_linear_add_a4.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the [5120, 17408] NVFP4 W4A4 linear_add selects M32N32 with a deeper pipeline at verify widths, harvested from upstream issue #364 / PR #365 (not ours to fix; read for the mechanism). Measured here 2026-10-12, median of 20, two interleaved rounds of the two binaries: T=8 42.37 -> 38.27 us, T=12..32 44.38 -> 39.7..40.3 us, T<=4 and T>=33 unchanged, and ninfer_linear_add_nvfp4_test passing against its oracle."
+    },
     "src/ops/linear_add/q5/q5_linear_add_plan.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1412,6 +1418,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
+    },
+    "tests/ops/linear_add/test_nvfp4.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: a T=33 case at the 32/33 seam the schedule change creates. The width list had 32 but not 33, so the boundary the new branch keys on was uncovered."
     },
     "tests/ops/linear_swiglu/test_fp8.cpp": {
       "status": "M",
