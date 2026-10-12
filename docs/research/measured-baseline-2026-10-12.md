@@ -100,6 +100,43 @@ launchers, re-running the lane fingerprint, and updating the `Spec` column the p
 checks — and the Swift lane's drafter is a different artifact, so its own optimum has to be measured
 rather than assumed.
 
+## Where the time goes: a kernel profile, and the one that was void
+
+`profiles/nsys/prefill-decay-2026-10-08/VOID.md` records that a previous session asked this same question
+and filed its traces **VOID**: the harness killed `nsys` instead of the serve, and both arms used one port
+so the second arm's request was answered by the first arm's process. Its own recipe for a re-run is "one
+port per arm, stop the serve and leave `nsys` to finalise, and compare every kernel total against the
+request's measured wall time before drawing any conclusion".
+
+The captures below are immune to both faults by construction — `ninfer_bench` drives `ninfer::Engine`
+in-process, so there is no serve process to kill and no port to share — and the first one passes the
+recipe's own check.
+
+**Prefill at 65,536 tokens** (`profiles/nsys/prefill-65536-2026-10-12.sqlite`): **7.227 s of GPU kernel
+time against 7.313 s measured**, so the profile accounts for the whole phase.
+
+| share | launches | time | kernel |
+|---|---|---|---|
+| **46.6%** | 128 | 3,368 ms | `mxfp8_kv_tiled_mma_kernel` (the causal attention route) |
+| 18.3% | 512 | 1,323 ms | `nvfp4_a4_tma_kernel` |
+| 9.8% | 512 | 705 ms | `nvfp4_a4_tma_kernel` |
+| 6.5% | 384 | 471 ms | `nvfp4_a4_tma_kernel` |
+| 3.9% | 384 | 285 ms | `gated_delta_net::chunk_recurren...` |
+| 3.9% | 512 | 278 ms | `nvfp4_a4_tma_kernel` |
+| 2.2% | 1,113 | 162 ms | `rmsnorm_cta_bf16x2_kernel` + `rmsnorm_warp_bf16x2_kernel` |
+| 1.7% | 512 | 123 ms | `nvfp4_a4_quantize_kernel` |
+| 1.6% | 384 | 119 ms | `causal_conv1d_prefill_pairs_kernel` |
+
+So the long-prompt fall is attention: at 8k the GEMMs dominate a chunk's work, and at 64k the causal
+attention route is **46.6%** of it. That is physics rather than a setting, which is why the chunk sweep
+found nothing to fix — and it is also the exact kernel the unmerged attention work targets.
+
+**Decode at pp8192+tg128, depth 11** (`decode-8192-2026-10-12.sqlite`): **not validated, and therefore not
+quoted.** It reports 0.600 s of kernel time where the two phases measured 0.564 s of prefill plus 0.445 s
+of decode, so roughly 40% of the work is missing from the capture and every share in it is a share of a
+subset. What it shows — NVFP4 GEMM kernels holding most of the time, attention at ~10% — is consistent
+with decode being GEMM-bound, but by `VOID.md`'s standard that is a direction to check, not a result.
+
 ## One thing the instrument itself showed
 
 At depth 11 the per-position counters read **exactly 26.1% at positions 5 through 10**, with `proposed`
