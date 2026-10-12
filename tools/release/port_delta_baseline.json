@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-11",
+  "recorded": "2026-10-12",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -74,6 +74,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
+    },
+    "apps/perplexity/corpus.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "product",
+      "reason": "Port change: checked_relative_path rejected only empty, absolute and '..' components, and is_absolute() on Windows needs both a root name and a root directory -- so '\\Windows\\System32\\drivers\\etc\\hosts' and '/etc/passwd' passed a check whose message says 'must be relative', and operator/ then replaced the manifest's directory with them. Measured on this toolchain. has_root_directory() closes both forms; 'C:relative.txt' was measured not to escape, and the manifest is repo-controlled, so this is the check doing what it claims rather than a privilege boundary. Found by the c-review detect pass."
     },
     "apps/perplexity/main.cpp": {
       "status": "M",
@@ -530,6 +536,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "A validation fix: a native Weight input with RowScale layout now requires a complete FP8 parent, and says so by name, instead of reading a partial plane as though it were whole."
+    },
+    "src/media/decode/decode.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "product",
+      "reason": "Port change, two defects from the c-review detect pass. (1) The AVIOContext's 32 KiB read buffer was never freed: the FFmpeg header this build compiles against says it must be freed with av_free(), and the pointer is lost once avio_context_free nulls the context. One Decoder is built per image part and two to six per video part, so it leaked unbounded over distinct media -- and MSVC has no LeakSanitizer to see it. (2) Four container-derived double-to-int conversions were unguarded; this toolchain yields INT_MIN rather than saturating, so a crafted frame rate made the frame count the minimum instead of the maximum (192x fewer vision tokens) and a huge duration produced a wrong diagnosis. All four clamp first now."
     },
     "src/models/qwen3_5/config.cpp": {
       "status": "M",
@@ -1239,6 +1251,12 @@
       "review": "product",
       "reason": "A deduplication: the two execution cores held identical copies of this, and the header's own comment says why it lives in one place now -- the resolution is published into the summary both cores report, so two copies could disagree. The same class as ops/common/validation.h and the route catalog."
     },
+    "src/serve/anthropic_messages_request.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: stop_sequences had no count or length bound. A stop string is matched against the pending output on every decoded token, so a long list of long strings makes decode quadratic in the generated length and lets one request hold a lane for minutes. Count is now capped at four (matching the OpenAI surface) and length at 256 bytes, and the messages say the bound is this engine's rather than the protocol's. Found by the c-review detect pass."
+    },
     "src/serve/generation_service.cpp": {
       "status": "M",
       "disposition": "refactor",
@@ -1310,6 +1328,18 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "A real fix, and the comment records the incident: a byte-order mark is an encoding artifact rather than template content, the lexer would emit it as the first character of every render -- costing a token in every prompt and putting a zero-width character in front of the chat control tokens -- and an artifact has shipped with one embedded. Stripped here rather than trusting every source file to be clean."
+    },
+    "src/text/json_input.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "product",
+      "reason": "Port change: a request body's nesting was unbounded and three recursive consumers sit behind it -- this parser's own schema walk, nlohmann's recursive destructor on the finished document, and the frontend's schema walkers -- so one well-formed request could exhaust a request thread's stack, which on Windows is uncatchable. Bounded at 64 levels where the document is built. The call also now checks sax_parse's return value: returning false from a callback leaves a TRUNCATED document rather than throwing, which is how the first version of this fix surfaced as 'schema must be an object or boolean' deep inside the walk."
+    },
+    "src/text/json_schema.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: Schema::check recursed once per nesting level with a measured 1808-byte frame and a schema's nesting is the request's to choose, so a ~21 KB body at depth 570 killed the serving process with STATUS_STACK_OVERFLOW -- measured on this tree's own Release objects, with a flat 155 KB schema and depth 3000 through the protocol route both passing, which is what attributes the failing frame to this walk rather than to nlohmann. Bounded at 64 levels using the JSON pointer the walker already carries, whose separator count is exactly the depth because child() escapes '/' as '~1'. Found and measured by the c-review detect pass."
     },
     "tests/CMakeLists.txt": {
       "status": "M",

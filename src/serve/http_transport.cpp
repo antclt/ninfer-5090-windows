@@ -48,7 +48,10 @@ RequestJson parse_json_body(const httplib::Request& request) {
     text::ParsedJsonNumbers parsed;
     try {
         parsed = text::parse_json_numbers(request.body);
-    } catch (const std::exception&) { bad_request("request body is not valid JSON"); }
+    } catch (const std::exception&) {
+        bad_request("request body is not valid JSON, or nests deeper than the 64 levels this server "
+                    "accepts");
+    }
     validate_schema_number_input(parsed);
     return std::move(parsed.value);
 }

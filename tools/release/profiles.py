@@ -223,7 +223,7 @@ PROFILES: list[dict[str, Any]] = [
     dict(file="start_swift_v3_dflash2_vision.bat", port=8090, art=SWIFT15, device_state_slots=1,
          label="Swift 1.5 + DFlash2 + Vision", model_id="qwen3.8-27b-swift15-v3-dflash2-vision",
          spec="dflash2", draft=7, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=280.7, acc="51.8%", runtime="8.83 GiB", free="4.20 GiB",
+         tok=312.6, acc="51.8%", runtime="8.83 GiB", free="4.20 GiB",
          note="Swift 1.5 replaces Swift 1.0 on both Swift lanes; these figures are measured "
               "2026-09-30 with `profile` mode through this launcher's own flags. Width 7 was measured "
               "against every window 1-15 on the code domain and re-measured on four others: 13 is "
@@ -251,7 +251,13 @@ PROFILES: list[dict[str, Any]] = [
               "acceptance points (313.5 -> 287.3, 58.32% -> 51.83%) and long Chinese 4.2% and 2.5 "
               "points -- both disclosed. Adopted under the code-weighted rule's bound: the deciding "
               "worst case improves by more than the worst disclosed non-code cell gives up. Quality "
-              "costs +0.098% corpus perplexity overall and +0.257% on the worst domain."),
+              "costs +0.098% corpus perplexity overall and +0.257% on the worst domain. Published cell "
+              "re-measured 2026-10-12: three lane fingerprints in one session read it at 312.3, 308.2 "
+              "and 312.6 tok/s with acceptance identical at 51.8% in all three, so the workload is "
+              "unchanged and this card's state moved about 11% -- which is the size of the tolerance "
+              "both the gate and the fingerprint use, and the reason the row now carries the latest of "
+              "the three. The 2026-10-09 interleaved comparison above is unaffected: it compared the "
+              "two KV formats inside one session, which is the stronger protocol."),
     dict(file="start_swift_v3_mtp4_vision.bat", port=8091, art=SWIFT15, device_state_slots=1,
          label="Swift 1.5 + MTP4 + Vision", model_id="qwen3.8-27b-swift15-v3-mtp4-vision",
          spec="mtp", draft=5, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",

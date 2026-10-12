@@ -73,7 +73,13 @@ void validate_text(const std::string& text, const std::filesystem::path& path) {
 
 std::filesystem::path checked_relative_path(std::string_view value) {
     std::filesystem::path path(value);
-    if (path.empty() || path.is_absolute()) {
+    // `is_absolute()` is not enough on Windows: it needs both a root name and a root directory, so
+    // `\Windows\System32\drivers\etc\hosts` and `/etc/passwd` are *not* absolute and `operator/`
+    // replaces the manifest's directory with them -- measured on this toolchain, the first joins to
+    // `C:\Windows\System32\drivers\etc\hosts`. `has_root_directory()` is the clause that closes both.
+    // The manifest is repo-controlled and this is a local single-owner tool, so this is not a
+    // privilege boundary; it is the check doing what its own message says.
+    if (path.empty() || path.is_absolute() || path.has_root_directory()) {
         throw std::runtime_error("corpus stream path must be relative");
     }
     for (const auto& component : path) {

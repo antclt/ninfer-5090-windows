@@ -910,9 +910,19 @@ void parse_generation_fields(const Json& body, GenerationRequest& request) {
         if (!body.at("stop_sequences").is_array()) {
             bad_request("stop_sequences must be an array of strings", "stop_sequences");
         }
+        // Count and length are both bounded here, and neither is the protocol's rule: a stop string is
+        // matched against the pending output on every decoded token, so a long list of long strings
+        // makes decode quadratic in the generated length and lets a request hold a lane for minutes.
+        // Four matches the OpenAI surface's own count limit, and 256 bytes is this engine's bound.
+        if (body.at("stop_sequences").size() > 4) {
+            bad_request("stop_sequences supports at most four strings", "stop_sequences");
+        }
         for (const Json& value : body.at("stop_sequences")) {
             if (!value.is_string() || value.get<std::string>().empty()) {
                 bad_request("stop_sequences entries must be non-empty strings", "stop_sequences");
+            }
+            if (value.get_ref<const std::string&>().size() > 256) {
+                bad_request("stop_sequences entries are limited to 256 bytes", "stop_sequences");
             }
             request.stop_strings.push_back(value.get<std::string>());
         }

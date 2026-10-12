@@ -374,7 +374,18 @@ private:
         av_packet_free(&packet_);
         avcodec_free_context(&codec_);
         if (format_ != nullptr) { avformat_close_input(&format_); }
-        if (io_ != nullptr) { avio_context_free(&io_); }
+        if (io_ != nullptr) {
+            // The read buffer is ours to free and avio_context_free does not free it: the header this
+            // build compiles against says the buffer "may be freed and replaced with a new buffer by
+            // libavformat. AVIOContext.buffer holds the buffer currently in use, which must be later
+            // freed with av_free()" (libavformat/avio.h:381-383). So read it off the context rather
+            // than keeping the pointer avio_alloc_context was handed, and free it after the context
+            // has stopped using it. Without this, every Decoder leaks 32 KiB, and a Decoder is
+            // constructed once per image part and two to six times per video part.
+            std::uint8_t* buffer = io_->buffer;
+            avio_context_free(&io_);
+            av_free(buffer);
+        }
     }
 
     AVFormatContext* format_ = nullptr;
@@ -389,17 +400,36 @@ private:
     std::uint64_t max_decoded_pixels_ = 0;
 };
 
+// Every double-to-int conversion below takes its value from container metadata, and the conversion is
+// undefined when the value is out of range. Measured on this toolchain (MSVC, /Od and /O2 alike) an
+// out-of-range conversion yields INT_MIN rather than saturating, which then selects the *minimum* frame
+// count instead of the maximum -- a 192x difference in vision tokens -- and disagrees with an
+// architecture whose conversion saturates. Clamp first, so the result is the same everywhere and the
+// guards that follow see a value they were written for.
+int clamp_to_int(double value) {
+    if (!(value > static_cast<double>(std::numeric_limits<int>::min()))) {
+        return std::numeric_limits<int>::min();
+    }
+    if (value >= static_cast<double>(std::numeric_limits<int>::max())) {
+        return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(value);
+}
+
 int rotation_of(const AVStream* stream) {
     int rotation                 = 0;
     const AVDictionaryEntry* tag = av_dict_get(stream->metadata, "rotate", nullptr, 0);
     if (tag != nullptr) {
-        rotation = static_cast<int>(std::nearbyint(std::strtod(tag->value, nullptr)));
+        // The tag is a string from the container: "1e400" makes strtod return HUGE_VAL.
+        rotation = clamp_to_int(std::nearbyint(std::strtod(tag->value, nullptr)));
     }
     const AVPacketSideData* side =
         av_packet_side_data_get(stream->codecpar->coded_side_data,
                                 stream->codecpar->nb_coded_side_data, AV_PKT_DATA_DISPLAYMATRIX);
     if (side != nullptr && side->size >= 9 * sizeof(std::int32_t)) {
-        rotation = static_cast<int>(std::nearbyint(
+        // FFmpeg documents this as possibly NaN ("NaN if the matrix is singular"), so an all-zero
+        // display matrix reaches the conversion too.
+        rotation = clamp_to_int(std::nearbyint(
             -av_display_rotation_get(reinterpret_cast<const std::int32_t*>(side->data))));
     }
     rotation %= 360;
@@ -456,7 +486,7 @@ std::vector<int> sample_indices(int total, double source_fps, double target_fps,
         max_frames < min_frames) {
         throw std::invalid_argument("invalid video sampling configuration");
     }
-    int count = static_cast<int>(static_cast<double>(total) / source_fps * target_fps);
+    int count = clamp_to_int(static_cast<double>(total) / source_fps * target_fps);
     count     = std::min({std::max(count, min_frames), max_frames, total});
     std::vector<int> indices(static_cast<std::size_t>(count));
     if (count == 1) {
@@ -490,7 +520,7 @@ VideoPlan make_video_plan(std::span<const std::uint8_t> bytes, const Policy& pol
                             : 0;
     plan.duration     = probe.duration_seconds();
     if (plan.total_frames == 0 && plan.duration > 0.0) {
-        plan.total_frames = static_cast<int>(std::nearbyint(plan.duration * plan.fps));
+        plan.total_frames = clamp_to_int(std::nearbyint(plan.duration * plan.fps));
     }
     if (plan.duration > policy.max_video_duration_seconds) {
         throw Error(ErrorKind::BudgetExceeded, "video duration exceeds processor limit");

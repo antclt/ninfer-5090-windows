@@ -10,7 +10,8 @@ Vendored from Trail of Bits' `c-review` plugin (`github.com/trailofbits/skills`,
 `UPSTREAM-README.md` is theirs. Upstream drives its phases through Claude Code's `Workflow` tool,
 which opencode does not have. This port keeps the substance — the unit enumeration, the ledger, the
 phase order and the false-positive rule — and runs the orchestration with opencode's own subagents.
-The scripts under `scripts/` are upstream's, unmodified; they are plain PEP 723 programs and need
+The scripts under `scripts/` are upstream's, with one port fix recorded below; they are plain PEP 723
+programs and need
 `uv`, not the plugin runtime.
 
 ## The gate is the point
@@ -29,7 +30,25 @@ finished, and a finding without a `file:line` citation is not a finding.
 
 ## Running it here
 
-1. **Enumerate.** `uv run --script scripts/enumerate_units.py --scope <dir> --out units.json`
+1. **Enumerate.** `uv run --script scripts/enumerate_units.py --root <dir> --out-dir <dir>`
+
+   Two things about this step were found by running it on this machine rather than reading it.
+
+   **The interface above is the script's, not what an earlier version of this file said.** It takes
+   `--root` and `--out-dir`; `--scope <dir> --out units.json` is accepted by nothing and the script
+   exits with "the following arguments are required: --root".
+
+   **`_within` used a POSIX separator, so the enumerator produced no units at all on Windows.** It was
+   `target.startswith(root_key.rstrip("/") + "/")`, and `str(Path.resolve())` uses the platform's
+   separator, so on Windows every child -- `src`, `include`, `apps`, the dot-directories, all of them --
+   read as "resolves to C:\...\src, outside the scope root C:\..." and was refused. The run ends with a
+   list of refused paths and no units. The fix accepts both separators and is the one deviation from
+   upstream in `scripts/`; the rest of the file is theirs. A path that genuinely is outside the root is
+   still refused, which is the behaviour the containment rule exists for.
+
+   Refusals are still worth reading even after the fix: the tool refuses a path rather than silently
+   skipping the code under it, so an exclude list that omits a stale build tree (`build-bisect`,
+   `build-dbg`) puts its generated units in the denominator.
 2. **Review in phases**, one subagent per phase, in upstream's order:
    - **Detect** — per unit: memory safety, integer arithmetic, concurrency, resource lifetime.
    - **Sweep** — the class axis: one agent per bug class over every unit the earlier phase did not

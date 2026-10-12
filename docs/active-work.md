@@ -3439,3 +3439,177 @@ so the width that broke was outside the test's range and the lane found it inste
 {17, 51, 80, 81} was tried and the harness fails fast (`0xC0000409`) at those widths, so covering them
 needs the harness fixed first -- its own piece of work, not a line in the width list. A comment at that
 sweep records both the gap and why it is still open.
+
+## 2026-10-12 - whole-project C/C++ review, first pass: five subsystems, ten candidates
+
+**Scope and denominator.** The review is the `c-review` skill's, whose point is that a review states what
+it covered. Units were enumerated with tree-sitter over the product (`src`, `include`, `apps`): **3,814
+units across 585 files**, and 9,167 units across 918 files if `tests/` and `bench/` are included. Five
+subsystem reviewers then ran the detect phase, one per group, each required to name what it did not read:
+
+| subsystem | units | examined | candidates |
+|---|---|---|---|
+| `src/ops` | 1,045 | 490 (46.9 %) | 3 |
+| `src/models` | 1,122 | 560 (49.9 %) | 4 |
+| `src/serve` + `src/product` | 634 | 634 (100 %) | 3 |
+| `src/runtime` + `src/core` | 538 | 538 (100 %) | 2 |
+| `apps` + the rest of `src` | 123 | 123 (100 %) | 5 |
+| **total** | **3,462** | **2,345 (67.7 %)** | **17** |
+
+**The denominator has a hole, and two reviewers found it independently: the enumerator has no `.cu` or
+`.cuh` file in its list anywhere.** The CUDA kernels and their launcher headers — 425 files under
+`src/ops` alone, and the highest-blast-radius code in the tree — are therefore in *no* unit, and the gate
+would pass on the host units while they were never counted. Two of the reviewers read ~50 kernel files by
+hand and reported findings from them anyway, but their units are not in the table above. Separately, 35
+of the 56 `src/runtime`/`src/core` files are listed in the enumerator's `parse_degraded`, so that
+subsystem's 538 is a *lower bound* on its content. Both are recorded rather than worked around: the
+enumerator is vendored, and widening its extension list is its own change with its own evidence.
+
+**Tooling fixed on the way in.** The vendored `enumerate_units.py` could not run on Windows at all:
+`_within` compared against `root_key.rstrip("/") + "/"`, and `str(Path.resolve())` uses the platform's
+separator, so *every* path — `src`, `include`, `apps`, the dot-directories — read as "outside the scope
+root" and the run produced no units. Fixed to accept both separators, which is the one deviation from
+upstream in `scripts/`; the rest of the file is theirs. The SKILL.md also documented `--scope`/`--out`
+for a script that takes `--root`/`--out-dir`; corrected, with both facts recorded where the next reader
+looks.
+
+**Fixed in this pass** (each with the evidence named):
+
+* `src/media/decode/decode.cpp` — the AVIOContext's 32 KiB read buffer was never freed, and the pointer
+  was lost once `avio_context_free` nulled the context. The FFmpeg header this build compiles against
+  says the buffer "must be later freed with `av_free()`". Now freed, read off the context because
+  libavformat may have replaced it. One Decoder is built per image part and two to six per video part, so
+  this was unbounded over distinct media in a serving lane — and invisible to every gate here, since MSVC
+  has no LeakSanitizer.
+* `src/media/decode/decode.cpp` — four container-derived `double` to `int` conversions were unguarded.
+  This toolchain yields `INT_MIN` for an out-of-range conversion rather than saturating, so a crafted
+  container's tiny frame rate made the frame count the *minimum* instead of the maximum (a 192x
+  difference in vision tokens) and a huge duration produced a wrong diagnosis instead of the intended
+  rejection. All four now clamp first.
+* `apps/perplexity/corpus.cpp` — `checked_relative_path` tested `is_absolute()` only, which on Windows
+  needs a root name *and* a root directory, so `\Windows\System32\drivers\etc\hosts` and `/etc/passwd`
+  passed and `operator/` replaced the manifest's directory with them (measured on this toolchain). Not a
+  privilege boundary — the manifest is repo-controlled — but the check was not doing what its message
+  claims. `has_root_directory()` is the clause that closes both real forms.
+* `src/serve/openai_chat_request.cpp` and `src/serve/anthropic_messages_request.cpp` — stop strings were
+  unbounded in length (both surfaces) and in count (Anthropic). A stop string is matched against the
+  pending output on every decoded token, so a long list of long strings makes decode quadratic in the
+  generated length and lets one request hold a lane for minutes. Both surfaces now bound count at four
+  and length at 256 bytes, and the messages say the bound is this engine's rather than the protocol's.
+* `src/text/json_input.cpp` and `src/serve/http_transport.cpp` — a request body's nesting was unbounded,
+  and three recursive consumers sit behind it: this parser's own schema walk, nlohmann's recursive
+  destructor on the finished document, and the frontend's schema walkers. A client controls the nesting
+  and the body limit is 384 MiB, so a well-formed request could exhaust a thread stack — an uncatchable
+  Windows stack overflow. Bounded at 64 levels where the document is built, which throws before anything
+  deep exists; the rejection message names the bound.
+
+**Reverted, and why.** A sixth candidate proposed validating `tool_calls[].function.arguments` as a JSON
+object at the request boundary. `tests/test_openai_schema.cpp:493` pins the opposite contract in its own
+words — "tool-call history follows wire types without inventing JSON validation" — and the change made
+that test die with `0xC0000409`. Reverted. The substance stands as a candidate: the string *is* parsed
+again in the chat template's render, where a parse error is not a `RequestError` and surfaces as a 500
+with the request logged as an internal failure. The fix belongs at the frontend, where the parse error
+can become a rejected request, not at the boundary.
+
+**Candidates not fixed, each with what would confirm it.** These are detect-phase candidates: none has
+dynamic evidence, and the reviewers were required to say so.
+
+1. **A pinned checkpoint released through a `noexcept` path terminates the process**
+   (`src/runtime/engine/context_cache/resource_manager.h:901`, reached from
+   `src/runtime/engine/engine_core.h:682`, `:663`, `:2151`). `release_unreferenced` asserts that a zero
+   catalog reference count implies Native can release, but `ProgramImpl::release_checkpoint` refuses
+   while pins are held and pins are taken by every in-flight context transaction — a legal transient
+   state the manager's own release paths do not check `has_context_transaction()` for, unlike `reclaim`.
+   The throw inside a `noexcept` function becomes `std::terminate`: no report, no stack, and the catch-all
+   cleanup never runs, so a client that cancels at the wrong moment takes the lane down instead of failing
+   its own request. **Confirm** by instrumenting the throw and driving the interleaving
+   (`tests/models/qwen3_5/test_engine_preemption_real.cpp` and `tools/bench/probe_cancellation.py` have
+   the shapes); **refute** by showing a pinned checkpoint always retains a catalog reference.
+2. **A moved-from `materializing_` hangs one client forever** (`src/runtime/engine/engine_core.h:1404`,
+   the throwing calls at `:1422`, the cleanup at `:2159`). If a call between the move and the reset
+   throws, the optional stays engaged holding a null request; `fail_all_locked` then completes nothing,
+   and the request is in no lane, pending queue or paused list, so its consumer polls a condition
+   variable that can never fire. Same reachability question as 1, different blast radius.
+3. **Three defence asymmetries in `src/ops`** where the quantized routes guard and the bf16 route does
+   not: an unclamped live-column count
+   (`src/ops/softmax_attention/dense/causal_cache/bf16/merge.cuh:65`,
+   `src/ops/softmax_attention/dense/causal_cache/bf16/grouped_mma.cuh:74`); a block table indexed by
+   positions with no capacity check
+   (`src/ops/softmax_attention/dense/causal_cache/bf16/grouped_mma.cuh:100`,
+   `src/ops/softmax_attention/dense/causal_cache/bf16/tiled_mma.cuh:51`); and a single-sequence
+   `kv_cache_append` that validates the token count but not the positions it indexes the table with
+   (`src/ops/kv_cache/append/kv_cache_append.cpp:177`), where its sibling overload documents that bound
+   as a caller guarantee. Each is reachable only if a caller violates a documented guarantee, so each is
+   a hardening item rather than a defect until the verify phase says otherwise — and the reviewer said
+   exactly that.
+4. **Two `src/models` candidates**: an unbounded recursion over request-supplied JSON-schema nesting
+   (`src/models/qwen3_5/frontend/tool_contract.cpp:93`), whose *attribution* the reviewer requires before
+   reporting — nlohmann's `dump` and the frontend's own walkers recurse over the same structure, so which
+   frame overflows first must be established; and a spliced encode that can return more tokens than the
+   caller's `max_tokens` (`src/models/qwen3_5/frontend/tokenizer.cpp:1037`), which turns an over-limit
+   prompt with media into a 500 instead of the intended 400-class rejection, and does so only when an
+   encode-cache entry exists. The JSON depth bound landed above closes the *body* path for the first.
+5. **Three `src/serve` candidates**: a `redacted_thinking` block accepted and silently dropped
+   (`src/serve/anthropic_messages_request.cpp:322`) while the Responses surface refuses its analogue; a
+   client disconnect classified as an internal error — 500 and a bumped failure metric — on the aggregate
+   Anthropic path (`src/serve/anthropic_messages_response.cpp:79`,
+   `src/serve/anthropic_messages_http.cpp:126`) while the streaming path guards it and both OpenAI
+   encoders serialise it; and a Chat tool history accepted with unmatched or duplicate call ids
+   (`src/serve/openai_chat_request.cpp:327`) where the other two surfaces refuse it.
+
+**What this pass did not do.** No sanitizer, no live server, no request was sent: every "clean" above is
+a reading, not a measurement, and every candidate's confirm step is unexecuted. The `check_ledger.py`
+gate was not run against a ledger, because the reviewers' conclusions are per file and per unit while the
+gate wants per-question site populations recomputed from the source; that reconciliation is the next
+piece of work, and until it runs the uncovered count is the denominator table above rather than a number
+the gate has certified.
+
+## 2026-10-12 - the seventh defect: a 21 KB request schema killed the process, measured
+
+The sixth reviewer (`src/artifact`, `src/text`, `include/ninfer` — 352/352 units) found the worst defect of
+this review and **measured** it, which is also what settled the attribution the `src/models` reviewer had
+demanded for its own schema-recursion candidate.
+
+`Schema::check` (`src/text/json_schema.cpp:79`) recurses once per nesting level, with a measured
+1808-byte frame, and a schema's nesting is the request's to choose. On this tree's own Release objects
+(`build-test/src/text/ninfer_grammar.lib`, `ninfer_text.lib`, `ninfer_xgrammar.lib`, MSVC 14.51 `/O2 /MD`,
+the default 1 MiB thread stack — no `/STACK` anywhere in the build):
+
+| input | bytes | before | after |
+|---|---|---|---|
+| depth 565 | 20,937 | ok | rejected, `parse_error.101` |
+| depth 570 | 21,107 | **0xC00000FD STATUS_STACK_OVERFLOW** | rejected |
+| depth 2000 | 74,017 | 0xC00000FD | rejected |
+
+**The controls are what make it attributable**, and they all pass: a *flat* schema of 154,922 bytes (6000
+sibling properties), a recursive `$defs` schema, and depth 3000 through the protocol route alone
+(`parse_json_numbers` + `dump()`, 111,017 bytes). So the failing frame is neither nlohmann's SAX parse,
+nor its serializer, nor its DOM destructor — it is this walk, and `cdb` on the crash showed a repeating
+1808-byte frame whose nearest symbol is the `locations.insert(path)` at `src/text/json_schema.cpp:80`.
+
+`prepare_json_schema` is on the request thread for `response_format.json_schema.schema` (OpenAI Chat and
+Responses), `text.format.schema`, `output_config.format.schema` (Anthropic) and every strict tool's
+`parameters`. A 21 KB body therefore killed the serving process and every resident request with it, and
+`STATUS_STACK_OVERFLOW` is not catchable, so no error was returnable.
+
+**Fixed** at the walker, where the recursion is, and bounded by the JSON pointer it already carries:
+`child()` escapes any `/` inside a key as `~1`, so the separator count in `path` is exactly the nesting
+depth. Depth 31 in the probe's own counting passes and 32 is rejected — the probe nests two JSON levels
+per iteration, so that is the 64-level bound exactly — and the flat control still passes.
+
+**A second defect, in my own first version of that fix.** It returned `false` from the SAX callback to
+signal the depth violation, and `parse_json_numbers` ignored `sax_parse`'s return value
+(`src/text/json_input.cpp:185`), so the body was **silently truncated** and the failure surfaced as
+"schema must be an object or boolean" deep inside the walk, on a body that had simply been cut off — a
+worse outcome than the throw it replaced. The call now checks the return and throws the same
+`parse_error` type the parser's own error path does, so `prepare_json_schema` maps it to
+`InvalidJsonSchema` and the serve layer to a rejected request. That this was caught by re-running the
+reviewer's own probe, rather than by the suite, is the reason its sources and build script were kept.
+
+**Still open from this reviewer**: a continuation filename in an artifact's JSON may be drive-relative
+(`"C:foo"`), which `parse_files` does not reject — it checks `.`, `..`, `/` and `\` but not a Windows
+root-name — so for an artifact not on the named drive `CreateFileW` resolves it against the process's
+per-drive current directory, outside the artifact's directory. Measured with a compiled probe:
+`fs::path("D:\\models") / "C:foo"` is `C:foo` and `is_absolute()` is false. The impact is bounded — the
+file must still carry the `NINPRT` magic, the right shard index, the artifact id and the exact length —
+so it is a trust-boundary gap rather than demonstrated corruption, and it is not fixed here.

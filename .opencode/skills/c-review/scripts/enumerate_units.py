@@ -1234,8 +1234,18 @@ def _walk(root: Path) -> tuple[list[Path], list[tuple[str, str]]]:
 
 
 def _within(target: str, root_key: str) -> bool:
-    """Does a resolved path lie inside the resolved scope root?"""
-    return target == root_key or target.startswith(root_key.rstrip("/") + "/")
+    """Does a resolved path lie inside the resolved scope root?
+
+    Both separators are accepted, because `str(Path.resolve())` uses the platform's. This was `"/"`
+    alone, written on Linux, and on Windows that made *every* child read as outside the root: the
+    enumerator refused `src`, `include` and `apps` along with the dot-directories and produced no units
+    at all, with the message "resolves to C:\\...\\src, outside the scope root C:\\..." -- a path
+    visibly under the root. Ported here; the rest of this file is upstream's.
+    """
+    if target == root_key:
+        return True
+    root = root_key.rstrip("/\\")
+    return target.startswith(root + "/") or target.startswith(root + "\\")
 
 
 def _spelling(path: Path) -> tuple[int, str]:

@@ -57,8 +57,7 @@ public:
     }
 
     bool start_object(std::size_t size) {
-        clear_value();
-        stack_.push_back({});
+        if (!push_frame({})) { return false; }
         return dom_.start_object(size);
     }
 
@@ -74,8 +73,7 @@ public:
     }
 
     bool start_array(std::size_t size) {
-        clear_value();
-        stack_.push_back({.array = true});
+        if (!push_frame({.array = true})) { return false; }
         return dom_.start_array(size);
     }
 
@@ -102,6 +100,22 @@ private:
         for (const auto& frame : stack_)
             path += '/' + (frame.array ? std::to_string(frame.index) : escape(frame.key));
         return path;
+    }
+
+    // A request body's nesting is bounded here, at the one place the document is built, because a
+    // deeply nested body reaches three recursive consumers: this parser's own schema walk
+    // (`find`, below), nlohmann's recursive destructor on the finished document, and the frontend's
+    // schema walkers. A client controls the nesting and the body limit is 384 MiB, so an unbounded
+    // depth is a remote stack exhaustion -- an uncatchable Windows stack overflow -- from one
+    // well-formed request. 64 levels is far past any real tool schema or template argument.
+    // Returning false makes it a parse error, which the caller maps to a rejected request.
+    static constexpr std::size_t kMaximumDepth = 64;
+
+    bool push_frame(Frame frame) {
+        if (stack_.size() >= kMaximumDepth) { return false; }
+        clear_value();
+        stack_.push_back(std::move(frame));
+        return true;
     }
 
     void advance() {
@@ -168,7 +182,16 @@ std::optional<std::string> find(const Json& node, const std::string& path,
 ParsedJsonNumbers parse_json_numbers(std::string_view source) {
     ParsedJsonNumbers parsed;
     NumberSax sax(parsed);
-    Json::sax_parse(source, &sax);
+    // The SAX parser returns false rather than throwing when a callback refuses a value, and ignoring
+    // that leaves a TRUNCATED document: the depth bound above then surfaced as "schema must be an
+    // object or boolean" deep inside the walk, on a body that had simply been cut off. Throw the same
+    // exception type the parser's own error path does, so every caller's existing handling applies --
+    // `prepare_json_schema` maps it to InvalidJsonSchema and the serve layer to a rejected request.
+    if (!Json::sax_parse(source, &sax)) {
+        throw Json::parse_error::create(101, 0, "JSON nests deeper than the 64 levels this engine "
+                                                "accepts, or is otherwise malformed",
+                                        nullptr);
+    }
     return parsed;
 }
 

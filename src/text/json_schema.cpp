@@ -77,6 +77,17 @@ public:
     std::unordered_set<std::string> locations;
 
     void check(Json& node, const std::string& path) {
+        // A schema's nesting is the request's to choose and this walk recurses once per level, with a
+        // measured 1808-byte frame. A ~21 KB schema at depth 570 exhausts a 1 MiB request thread's
+        // stack, and STATUS_STACK_OVERFLOW is not catchable, so the whole serving process dies instead
+        // of returning InvalidJsonSchema -- measured on this tree's own Release objects, with a flat
+        // 155 KB schema and a depth-3000 body through the protocol route both passing, which is what
+        // rules out the JSON parser, its serializer and its destructor as the failing frame.
+        // The path is a JSON pointer and `child` escapes any '/' inside a key as "~1", so its
+        // separator count is exactly the nesting depth. 64 is far past any real tool schema.
+        if (std::count(path.begin(), path.end(), '/') > 64) {
+            fail(Kind::UnsupportedJsonSchema, path, "schema nests deeper than 64 levels");
+        }
         locations.insert(path);
         if (node.is_boolean()) return;
         if (!node.is_object())

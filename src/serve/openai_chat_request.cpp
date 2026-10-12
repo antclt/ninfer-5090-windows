@@ -701,6 +701,11 @@ void parse_stop(const Json& body, GenerationRequest& output) {
         if (!value.is_string()) { bad_request("stop entries must be strings", "stop"); }
         std::string text = value.get<std::string>();
         if (text.empty()) { bad_request("stop strings must not be empty", "stop"); }
+        // A stop string is matched against the pending output on every decoded token, so its length is
+        // a per-token cost and an unbounded one makes decode quadratic in the generated length. 256
+        // bytes is this engine's bound, not the protocol's: it exists so a request cannot hold a lane
+        // for minutes of CPU with a stop list the client chose.
+        if (text.size() > 256) { bad_request("stop strings are limited to 256 bytes", "stop"); }
         output.stop_strings.push_back(std::move(text));
     };
     if (stop.is_string()) {
