@@ -3897,20 +3897,18 @@ re-measured against the bound as written (`CONTEXT.md:97`: "a change is adopted 
 worst case improves by at least as much as the worst disclosed non-code cell gives up"), on the merged
 engine and the cells the decisions were made on.
 
-* **quasar dflash2's depth does not flip: 9 stands.** Read as a change to depth 7, the bound is not
-  met. On the deciding cells, depth 7 ties the 225-character prompt (324.2 tok/s both, with depth 9
-  lower on acceptance at 43.1% against 52.4%, where the 2026-10-09 reading had 9 losing that cell by
-  12.5%) and leads 36,000 characters of real code 244.7 against 230.0; the lane's own fingerprint run at
-  depth 7 reads that cell 210.8 against 184.9, +14.0%. Against that, depth 7 gives up the worst non-code
-  cell by 8.1% (long Chinese 132.3 against 121.6, the sign reversed from the +8.8% for 9 recorded on
-  2026-10-09) and by 27.8% under the fingerprint. The bound adopts a change only when the deciding
-  cells' worst case improves by at least as much as the worst non-code cell gives up, and on both
-  readings the gain (0.0% and +14.0%) is smaller than the loss (8.1% and 27.8%), so the change is
-  refused and the incumbent stands. **The misreading this corrects:** the bound governs *adopting a
-  change*, not an incumbent's standing, so an incumbent is not overturned by failing a test it was never
-  subject to. This session read it the other way, changed the shipped depth to 7, and the measurement of
-  the change itself is what refused it - the field is back at 9 and the lane's note records both the
-  re-derivation and this.
+* **quasar dflash2's depth changes to 7, on the owner's restated bound.** Under the code cells deciding
+  and the non-code cells not vetoing (`CONTEXT.md`, restated 2026-10-12 - the document had contradicted
+  itself: "a regression there no longer vetoes", written 2026-10-09, against a bound added the same day
+  that gave the non-code cells exactly that veto), the deciding cells are compared as the rule requires,
+  worst case against worst case: depth 7 reads the 225-character prompt 320.9 tok/s against 9's 346.4 and
+  36,000 characters of real code 210.8 against 183.8, so depth 7's worst deciding cell, 320.9, beats
+  depth 9's, 183.8, and the field takes 7. The non-code costs are measured, recorded and disclosed rather
+  than weighed: long Chinese 134.5 against 182.7, acceptance 14.5% against 21.1%. `k8v4` stays, because
+  the same comparison over the KV formats leaves it the better worst deciding cell (fp8's 239.4 against
+  320.9), so no measured alternative beats it. The earlier reading of this entry refused the depth change
+  under the vetoing bound and set the field back to 9; the contradiction between the document's two
+  paragraphs is what that turned on, and the lane's note and `CONTEXT.md` now both carry the resolution.
 * **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
   cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
   29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged

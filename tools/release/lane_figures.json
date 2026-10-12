@@ -6,7 +6,7 @@
     "bytes": 272673792,
     "built_utc": "2026-10-12T18:22:45Z"
   },
-  "measured_utc": "2026-10-12T20:07:11Z",
+  "measured_utc": "2026-10-12T20:17:40Z",
   "lanes": {
     "start_quasar_v3_dflash2_vision.bat": {
       "artifact": {
@@ -16,20 +16,20 @@
       },
       "cells": {
         "code": {
-          "decode_avg": 346.4,
-          "accept_rate": 0.4909,
+          "decode_avg": 317.0,
+          "accept_rate": 0.548,
           "sampling": "default",
           "source": "measured"
         },
         "long-code": {
-          "decode_avg": 183.8,
-          "accept_rate": 0.2069,
+          "decode_avg": 211.3,
+          "accept_rate": 0.3059,
           "sampling": "default",
           "source": "measured"
         },
         "long-chinese": {
-          "decode_avg": 182.7,
-          "accept_rate": 0.2105,
+          "decode_avg": 131.3,
+          "accept_rate": 0.1447,
           "sampling": "default",
           "source": "measured"
         }

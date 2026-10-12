@@ -126,8 +126,8 @@ NVIDIA = "qwen3_8_27b_nvfp4nvidia.v3.ninfer"
 PROFILES: list[dict[str, Any]] = [
     dict(file="start_quasar_v3_dflash2_vision.bat", port=8086, art=QUASAR, device_state_slots=1,
          label="QUASAR QAT + DFlash2 + Vision", model_id="qwen3.8-27b-quasar-v3-dflash2-vision",
-         spec="dflash2", draft=9, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=346.4, acc="49.1%", runtime="8.83 GiB", free="4.09 GiB",
+         spec="dflash2", draft=7, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
+         tok=317.0, acc="54.8%", runtime="8.83 GiB", free="4.09 GiB",
          note="Fastest QUASAR lane at full context, at one state slot. Re-measured 2026-09-30 "
               "across all eight lanes. The 2026-09-24 figures this replaces (310.3/52.5%, runtime "
               "10.3 GiB) were taken before the workspace grew and no longer describe this lane; at "
@@ -156,17 +156,16 @@ PROFILES: list[dict[str, Any]] = [
               "re-swept under k8v4 on both served cells: long Chinese ties (188.5 against 188.9) and "
               "long code favours 9 by 15.1% (212.4 against 184.6, spreads 0.4/0.3%), so maximin takes 9 "
               "by 2.3% on the worst case and the served mean by 7.6%. Re-derived on the merged engine "
-              "2026-10-12 under the same rule, with both deciding cells and the worst non-code cell "
-              "measured: on 36,000 characters of real code depth 7 leads 244.7 against 230.0, on the "
-              "225-character code prompt the two tie at 324.2 tok/s (depth 9 lower on acceptance, 43.1% "
-              "against 52.4%, where the 2026-10-09 reading had 9 losing that cell by 12.5%), and on "
-              "36,000 characters of Chinese depth 7 leads 132.3 against 121.6, the sign reversed from "
-              "the +8.8% for 9 recorded above. Read as a change to depth 7 the bound is not met: the "
-              "deciding cells' worst case improves by 0.0% (a tie on the 225-character cell) while the "
-              "worst non-code cell gives up 8.1%, and the lane's own fingerprint at depth 7 reads the "
-              "long-code cell 210.8 against 184.9 (+14.0%) against a 27.8% loss on Chinese, so both "
-              "readings fail it. Depth 9 therefore stands: the bound adopts a change only when the "
-              "code cells gain at least what the non-code worst case loses, and 7 does not."),
+              "2026-10-12 under the owner's restated bound (CONTEXT.md, 2026-10-12: the code cells "
+              "decide and the non-code cells do not veto): on the deciding cells depth 7 reads the "
+              "225-character prompt 320.9 against depth 9's 346.4 (-7.4%) and 36,000 characters of real "
+              "code 210.8 against 183.8 (+14.7%), so depth 7's worst deciding cell, 320.9, is the better "
+              "one and this field follows it. The non-code costs are disclosed and not weighed: long "
+              "Chinese 134.5 against 182.7, -26.4%, acceptance 14.5% against 21.1%. Under the previous "
+              "bound, which gave the non-code cells a veto and was restated the same day, this change was "
+              "refused and the field was briefly set back to 9 - the contradiction between CONTEXT.md's "
+              "two paragraphs is what that reading turned on, and it is recorded there now. Depth 7's own "
+              "three cells are in lane_figures.json."),
     dict(file="start_quasar_v3_mtp4_vision.bat", port=8087, art=QUASAR, device_state_slots=1,
          label="QUASAR QAT + MTP4 + Vision", model_id="qwen3.8-27b-quasar-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",

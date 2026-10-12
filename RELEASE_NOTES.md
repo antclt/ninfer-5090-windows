@@ -169,7 +169,7 @@ that earlier builds shipped.
 
 | Launcher | Artifact | Spec | Vision | Context | Decode | Draft accept |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start_quasar_v3_dflash2_vision.bat` | QUASAR QAT | DFlash2 (9) | yes | 262,144 | **346 tok/s** | 49.1% |
+| `start_quasar_v3_dflash2_vision.bat` | QUASAR QAT | DFlash2 (7) | yes | 262,144 | **317 tok/s** | 54.8% |
 | `start_quasar_v3_mtp4_vision.bat` | QUASAR QAT | MTP (4) | yes | 262,144 | **225 tok/s** | 60.4% |
 | `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **361 tok/s** | 51.7% |
 | `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 207 tok/s | 55.0% |
@@ -201,7 +201,7 @@ score lower full-corpus perplexity (4.98, 4.92 and 4.90 against QUASAR's 4.99). 
 "the NVFP4-full line also carrying the fastest DFlash2 lane (340 tok/s against QUASAR's 311)" is
 stale and is withdrawn**: in the table above the NVFP4-full DFlash2 lane reads **380 tok/s** against
 QUASAR's **368**, so the fastest DFlash2 lane in this release is the NVFP4-full one. This sentence
-previously read "QUASAR at 382 tok/s" — a depth-7 figure for a lane that has since moved to depth 9
+previously read "QUASAR at 382 tok/s" — a depth-7 figure for a lane that moved to depth 9 and, on the merged engine's re-derivation, back to 7
 and to `k8v4` — and before that 331 against 319, the same table at an earlier measurement. The
 340/311 pair is a superseded measurement that no longer reproduces, in the same way as the withdrawn
 figures `profiles.py` names in its own notes. Compare artifacts only on

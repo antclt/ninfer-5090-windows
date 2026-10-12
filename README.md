@@ -118,7 +118,7 @@ and every profile reaches the full native context.
 
 | Launcher | Artifact | Spec | Vision | Context | Decode | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start_quasar_v3_dflash2_vision.bat` | QUASAR | DFlash2 (9) | yes | 262,144 | **346 tok/s** | 49.1% |
+| `start_quasar_v3_dflash2_vision.bat` | QUASAR | DFlash2 (7) | yes | 262,144 | **317 tok/s** | 54.8% |
 | `start_quasar_v3_mtp4_vision.bat` | QUASAR | MTP (4) | yes | 262,144 | **225 tok/s** | 60.4% |
 | `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **361 tok/s** | 51.7% |
 | `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 207 tok/s | 55.0% |

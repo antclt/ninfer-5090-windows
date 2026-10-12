@@ -94,11 +94,17 @@ and long Chinese 171.9 against 165.6, so the incumbent stands and its Chinese co
 What the reopening did change is the figure that reading rested on -- the "+19.3 % for depth 9 on long code"
 is withdrawn, because no record carries it and the measurement is the other sign.
 
-**The bound that makes disclosure a rule rather than a note:** a change is adopted when the deciding cells'
-worst case improves by at least as much as the worst disclosed non-code cell gives up. Without it,
-disclosure is decoration -- of three lanes whose code cells were all positive, only one was a trade worth
-making (swift dflash2's +24.6 % against -4.2 %, against ninfer dflash2's +4.9 % against -25.4 % and nvidia
-dflash2's +3.8 % against -31.5 %).
+**The bound, restated 2026-10-12 (owner's directive): the code cells decide and the non-code cells do not
+veto.** This paragraph previously read "a change is adopted when the deciding cells' worst case improves by
+at least as much as the worst disclosed non-code cell gives up" - a bound that handed the non-code cells a
+veto, contradicting the "a regression there no longer vetoes" written above it the day before. The owner
+resolved the contradiction: coding is the priority, so the code cells win against the other measurements
+and the non-code measurements are not among the deciders. A change is therefore adopted when it improves
+the deciding cells' worst case, whatever the non-code cells give up; those costs are still measured,
+recorded and disclosed in the row, which is what the paragraph above already required. The three-lane
+example that motivated the veto is kept as the record of why disclosure is mandatory rather than optional:
+swift dflash2's +24.6 % against -4.2 %, against ninfer dflash2's +4.9 % against -25.4 % and nvidia
+dflash2's +3.8 % against -31.5 %.
 
 What the rule is *for*, after that evaluation: at served length the candidates are separated by 10 to 28 %
 against spreads of 0.2 to 1.0 %, so the arithmetic decides nothing a measurement does not and any sane
