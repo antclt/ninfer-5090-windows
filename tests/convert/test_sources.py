@@ -12,6 +12,7 @@ from tools.convert.sources.compressed_tensors import (
 )
 from tools.convert.sources.quant_scheme import read_declared_scheme
 from tools.convert.sources.logical import select_rows
+from tools.convert.sources.modelopt_nvfp4 import ModelOptNvfp4
 
 
 def test_nvfp4_source_preserves_words_and_decodes_independently(tmp_path):

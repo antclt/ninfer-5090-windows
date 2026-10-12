@@ -29,9 +29,19 @@ using detail::DFlashPersistentState;
 using qwen3_5::PromptModality;
 
 struct ExecutionCore {
+    ExecutionCore(DeviceContext& device, const execution::Parameters& parameters, MemoryArena& work,
+                  LinearAttentionStatePool& linear_attention,
+                  const GdnReplayRecords* replay_records, qwen3_5::RoundState& io,
+                  Tensor& prefill_hidden, std::uint32_t prefill_chunk, ProposalHead proposal_head)
+        : device(device), cuda(device.execution_view()), parameters(parameters), work(work),
+          linear_attention(linear_attention), replay_records(replay_records), io(io),
+          prefill_hidden(prefill_hidden), prefill_chunk(prefill_chunk),
+          proposal_head(proposal_head) {}
+
     DeviceContext& device;
+    const CudaExecutionView cuda;
     const execution::Parameters& parameters;
-    WorkspaceArena& work;
+    MemoryArena& work;
     LinearAttentionStatePool& linear_attention;
     const GdnReplayRecords* replay_records;
     qwen3_5::RoundState& io;
@@ -42,7 +52,6 @@ struct ExecutionCore {
 
 struct PrefillContext {
     ExecutionCore execution;
-    qwen3_5::PagedKVCacheView text_kv;
     qwen3_5::PagedKVCacheView mtp_kv;
     const qwen3_5::PagedKVCache& text_cache;
     const qwen3_5::PagedKVCache* mtp_cache;
@@ -98,7 +107,7 @@ struct DFlashAppendContext {
 struct MtpCausalAttentionEnvelopes {
     ops::CausalAttentionExecutionEnvelope target_verify;
     ops::CausalAttentionExecutionEnvelope batch;
-    std::array<ops::CausalAttentionExecutionEnvelope, kMaximumMtpDraftTokens - 1> ar;
+    std::array<ops::CausalAttentionExecutionEnvelope, kMtpDecodeMaximumDrafts - 1> ar;
 };
 
 struct DFlashEnvelopes {

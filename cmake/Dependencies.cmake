@@ -10,8 +10,20 @@ if(MSVC)
     "${PROJECT_SOURCE_DIR}/ffmpeg/lib")
   target_link_libraries(PkgConfig::FFMPEG INTERFACE
     avcodec avformat avutil swscale swresample)
+
+  # hwloc: upstream's src/core/cpu/system.cpp owns the CPU-topology and affinity query through
+  # hwloc, and src/core links PkgConfig::HWLOC. Windows has no pkg-config, so this port stages a
+  # prebuilt hwloc dev tree into hwloc/ the same way it stages FFmpeg (see build_windows.bat).
+  # A missing hwloc/ fails configuration here rather than at an unrelated later step.
+  add_library(PkgConfig::HWLOC INTERFACE IMPORTED GLOBAL)
+  target_include_directories(PkgConfig::HWLOC INTERFACE
+    "${PROJECT_SOURCE_DIR}/hwloc/include")
+  target_link_directories(PkgConfig::HWLOC INTERFACE
+    "${PROJECT_SOURCE_DIR}/hwloc/lib")
+  target_link_libraries(PkgConfig::HWLOC INTERFACE hwloc)
 else()
   find_package(PkgConfig REQUIRED)
+  pkg_check_modules(HWLOC REQUIRED IMPORTED_TARGET hwloc>=2.5)
   pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavformat libavcodec libavutil libswscale)
 endif()

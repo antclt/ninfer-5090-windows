@@ -198,7 +198,7 @@ runtime::ExecutionTiming ProgramImpl::append_forced_tokens(
             work.alloc(DType::I32, {checked_i32(static_cast<std::uint32_t>(row_major_tokens.size()),
                                                 "forced-token batch exceeds int32")});
         CUDA_CHECK(cudaMemcpyAsync(forced_ids.data, row_major_tokens.data(), forced_ids.bytes(),
-                                   cudaMemcpyHostToDevice, device.stream));
+                                   cudaMemcpyHostToDevice, device.stream()));
         for (std::size_t row = 0; row < members.size(); ++row) {
             const std::uint32_t lane = lanes[row];
             if (requests[lane].sampling_host.token_counts == nullptr) { continue; }
@@ -206,7 +206,7 @@ runtime::ExecutionTiming ProgramImpl::append_forced_tokens(
                                              static_cast<std::int32_t>(row_stride));
             Tensor counts = token_counts.slice(1, static_cast<std::int32_t>(lane), 1)
                                 .view({dimension(parameters.model.resources().public_token_count)});
-            ops::increment_token_counts(ids, counts, device.stream);
+            ops::increment_token_counts(ids, counts, device.execution_view());
         }
         work.reset();
     }
@@ -268,7 +268,6 @@ runtime::ExecutionTiming ProgramImpl::append_forced_tokens(
                     {device, parameters, work, state_images->linear(),
                      replay_records ? &*replay_records : nullptr, io, prefill_hidden, prefill_chunk,
                      proposal_head},
-                    text_kv_view(sequence),
                     mtp_kv_view(sequence),
                     decoder->text_kv,
                     decoder->mtp_cache(),

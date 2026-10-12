@@ -2,6 +2,7 @@
 #include "artifact/reader.h"
 #include "artifact/fixture.h"
 #include "core/weight_view.h"
+#include "core/nf4.h"
 
 #include <algorithm>
 #include <array>
@@ -58,7 +59,7 @@ void geometry_and_views() {
     const auto* direct_bytes = reinterpret_cast<const std::byte*>(direct_words.data());
     const WeightParent direct_parent{weight_geometry(QType::BF16, QuantLayout::Contiguous,
                                                      std::array<std::uint64_t, 3>{2, 2, 3}),
-                                     direct_bytes};
+                                     Device::cpu(), direct_bytes};
     const WeightView direct_view{{2, 3}, {{&direct_parent, 3, 6}, {&direct_parent, 6, 9}}};
     const auto direct = native_weight(direct_view);
     require(direct.n == 2 && direct.k == 3 && direct.padded_shape[1] == 3 &&
@@ -68,7 +69,7 @@ void geometry_and_views() {
     Fixture fixture;
     WeightParent parent{weight_geometry(QType::Q5_G64_FP16, QuantLayout::RowSplit,
                                         std::array<std::uint64_t, 2>{2, 130}),
-                        fixture.payload.data() + 256};
+                        Device::cpu(), fixture.payload.data() + 256};
     const WeightView row{{1, 130}, {{&parent, 130, 260}}};
     const auto planes = weight_row_planes(row.parts.front());
     require(parent.geometry.bytes == 528 && planes.codes == parent.data + 128 &&
@@ -87,7 +88,7 @@ void geometry_and_views() {
     std::vector<std::byte> fp8(16896);
     WeightParent fp8_parent{weight_geometry(QType::FP8_E4M3FN_ROW_BF16, QuantLayout::RowScale,
                                             std::array<std::uint64_t, 2>{256, 64}),
-                            fp8.data()};
+                            Device::cpu(), fp8.data()};
     WeightView fp8_rows{{128, 64}, {{&fp8_parent, 0, 128 * 64}}};
     require(weight_row_planes(fp8_rows.parts.front()).scales == fp8.data() + 16384,
             "FP8 view recomputed the parent scale base");
@@ -97,7 +98,7 @@ void geometry_and_views() {
     std::vector<std::byte> nvfp4(4612);
     WeightParent nv_parent{weight_geometry(QType::NVFP4, QuantLayout::BlockScaleK16M128x4,
                                            std::array<std::uint64_t, 2>{128, 64}),
-                           nvfp4.data(), 2.0F};
+                           Device::cpu(), nvfp4.data(), 2.0F};
     require(weight_scale_offset(nv_parent.geometry, 31, 0) == 4096 + 496 &&
                 weight_scale_offset(nv_parent.geometry, 32, 0) == 4096 + 4,
             "NVFP4 parent swizzle origin was lost");
@@ -135,6 +136,23 @@ void geometry_and_views() {
         (void)native_weight(WeightView{{1023, 5120},
                                        {{&qkv_parent, 4096ULL * 5120, 5119ULL * 5120}}});
     }, "unaligned NVFP4 row count accepted");
+    const auto paged = weight_geometry(QType::NF4_G16_E4M3FN, QuantLayout::RowPagedG16_4K,
+                                       std::array<std::uint64_t, 2>{46, 160});
+    require(paged.alignment == 4096 && paged.row_bytes == 90 && paged.rows_per_page == 45 &&
+                paged.page_count == 2 && paged.divisor_offset == 8192 && paged.bytes == 8196,
+            "NF4 paged geometry differs from its wire representation");
+    require(weight_paged_row_offset(paged, 44) == 3960 &&
+                weight_paged_row_offset(paged, 45) == 4096 &&
+                weight_scale_offset(paged, 45, 9) == 4185,
+            "NF4 lookup crossed a page or scale boundary incorrectly");
+    require(nf4_code_value(0) == -1 && nf4_code_value(7) == 0 && nf4_code_value(15) == 1 &&
+                std::bit_cast<std::uint32_t>(nf4_code_value(8)) == 0x3da2faff,
+            "NF4 codebook changed");
+    WeightParent paged_parent{paged, Device::cpu(), nvfp4.data(), 2.0F};
+    rejects<std::invalid_argument>([&] { (void)weight_row_planes({&paged_parent, 0, 160}); },
+                                   "paged lookup was exposed as constant-stride planes");
+    rejects<std::invalid_argument>([&] { (void)weight_paged_row_offset(paged, 46); },
+                                   "out-of-bounds paged row accepted");
 }
 
 void invalid_directories() {

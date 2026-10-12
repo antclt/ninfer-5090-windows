@@ -41,16 +41,6 @@ struct LinearAttentionStateLayerView {
     Tensor recurrent;
 };
 
-struct LinearAttentionStateSlotView {
-    Tensor conv_layer0;
-    Tensor recurrent_layer0;
-    std::size_t conv_layer_bytes               = 0;
-    std::size_t recurrent_layer_bytes          = 0;
-    std::ptrdiff_t conv_layer_pitch_bytes      = 0;
-    std::ptrdiff_t recurrent_layer_pitch_bytes = 0;
-    std::uint32_t layers                       = 0;
-};
-
 [[nodiscard]] LinearAttentionStatePoolLayout
 plan_linear_attention_state_pool(LayoutBuilder& builder, const LinearAttentionStatePoolSpec& spec);
 
@@ -63,7 +53,7 @@ plan_linear_attention_state_pool(LayoutBuilder& builder, const LinearAttentionSt
  */
 class LinearAttentionStatePool {
 public:
-    LinearAttentionStatePool(DeviceSpan backing, const LinearAttentionStatePoolLayout& layout);
+    LinearAttentionStatePool(MemorySpan backing, const LinearAttentionStatePoolLayout& layout);
 
     LinearAttentionStatePool(const LinearAttentionStatePool&)            = delete;
     LinearAttentionStatePool& operator=(const LinearAttentionStatePool&) = delete;
@@ -75,11 +65,12 @@ public:
     [[nodiscard]] std::uint32_t layer_count() const noexcept;
     [[nodiscard]] std::int32_t slot_count() const noexcept;
     [[nodiscard]] LinearAttentionStateLayerView layer_view(std::uint32_t layer) const;
-    [[nodiscard]] LinearAttentionStateSlotView slot_view(std::int32_t slot) const;
     [[nodiscard]] LinearAttentionStateAllLayersView all_layers_view() const;
     [[nodiscard]] Tensor conv_slot(std::uint32_t layer, std::int32_t slot) const;
     [[nodiscard]] Tensor recurrent_slot(std::uint32_t layer, std::int32_t slot) const;
 
+    // CUDA mutations require a stream on the storage device. Binding and slicing are
+    // device-independent.
     void copy_slot(std::int32_t src, std::int32_t dst, cudaStream_t stream = nullptr);
     void zero_slot(std::int32_t slot, cudaStream_t stream = nullptr);
     void zero_all(cudaStream_t stream = nullptr);

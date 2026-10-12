@@ -27,7 +27,7 @@ void validate_layer_slot(const LinearAttentionStatePool& pool, std::uint32_t lay
 
 void validate_state_tensor(const Tensor& tensor, DType dtype,
                            std::initializer_list<std::int32_t> shape, const char* label) {
-    const Tensor expected(nullptr, dtype, shape);
+    const auto expected = Tensor::metadata(dtype, shape);
     if (tensor.data == nullptr || tensor.dtype != dtype || !tensor.is_contiguous() ||
         tensor.bytes() != expected.bytes()) {
         throw std::logic_error(std::string("LinearAttentionStatePool ") + label +
@@ -92,11 +92,10 @@ plan_linear_attention_state_pool(LayoutBuilder& builder, const LinearAttentionSt
         throw std::invalid_argument("LinearAttentionStatePool conv_dtype must be BF16 or FP32");
     }
 
-    const Tensor conv_shape(nullptr, spec.conv_dtype,
-                            {spec.conv_channels, spec.conv_width, spec.slot_count});
-    const Tensor recurrent_shape(
-        nullptr, DType::FP32,
-        {spec.key_head_dim, spec.value_head_dim, spec.value_heads, spec.slot_count});
+    const auto conv_shape =
+        Tensor::metadata(spec.conv_dtype, {spec.conv_channels, spec.conv_width, spec.slot_count});
+    const auto recurrent_shape = Tensor::metadata(
+        DType::FP32, {spec.key_head_dim, spec.value_head_dim, spec.value_heads, spec.slot_count});
 
     LinearAttentionStatePoolLayout layout;
     layout.spec = spec;
@@ -111,7 +110,7 @@ plan_linear_attention_state_pool(LayoutBuilder& builder, const LinearAttentionSt
     return layout;
 }
 
-LinearAttentionStatePool::LinearAttentionStatePool(DeviceSpan backing,
+LinearAttentionStatePool::LinearAttentionStatePool(MemorySpan backing,
                                                    const LinearAttentionStatePoolLayout& layout)
     : spec_(layout.spec) {
     if (layout.conv.empty() || layout.recurrent.size() != layout.conv.size() ||
@@ -120,11 +119,11 @@ LinearAttentionStatePool::LinearAttentionStatePool(DeviceSpan backing,
             "LinearAttentionStatePool layout layer counts are inconsistent");
     }
 
-    const Tensor conv_shape(nullptr, spec_.conv_dtype,
-                            {spec_.conv_channels, spec_.conv_width, spec_.slot_count});
-    const Tensor recurrent_shape(
-        nullptr, DType::FP32,
-        {spec_.key_head_dim, spec_.value_head_dim, spec_.value_heads, spec_.slot_count});
+    const auto conv_shape = Tensor::metadata(
+        spec_.conv_dtype, {spec_.conv_channels, spec_.conv_width, spec_.slot_count});
+    const auto recurrent_shape =
+        Tensor::metadata(DType::FP32, {spec_.key_head_dim, spec_.value_head_dim, spec_.value_heads,
+                                       spec_.slot_count});
     conv_.reserve(layout.conv.size());
     recurrent_.reserve(layout.recurrent.size());
     for (std::size_t layer = 0; layer < layout.conv.size(); ++layer) {
@@ -133,11 +132,11 @@ LinearAttentionStatePool::LinearAttentionStatePool(DeviceSpan backing,
             throw std::logic_error(
                 "LinearAttentionStatePool layout tensor byte size is inconsistent");
         }
-        conv_.emplace_back(layout.conv[layer].bind(backing).data, spec_.conv_dtype,
+        conv_.emplace_back(layout.conv[layer].bind(backing), spec_.conv_dtype,
                            std::initializer_list<std::int32_t>{spec_.conv_channels,
                                                                spec_.conv_width, spec_.slot_count});
         recurrent_.emplace_back(
-            layout.recurrent[layer].bind(backing).data, DType::FP32,
+            layout.recurrent[layer].bind(backing), DType::FP32,
             std::initializer_list<std::int32_t>{spec_.key_head_dim, spec_.value_head_dim,
                                                 spec_.value_heads, spec_.slot_count});
     }
@@ -157,22 +156,6 @@ LinearAttentionStateLayerView LinearAttentionStatePool::layer_view(std::uint32_t
         throw std::out_of_range("LinearAttentionStatePool layer_view layer out of range");
     }
     return {.conv = conv_[layer], .recurrent = recurrent_[layer]};
-}
-
-LinearAttentionStateSlotView LinearAttentionStatePool::slot_view(std::int32_t slot) const {
-    validate_layer_slot(*this, 0, slot, "LinearAttentionStatePool slot_view");
-    const auto all   = all_layers_view();
-    Tensor conv      = conv_slot(0, slot);
-    Tensor recurrent = recurrent_slot(0, slot);
-    return {
-        .conv_layer0                 = conv,
-        .recurrent_layer0            = recurrent,
-        .conv_layer_bytes            = conv.bytes(),
-        .recurrent_layer_bytes       = recurrent.bytes(),
-        .conv_layer_pitch_bytes      = all.conv_layer_stride_bytes,
-        .recurrent_layer_pitch_bytes = all.recurrent_layer_stride_bytes,
-        .layers                      = layer_count(),
-    };
 }
 
 LinearAttentionStateAllLayersView LinearAttentionStatePool::all_layers_view() const {
@@ -209,6 +192,9 @@ Tensor LinearAttentionStatePool::recurrent_slot(std::uint32_t layer, std::int32_
 }
 
 void LinearAttentionStatePool::copy_slot(std::int32_t src, std::int32_t dst, cudaStream_t stream) {
+    if (conv_.front().device.type() != DeviceType::CUDA) {
+        throw std::invalid_argument("linear state CUDA transfer requires CUDA backing");
+    }
     validate_layer_slot(*this, 0, src, "LinearAttentionStatePool copy_slot source");
     validate_layer_slot(*this, 0, dst, "LinearAttentionStatePool copy_slot destination");
     if (src == dst) { return; }
@@ -227,6 +213,9 @@ void LinearAttentionStatePool::copy_slot(std::int32_t src, std::int32_t dst, cud
 }
 
 void LinearAttentionStatePool::zero_slot(std::int32_t slot, cudaStream_t stream) {
+    if (conv_.front().device.type() != DeviceType::CUDA) {
+        throw std::invalid_argument("linear state CUDA transfer requires CUDA backing");
+    }
     validate_layer_slot(*this, 0, slot, "LinearAttentionStatePool zero_slot");
     for (std::uint32_t layer = 0; layer < layer_count(); ++layer) {
         const Tensor state = conv_slot(layer, slot);
@@ -239,6 +228,9 @@ void LinearAttentionStatePool::zero_slot(std::int32_t slot, cudaStream_t stream)
 }
 
 void LinearAttentionStatePool::zero_all(cudaStream_t stream) {
+    if (conv_.front().device.type() != DeviceType::CUDA) {
+        throw std::invalid_argument("linear state CUDA transfer requires CUDA backing");
+    }
     for (const Tensor& state : conv_) {
         CUDA_CHECK(cudaMemsetAsync(state.data, 0, state.bytes(), stream));
     }

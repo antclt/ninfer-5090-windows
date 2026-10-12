@@ -1,12 +1,11 @@
 #pragma once
 
 #include "core/weight.h"
-
+#include "core/device.h"
 #include "core/tensor.h"
 #include "core/arena.h"
 #include "ninfer/ops/sampling.h"
 
-#include <cuda_runtime.h>
 
 namespace ninfer::ops {
 
@@ -55,7 +54,7 @@ void candidate_selector_path(const Tensor& candidate_ids, const Tensor& unary_sc
                              const Tensor& projected_hidden, const Tensor& anchors,
                              const Weight& predecessor_codebook, const Weight& successor_codebook,
                              const Tensor& base_positions, const SamplingConfig* configs,
-                             Tensor& drafts, Tensor& proposal_q, WorkspaceArena& workspace,
-                             cudaStream_t stream);
+                             Tensor& drafts, Tensor& proposal_q, MemoryArena& workspace,
+                             CudaExecutionView execution);
 
 } // namespace ninfer::ops

@@ -87,8 +87,7 @@ other references own narrower contracts:
 | [ReplaySSM GDN](maintainer/replayssm-gdn.md) | raw transition records and faithful commitment of the verified state prefix |
 | [Op development](maintainer/op-development.md) | semantic boundaries, source ownership, numerical qualification and performance evidence |
 | [Operational logging](maintainer/logging.md) | log ownership, presentation, severity and data policy |
-| [Linear benchmark](maintainer/linear-benchmark.md) | pure Linear measurement, metrics and suites |
-| [Linear tuning and reports](maintainer/linear-tuning.md) | tuning ranges, priority points, dispatch tradeoffs and final performance report format |
+| [Linear tuning and measurement](maintainer/linear-tuning.md) | logical metrics, timing, tuning ranges, dispatch tradeoffs and performance reports |
 
 Model cards contain official artifact facts and source provenance. The
 [conversion guide](weight-conversion.md) is the entry point for making an artifact. Exact config
@@ -105,3 +104,17 @@ contracts; they are what a later reader needs in order to check a claim instead 
 | [`research/`](research/) | dated investigations: measurements, comparisons against other engines, and the evidence for a setting that shipped, each written while its question was open |
 | [`features/`](features/) | design notes for runtime work this port carries, including the weight-only NVFP4 DFlash2 runtime and the MSVC test-portability change |
 | [`upstream-reports/`](upstream-reports/) | what this port reported or considered reporting upstream, and the fork-divergence record |
+
+## Planned work
+
+Qwen3.8-Flash-Next uses the Qwen4Exp architecture. Its converter and many supporting Ops are
+implemented; Engine integration remains pending. The execution design owns the current support
+status and remaining requirements. Concrete Op contracts live in `include/ninfer/ops/`.
+
+| Design | Responsibility |
+|---|---|
+| [Qwen4Exp model and weights](maintainer/qwen4_exp-model.md) | architecture, quantization, merged matrices, source binding and residency budgets |
+| [Qwen4Exp execution and state](maintainer/qwen4_exp-execution.md) | layer flow, cross-Op handoffs, transactions, state lifetime and remaining integration |
+| [Qwen4Exp PLE I/O](maintainer/qwen4_exp-ple-io.md) | exact Host lookup, cold backing, bounded async reads, H2D and cancellation |
+| [Expert weight cache](maintainer/expert-weight-cache.md) | planned Qwen3.5-35B-A3B Host backing, GPU replicas, prefill and CPU/GPU decode |
+| [Linear test maintenance](maintainer/linear-test-reorganization-plan.md) | pending consolidation of test runners and explicit case contracts |

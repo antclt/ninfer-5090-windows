@@ -6,8 +6,7 @@
 #include "ninfer/ops/gdn_replay.h"
 #include "ninfer/ops/sampling.h"
 #include "ninfer/ops/scalar.h"
-#include "ninfer/ops/scatter.h"
-#include "ninfer/ops/speculative_round.h"
+#include "ninfer/ops/indexing.h"
 
 #include <algorithm>
 #include <array>
@@ -39,7 +38,7 @@ DFlashFeatureSink make_dflash_prefill_sink(PrefillContext& state) {
             };
             CUDA_CHECK(cudaMemcpyAsync(frame.ingress.data, state.dflash_prefill_host_ingress,
                                        sizeof(qwen3_5::DFlashPrefillIngress),
-                                       cudaMemcpyHostToDevice, state.execution.device.stream));
+                                       cudaMemcpyHostToDevice, state.execution.cuda.stream()));
             const auto exact = static_cast<std::uint32_t>(features.ne[1]);
             dflash_append_context(state, features, positions, frame.append_count,
                                   frame.state_destination_slot, frame.full_kv_table_row,
@@ -68,7 +67,7 @@ PrefillChunkResult prefill_text_chunk(PrefillContext& state, std::span<const Tok
                                       std::optional<std::uint32_t> split_frontier,
                                       bool finalize_at_end) {
     TextContext card(state.execution.device, state.execution.parameters, state.execution.work,
-                     state.text_kv, state.execution.linear_attention, state.execution.io,
+                     state.text_cache, state.execution.linear_attention, state.execution.io,
                      state.execution.prefill_hidden, state.execution.prefill_chunk,
                      state.text_kv_base, state.mtp_kv, &state.text_cache, state.mtp_cache,
                      TextCallConfig{.sampling = state.sampling,
@@ -96,7 +95,7 @@ PrefillChunkResult prefill_multimodal_chunk(PrefillContext& state, const Prepare
                                             std::optional<std::uint32_t> split_frontier,
                                             bool finalize_at_end) {
     TextContext card(state.execution.device, state.execution.parameters, state.execution.work,
-                     state.text_kv, state.execution.linear_attention, state.execution.io,
+                     state.text_cache, state.execution.linear_attention, state.execution.io,
                      state.execution.prefill_hidden, state.execution.prefill_chunk,
                      state.text_kv_base, state.mtp_kv, &state.text_cache, state.mtp_cache,
                      TextCallConfig{.sampling = state.sampling,
@@ -128,7 +127,7 @@ void mtp_bridge_multimodal(PrefillContext& state, const PreparedPromptData& prom
     Tensor bridge_token = state.execution.io.mtp->target_input_ids.slice(0, 0, 1);
     const TokenId token = prompt.token_ids[state.text_kv_base];
     CUDA_CHECK(cudaMemcpyAsync(bridge_token.data, &token, sizeof(token), cudaMemcpyHostToDevice,
-                               state.execution.device.stream));
+                               state.execution.cuda.stream()));
 
     Tensor visual_embedding;
     const Tensor* composed_embedding = nullptr;
@@ -164,14 +163,14 @@ void sample_from_hidden(PrefillContext& state, const Tensor& hidden, std::int32_
     state.execution.work.reset();
     Tensor logits = state.execution.io.logits.slice(1, 0, 1);
     project(hidden, state.execution.parameters.text.output_head, logits, state.execution.work,
-            state.execution.device.stream);
+            state.execution.cuda);
     CUDA_CHECK(cudaMemcpyAsync(state.execution.io.pos.data, &absolute_position,
                                sizeof(absolute_position), cudaMemcpyHostToDevice,
-                               state.execution.device.stream));
+                               state.execution.cuda.stream()));
     ops::sample(logits, state.execution.io.token,
                 dimension(state.execution.parameters.model.resources().public_token_count),
                 state.sampling, state.execution.io.pos, purpose, state.execution.work,
-                state.execution.device.stream);
+                state.execution.cuda);
     state.execution.work.reset();
 }
 
@@ -219,7 +218,7 @@ PrefillProgress ProgramImpl::advance_prefill(SequenceHandle handle,
         config.mask        = fill_grammar_mask(masks, 0, {});
         Tensor config_lane = sampling_config.slice(1, static_cast<std::int32_t>(lane), 1);
         CUDA_CHECK(cudaMemcpyAsync(config_lane.data, &config, sizeof(config),
-                                   cudaMemcpyHostToDevice, device.stream));
+                                   cudaMemcpyHostToDevice, device.stream()));
     }
     auto progress = wrap_prefill(lane, advance_prefill_raw(lane, timing));
     if (!progress.complete) { settle_unit(lane); }
@@ -230,16 +229,6 @@ runtime::PrefillStepResult
 ProgramImpl::advance_prefill_raw(std::uint32_t lane, runtime::ExecutionTiming* failed_timing) {
     if (lane >= max_concurrency) { throw std::out_of_range("request lane is out of range"); }
     return advance_prefill(active_sequence(lane), requests[lane], failed_timing);
-}
-
-runtime::ExecutionTiming ProgramImpl::resolve_prefill_raw(std::uint32_t lane, bool terminal,
-                                                          runtime::ExecutionTiming* failed_timing) {
-    if (lane >= max_concurrency) { throw std::out_of_range("request lane is out of range"); }
-    if (requests[lane].pending.kind != PendingKind::Begin) {
-        throw std::logic_error("prefill resolution requires a pending prefill token");
-    }
-    return resolve_non_speculative_pending(active_sequence(lane), requests[lane], 1, terminal,
-                                           std::nullopt, failed_timing);
 }
 
 runtime::ExecutionTiming ProgramImpl::resolve_pending_raw(
@@ -344,7 +333,7 @@ runtime::ExecutionTiming ProgramImpl::resolve_pending_raw(
     try {
         timing.resume_submit();
         replay_fold->execute(std::span<const ops::GdnReplayFoldRow>(fold_rows.data(), lanes.size()),
-                             device.stream);
+                             device.execution_view());
 
         // Sparse acceptance reads counts. Publish only the prefix licensed by the Frontend.
         if (speculative_backend == SpeculativeBackend::DFlash2) {
@@ -360,7 +349,7 @@ runtime::ExecutionTiming ProgramImpl::resolve_pending_raw(
                 Tensor counts =
                     token_counts.slice(1, static_cast<std::int32_t>(lanes[row]), 1)
                         .view({dimension(parameters.model.resources().public_token_count)});
-                ops::increment_token_counts(ids, counts, device.stream);
+                ops::increment_token_counts(ids, counts, device.execution_view());
             }
         }
 
@@ -387,11 +376,11 @@ runtime::ExecutionTiming ProgramImpl::resolve_pending_raw(
             }
             CUDA_CHECK(cudaMemcpyAsync(selector_tensor.data, hidden_selectors.data(),
                                        lanes.size() * sizeof(std::int32_t), cudaMemcpyHostToDevice,
-                                       device.stream));
-            ops::speculative_select_accepted_hidden(hidden, selector_tensor, selected,
-                                                    device.stream);
+                                       device.stream()));
+            ops::gather_bf16_batch_columns(hidden, selector_tensor, selected,
+                                           device.execution_view());
             ops::scatter(selected, destinations, state_images->continuation_hidden_store(),
-                         device.stream);
+                         device.execution_view());
         }
 
         if (is_masked_draft_backend(speculative_backend)) {
@@ -518,7 +507,6 @@ runtime::PrefillStepResult ProgramImpl::advance_prefill(SequenceState& sequence,
             {device, parameters, work, state_images->linear(),
              replay_records ? &*replay_records : nullptr, io, prefill_hidden, prefill_chunk,
              proposal_head},
-            text_kv_view(sequence),
             mtp_kv_view(sequence),
             decoder->text_kv,
             decoder->mtp_cache(),
@@ -554,7 +542,7 @@ runtime::PrefillStepResult ProgramImpl::advance_prefill(SequenceState& sequence,
                 Tensor bridge_token = io.mtp->target_input_ids.slice(0, 0, 1);
                 const TokenId token = staged.prompt.token_ids[staged.base];
                 CUDA_CHECK(cudaMemcpyAsync(bridge_token.data, &token, sizeof(token),
-                                           cudaMemcpyHostToDevice, device.stream));
+                                           cudaMemcpyHostToDevice, device.stream()));
                 execution::mtp_bridge_and_propose(schedule_state, bridge_token, previous_hidden,
                                                   bridge.position, bridge.rope_position, false);
             }
@@ -714,7 +702,7 @@ runtime::PrefillStepResult ProgramImpl::advance_prefill(SequenceState& sequence,
         if (staged.prepare_mtp && staged.initial_mtp_extent != 0) {
             CUDA_CHECK(cudaMemcpyAsync(initial_drafts.data(), io.mtp->draft_tokens.data,
                                        staged.initial_mtp_extent * sizeof(TokenId),
-                                       cudaMemcpyDeviceToHost, device.stream));
+                                       cudaMemcpyDeviceToHost, device.stream()));
         }
         timing.begin_wait();
         device.synchronize();

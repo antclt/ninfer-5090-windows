@@ -60,6 +60,7 @@ The built-in recipes are ordinary Python functions in
 | `qwen3_8_27b_nvfp4_qat` | Imported NVFP4 for every text linear; Q8 embedding and head | `bf16` |
 | `qwen3_8_27b_nvfp4_unsloth` | Imported NVFP4 MLP 0-55; attention, GDN, MLP 56-63 and both W8 endpoints encoded locally from the BF16 base, with the nine Qwen3.6 exception parents kept BF16 | `quantized` |
 | `qwen3_8_27b_nvfp4_swift` | Imported ModelOpt NVFP4 MLP; attention, GDN and both W8 endpoints re-encoded from the BF16 source | `swift_bf16` |
+| `qwen3_8_flash_next` | Q8 main projections, NVIDIA NVFP4 experts, paged NF4 PLE, BF16 auxiliary projections/Vision, self-quantized NVFP4 MTP experts | `nvidia_experts` |
 
 The unsloth recipe takes no divisor source. An NVFP4 site that permits A4 activations needs a positive
 activation divisor, a compressed-tensors checkpoint does not carry one, and a maximum does not transfer
@@ -96,6 +97,26 @@ MTP and Vision use the main source. DFlash and DFlash2 use the corresponding nam
 as `--source dflash=PATH` or `--source dflash2=PATH`. An artifact may contain several optional
 components; the Engine loads only the ones selected at startup, including at most one speculative
 backend. Component availability and startup selection are independent.
+
+For Qwen3.8-Flash-Next, select the dedicated NVIDIA expert index:
+
+```bash
+OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 python3 -m tools.convert \
+  --model /path/to/Qwen3.8-Flash-Next/base-hf-bf16 \
+  --recipe qwen3_8_flash_next \
+  --source nvidia_experts=/path/to/nvidia-nvfp4-experts/experts.safetensors.index.json \
+  --components text,vision,mtp \
+  --rows-per-chunk 16384 \
+  --name qwen3.8-flash-next \
+  --out out/qwen3_8_flash_next.ninfer
+```
+
+The Qwen4Exp adapter supports Text, Vision and MTP conversion. Engine execution, DFlash and
+indexed proposal are not yet connected for this architecture. CUDA self-quantization compiles
+the SM120 encoder on first use and requires a CUDA toolkit, C++ compiler and Ninja.
+PLE uses two bounded passes per shard, with no full-table materialization. The complete recipe
+contains about 99.64 GiB of weight/control payload, split by the existing V3 writer.
+See the [model and weight contract](maintainer/qwen4_exp-model.md) for exact layouts and precision.
 
 ## Change part of a recipe
 
@@ -169,12 +190,18 @@ The converter currently writes these formats:
 | `bf16`, `fp32`, `int32` | `cast_direct` | Direct words through the source reader |
 | `q4_g64_fp16`, `q5_g64_fp16`, `q6_g64_fp16`, `q8_g32_fp16` | `grouped_absmax` | Supply a custom method/source if needed |
 | `fp8_e4m3fn_row_bf16` | `fp8_row_maxabs` | `import_encoded` |
-| `nvfp4` | Supply a custom quantizer | `import_encoded` |
+| `nvfp4` | `stored_scale_mse` | `import_encoded` |
+| `nf4_g16_e4m3fn` | `stored_scale_mse` | Supply encoded words through `TensorOutput` |
 
 `grouped_absmax` stores one FP16 scale per group and signed integer codes. `fp8_row_maxabs` first
 rounds input values to BF16, then produces E4M3FN codes and one BF16 multiplier per row.
 `import_encoded` preserves compatible code and scale words, including NVFP4's matrix weight divisor.
 It does not dequantize and requantize them.
+
+`stored_scale_mse` computes one FP32 divisor from the complete parent amax, then searches stored
+E4M3FN scales per G16 group using FP64 reconstruction error. NF4 uses the fixed codebook;
+NVFP4 uses E2M1. The method provides no activation calibration. ModelOpt import preserves
+packed codes and scale bytes while converting FP32 global multipliers to stored reciprocals.
 
 The exact numeric and packing rules are in [numeric formats](maintainer/tensor-formats.md) and
 [storage layouts](maintainer/storage-layouts.md). Source format names alone do not establish
@@ -292,6 +319,18 @@ unfamiliar quantized source, its reader performs the corresponding decoding befo
 values. To preserve existing compatible encoded words, also provide `read_encoded` returning
 `EncodedRows`, and the format's required divisor accessors. Their definitions are in
 [`sources/logical.py`](../tools/convert/sources/logical.py).
+
+For a logical bank spread across several physical parents, `recipe.parent(parts, shape=...,
+format=..., method=..., order=...)` accepts `(parameter, begin, end, source)` fragments.
+`begin/end` are C-order logical element bounds; the supplied `LogicalSource` covers that fragment.
+Explicit parents must cover every affected parameter completely without overlap. This permits
+one gate/up matrix per expert while retaining separate logical gate and up banks.
+
+`recipe.place(selectors, order)` controls the physical ordering of ordinary parents; an explicit
+parent's `order` takes precedence. Binding parts remain in logical order. Shared calibration uses
+`recipe.auxiliary_tensor(name, AuxiliaryValue(...))` and an `AuxiliaryReference(name, element)`
+passed to `recipe.use(..., auxiliaries=...)`, so several Uses can reference one FP32 element.
+These functions are used directly by the Flash-Next recipe.
 
 ## Write a conversion method
 

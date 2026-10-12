@@ -1,6 +1,8 @@
 #include "ninfer/ops/candidate_selector.h"
+#include "cuda_fixture.h"
+#include "core/buffer.h"
 
-#include "ops/candidate_selector/bf16/candidate_selector_path_plan.h"
+#include "ops/sampling/candidate_path/plan.h"
 #include "ops/op_tester.h"
 #include "core/decode_graph.h"
 
@@ -420,7 +422,7 @@ int run(bool ties = false, bool dependent = false) {
         config.min_p             = 0.9F;
         config.presence_penalty  = 2.0F;
         config.frequency_penalty = 3.0F;
-        config.token_counts      = static_cast<int*>(counts.p);
+        config.token_counts      = static_cast<int*>(counts.data());
     }
     const WalkResult expected = walk_oracle(candidate_ids, lattice, configs, base_positions);
 
@@ -430,10 +432,12 @@ int run(bool ties = false, bool dependent = false) {
     DeviceBuffer anchor_device    = to_device(anchors);
     DeviceBuffer position_device  = to_device(base_positions);
     DeviceBuffer config_device    = to_device(configs);
-    DeviceBuffer predecessor_device(static_cast<std::size_t>(kRank) * kCodebookRows *
-                                    sizeof(std::uint16_t));
-    DeviceBuffer successor_device(static_cast<std::size_t>(kRank) * kCodebookRows *
-                                  sizeof(std::uint16_t));
+    DeviceBuffer predecessor_device(ninfer::test::cuda_environment().context.device(),
+                                    static_cast<std::size_t>(kRank) * kCodebookRows *
+                                        sizeof(std::uint16_t));
+    DeviceBuffer successor_device(ninfer::test::cuda_environment().context.device(),
+                                  static_cast<std::size_t>(kRank) * kCodebookRows *
+                                      sizeof(std::uint16_t));
     predecessor_device.fill();
     successor_device.fill();
     const std::vector<std::int32_t> tokens = accessed_tokens(candidate_ids, anchors);
@@ -457,8 +461,8 @@ int run(bool ties = false, bool dependent = false) {
         weight.layout     = QuantLayout::Contiguous;
         return weight;
     };
-    Weight predecessor = codebook_weight(predecessor_device.p);
-    Weight successor   = codebook_weight(successor_device.p);
+    Weight predecessor = codebook_weight(predecessor_device.data());
+    Weight successor   = codebook_weight(successor_device.data());
 
     int failures = 0;
     for (int batch_size = 1; batch_size <= kMaxBatch; ++batch_size) {
@@ -468,24 +472,24 @@ int run(bool ties = false, bool dependent = false) {
         GuardedDeviceBuffer q_device(q_count * sizeof(float));
         draft_device.fill(0xff);
         q_device.fill(0xff);
-        Tensor ids(candidate_device.p, DType::I32, {kCandidates, kSteps, batch_size});
-        Tensor unary(unary_device.p, DType::FP32, {kCandidates, kSteps, batch_size});
-        Tensor hidden(hidden_device.p, DType::BF16, {kRank, kSteps, batch_size});
-        Tensor anchor(anchor_device.p, DType::I32, {batch_size});
-        Tensor positions(position_device.p, DType::I32, {batch_size});
-        Tensor drafts(draft_device.data(), DType::I32, {kSteps, batch_size});
-        Tensor q(q_device.data(), DType::FP32, {kCandidates, kSteps, batch_size});
+        Tensor ids(candidate_device.span(), DType::I32, {kCandidates, kSteps, batch_size});
+        Tensor unary(unary_device.span(), DType::FP32, {kCandidates, kSteps, batch_size});
+        Tensor hidden(hidden_device.span(), DType::BF16, {kRank, kSteps, batch_size});
+        Tensor anchor(anchor_device.span(), DType::I32, {batch_size});
+        Tensor positions(position_device.span(), DType::I32, {batch_size});
+        Tensor drafts(draft_device.span(), DType::I32, {kSteps, batch_size});
+        Tensor q(q_device.span(), DType::FP32, {kCandidates, kSteps, batch_size});
         const auto capacity = ops::candidate_selector_path_workspace_capacity_bytes(
             kSteps, kSteps, batch_size, batch_size);
         GuardedDeviceBuffer scratch(std::max<std::size_t>(capacity, 1));
-        WorkspaceArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
-        const auto launch = [&](cudaStream_t stream) {
-            ops::candidate_selector_path(ids, unary, hidden, anchor, predecessor, successor,
-                                         positions,
-                                         static_cast<const ops::SamplingConfig*>(config_device.p),
-                                         drafts, q, workspace, stream);
+        MemoryArena workspace(scratch.span());
+        const auto launch = [&](CudaExecutionView cuda) {
+            ops::candidate_selector_path(
+                ids, unary, hidden, anchor, predecessor, successor, positions,
+                static_cast<const ops::SamplingConfig*>(config_device.data()), drafts, q, workspace,
+                cuda);
         };
-        launch(nullptr);
+        launch(ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
 
         const std::string label = "candidate_selector_path K=" + std::to_string(kSteps) +
@@ -512,10 +516,12 @@ int run(bool ties = false, bool dependent = false) {
             cudaStream_t stream = nullptr;
             cuda_check(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking),
                        "selector graph stream");
+            const auto stream_execution =
+                ninfer::test::cuda_environment().context.execution_view(stream);
             {
                 DecodeGraphDefinition definition;
                 DecodeGraphExecutable executable;
-                definition.capture(stream, [&] { launch(stream); });
+                definition.capture(stream, [&] { launch(stream_execution); });
                 executable.instantiate(definition);
                 executable.launch(stream);
                 executable.launch(stream);
@@ -528,11 +534,11 @@ int run(bool ties = false, bool dependent = false) {
                         choose_configs(candidate_ids, lattice, next_positions);
                     const auto next_expected =
                         walk_oracle(candidate_ids, lattice, next_configs, next_positions);
-                    cuda_check(cudaMemcpyAsync(position_device.p, next_positions.data(),
+                    cuda_check(cudaMemcpyAsync(position_device.data(), next_positions.data(),
                                                next_positions.size() * sizeof(int),
                                                cudaMemcpyHostToDevice, stream),
                                "update graph positions");
-                    cuda_check(cudaMemcpyAsync(config_device.p, next_configs.data(),
+                    cuda_check(cudaMemcpyAsync(config_device.data(), next_configs.data(),
                                                next_configs.size() * sizeof(ops::SamplingConfig),
                                                cudaMemcpyHostToDevice, stream),
                                "update graph configs");
@@ -548,11 +554,11 @@ int run(bool ties = false, bool dependent = false) {
                                          next_expected.probabilities, kProbabilityCriterion);
                     failures += verify_draws("selector graph updated q", batch_size, candidate_ids,
                                              next_configs, next_positions, next_drafts, next_q);
-                    cuda_check(cudaMemcpyAsync(position_device.p, base_positions.data(),
+                    cuda_check(cudaMemcpyAsync(position_device.data(), base_positions.data(),
                                                base_positions.size() * sizeof(int),
                                                cudaMemcpyHostToDevice, stream),
                                "restore graph positions");
-                    cuda_check(cudaMemcpyAsync(config_device.p, configs.data(),
+                    cuda_check(cudaMemcpyAsync(config_device.data(), configs.data(),
                                                configs.size() * sizeof(ops::SamplingConfig),
                                                cudaMemcpyHostToDevice, stream),
                                "restore graph configs");
@@ -592,16 +598,16 @@ int run(bool ties = false, bool dependent = false) {
         const auto capacity =
             ops::candidate_selector_path_workspace_capacity_bytes(kSteps, kSteps, 3, 3);
         GuardedDeviceBuffer sw(std::max<std::size_t>(capacity, 1));
-        WorkspaceArena workspace(DeviceSpan{sw.data(), sw.bytes()});
-        Tensor ti(di.p, DType::I32, {kCandidates, kSteps, 3}),
-            tu(du.p, DType::FP32, {kCandidates, kSteps, 3});
-        Tensor th(dh.p, DType::BF16, {kRank, kSteps, 3}), ta(da.p, DType::I32, {3}),
-            tp(dp.p, DType::I32, {3});
-        Tensor td(dd.data(), DType::I32, {kSteps, 3}),
-            tq(dq.data(), DType::FP32, {kCandidates, kSteps, 3});
+        MemoryArena workspace(sw.span());
+        Tensor ti(di.span(), DType::I32, {kCandidates, kSteps, 3}),
+            tu(du.span(), DType::FP32, {kCandidates, kSteps, 3});
+        Tensor th(dh.span(), DType::BF16, {kRank, kSteps, 3}), ta(da.span(), DType::I32, {3}),
+            tp(dp.span(), DType::I32, {3});
+        Tensor td(dd.span(), DType::I32, {kSteps, 3}),
+            tq(dq.span(), DType::FP32, {kCandidates, kSteps, 3});
         ops::candidate_selector_path(ti, tu, th, ta, predecessor, successor, tp,
-                                     static_cast<const ops::SamplingConfig*>(dc.p), td, tq,
-                                     workspace, nullptr);
+                                     static_cast<const ops::SamplingConfig*>(dc.data()), td, tq,
+                                     workspace, ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
         const auto actual_d = from_device<int>(dd.data(), 3 * kSteps);
         const auto actual_q = from_device<float>(dq.data(), 3 * kSteps * kCandidates);
@@ -613,16 +619,18 @@ int run(bool ties = false, bool dependent = false) {
         failures += dd.verify_guards("compact drafts") + dq.verify_guards("compact q") +
                     sw.verify_guards("compact workspace");
     }
+    failures += verify_exact("selector preserves candidate ids",
+                             from_device<int>(candidate_device.data(), candidate_ids.size()),
+                             candidate_ids);
     failures +=
-        verify_exact("selector preserves candidate ids",
-                     from_device<int>(candidate_device.p, candidate_ids.size()), candidate_ids);
-    failures += verify_exact("selector preserves unary",
-                             from_device<float>(unary_device.p, unary_scores.size()), unary_scores);
-    failures += verify_exact("selector preserves hidden",
-                             from_device<std::uint16_t>(hidden_device.p, projected_hidden.size()),
-                             projected_hidden);
+        verify_exact("selector preserves unary",
+                     from_device<float>(unary_device.data(), unary_scores.size()), unary_scores);
+    failures +=
+        verify_exact("selector preserves hidden",
+                     from_device<std::uint16_t>(hidden_device.data(), projected_hidden.size()),
+                     projected_hidden);
     failures += verify_exact("selector ignores token counts",
-                             from_device<int>(counts.p, host_counts.size()), host_counts);
+                             from_device<int>(counts.data(), host_counts.size()), host_counts);
     return failures;
 }
 
@@ -851,14 +859,14 @@ int run_nvfp4() {
 
     Weight predecessor = codebook_weight(book, 2.0F);
     Weight successor   = codebook_weight(successor_book, 4.0F);
-    predecessor.qdata  = predecessor_device.p;
-    predecessor.scales = static_cast<const std::uint8_t*>(predecessor_device.p) +
+    predecessor.qdata  = predecessor_device.data();
+    predecessor.scales = static_cast<const std::uint8_t*>(predecessor_device.data()) +
                        (((static_cast<std::size_t>(kCodebookRows) * kRank / 2 + 255U) / 256U) * 256U);
-    predecessor.payload = predecessor_device.p;
-    successor.qdata     = successor_device.p;
-    successor.scales    = static_cast<const std::uint8_t*>(successor_device.p) +
+    predecessor.payload = predecessor_device.data();
+    successor.qdata     = successor_device.data();
+    successor.scales    = static_cast<const std::uint8_t*>(successor_device.data()) +
                        (((static_cast<std::size_t>(kCodebookRows) * kRank / 2 + 255U) / 256U) * 256U);
-    successor.payload   = successor_device.p;
+    successor.payload   = successor_device.data();
 
     int failures = 0;
     for (int batch_size = 1; batch_size <= kMaxBatch; ++batch_size) {
@@ -868,20 +876,20 @@ int run_nvfp4() {
         GuardedDeviceBuffer q_device(q_count * sizeof(float));
         draft_device.fill(0xff);
         q_device.fill(0xff);
-        Tensor ids(candidate_device.p, DType::I32, {kCandidates, kSteps, batch_size});
-        Tensor unary(unary_device.p, DType::FP32, {kCandidates, kSteps, batch_size});
-        Tensor hidden(hidden_device.p, DType::BF16, {kRank, kSteps, batch_size});
-        Tensor anchor(anchor_device.p, DType::I32, {batch_size});
-        Tensor position(position_device.p, DType::I32, {batch_size});
-        Tensor drafts(draft_device.data(), DType::I32, {kSteps, batch_size});
-        Tensor q(q_device.data(), DType::FP32, {kCandidates, kSteps, batch_size});
+        Tensor ids(candidate_device.span(), DType::I32, {kCandidates, kSteps, batch_size});
+        Tensor unary(unary_device.span(), DType::FP32, {kCandidates, kSteps, batch_size});
+        Tensor hidden(hidden_device.span(), DType::BF16, {kRank, kSteps, batch_size});
+        Tensor anchor(anchor_device.span(), DType::I32, {batch_size});
+        Tensor position(position_device.span(), DType::I32, {batch_size});
+        Tensor drafts(draft_device.span(), DType::I32, {kSteps, batch_size});
+        Tensor q(q_device.span(), DType::FP32, {kCandidates, kSteps, batch_size});
         const auto capacity =
             ops::candidate_selector_path_workspace_capacity_bytes(kSteps, kSteps, batch_size,
                                                                   batch_size);
         GuardedDeviceBuffer scratch(std::max<std::size_t>(capacity, 1));
-        WorkspaceArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
+        MemoryArena workspace(DeviceSpan{scratch.data(), scratch.bytes()});
         ops::candidate_selector_path(ids, unary, hidden, anchor, predecessor, successor, position,
-                                     static_cast<const ops::SamplingConfig*>(config_device.p),
+                                     static_cast<const ops::SamplingConfig*>(config_device.data()),
                                      drafts, q, workspace, nullptr);
         cuda_synchronize();
         const std::string label = "nvfp4 B=" + std::to_string(batch_size) + " K=" +
@@ -913,7 +921,7 @@ int run_nvfp4() {
                                   0U);
         DeviceBuffer bf16_device(bf16_source.payload.size());
         Weight bf16_successor{};
-        bf16_successor.payload      = bf16_device.p;
+        bf16_successor.payload      = bf16_device.data();
         bf16_successor.payload_bytes = bf16_source.payload.size();
         bf16_successor.qtype        = QType::BF16;
         bf16_successor.layout       = QuantLayout::Contiguous;
@@ -924,23 +932,23 @@ int run_nvfp4() {
         bf16_successor.shape[1]     = kRank;
         bf16_successor.padded_shape[0] = kCodebookRows;
         bf16_successor.padded_shape[1] = kRank;
-        bf16_successor.qdata        = bf16_device.p;
+        bf16_successor.qdata        = bf16_device.data();
         GuardedDeviceBuffer d1(1 * sizeof(std::int32_t)), q1(1 * kCandidates * sizeof(float));
-        Tensor t_ids(candidate_device.p, DType::I32, {kCandidates, kSteps, 1});
-        Tensor t_unary(unary_device.p, DType::FP32, {kCandidates, kSteps, 1});
-        Tensor t_hidden(hidden_device.p, DType::BF16, {kRank, kSteps, 1});
-        Tensor t_anchor(anchor_device.p, DType::I32, {1});
-        Tensor t_pos(position_device.p, DType::I32, {1});
-        Tensor t_d(d1.data(), DType::I32, {kSteps, 1}), t_q(q1.data(), DType::FP32, {kCandidates, kSteps, 1});
+        Tensor t_ids(candidate_device.span(), DType::I32, {kCandidates, kSteps, 1});
+        Tensor t_unary(unary_device.span(), DType::FP32, {kCandidates, kSteps, 1});
+        Tensor t_hidden(hidden_device.span(), DType::BF16, {kRank, kSteps, 1});
+        Tensor t_anchor(anchor_device.span(), DType::I32, {1});
+        Tensor t_pos(position_device.span(), DType::I32, {1});
+        Tensor t_d(d1.span(), DType::I32, {kSteps, 1}), t_q(q1.span(), DType::FP32, {kCandidates, kSteps, 1});
         const auto mixed_capacity =
             ops::candidate_selector_path_workspace_capacity_bytes(kSteps, kSteps, 1, 1);
         GuardedDeviceBuffer sw(std::max<std::size_t>(mixed_capacity, 1));
-        WorkspaceArena ws(DeviceSpan{sw.data(), sw.bytes()});
+        MemoryArena ws(DeviceSpan{sw.data(), sw.bytes()});
         bool refused = false;
         try {
             ops::candidate_selector_path(t_ids, t_unary, t_hidden, t_anchor, predecessor,
                                          bf16_successor, t_pos,
-                                         static_cast<const ops::SamplingConfig*>(config_device.p), t_d,
+                                         static_cast<const ops::SamplingConfig*>(config_device.data()), t_d,
                                          t_q, ws, nullptr);
             cuda_synchronize();
         } catch (const std::invalid_argument&) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/buffer.h"
 #include "core/arena.h"
 #include "core/layout.h"
 #include "core/paged_kv_storage.h"
@@ -41,6 +42,8 @@ struct PagedKVBatchLayerView {
     std::int32_t head_dim     = 0;
     std::int32_t num_kv_heads = 0;
     KvCacheStorage storage    = KvCacheStorage::BFloat16;
+
+    [[nodiscard]] Device device() const;
 };
 
 /** Rebinds one checked single-sequence table row as a one-row batched view. */
@@ -52,6 +55,9 @@ struct KVPlaneGeometry {
     std::int32_t leading_extent = 0;
     std::int32_t head_extent    = 0;
     std::size_t alignment       = 256;
+    // Original tokens represented by one complete row. A prefix of c original tokens makes
+    // floor(c/tokens_per_row) rows valid; page IDs and coverage remain in the original domain.
+    std::uint32_t tokens_per_row = 1;
 
     friend bool operator==(const KVPlaneGeometry&, const KVPlaneGeometry&) = default;
 };
@@ -93,6 +99,12 @@ struct KVPageGeometry {
     return planes;
 }
 
+// Shared Device/Host row geometry. Supports spans 1 and 4; span 4 requires PageMajor.
+// The page token span must be positive and divisible by tokens_per_row, and the row count
+// must fit a positive Tensor extent. Data types and feature/head extents remain plane facts.
+[[nodiscard]] std::int32_t kv_plane_rows_per_page(const KVPageGeometry& page,
+                                                  const KVPlaneGeometry& plane);
+
 struct DeviceKVPagePoolSpec {
     std::uint32_t page_group_count = 0;
     KVPageGeometry geometry;
@@ -118,8 +130,6 @@ struct DeviceKVPagePoolLayout {
 struct KVExecutionTableLayout {
     KVExecutionTableSpec spec;
     TensorRegion block_tables;
-
-    [[nodiscard]] std::size_t metadata_bytes() const noexcept;
 };
 
 [[nodiscard]] DeviceKVPagePoolLayout plan_device_kv_page_pool(LayoutBuilder& builder,
@@ -214,7 +224,7 @@ private:
 
 class DeviceKVPagePool {
 public:
-    DeviceKVPagePool(DeviceSpan backing, const DeviceKVPagePoolLayout& layout);
+    DeviceKVPagePool(MemorySpan backing, const DeviceKVPagePoolLayout& layout);
 
     DeviceKVPagePool(const DeviceKVPagePool&)            = delete;
     DeviceKVPagePool& operator=(const DeviceKVPagePool&) = delete;
@@ -396,7 +406,7 @@ private:
 
 class KVExecutionTablePool {
 public:
-    KVExecutionTablePool(DeviceSpan backing, const KVExecutionTableLayout& layout,
+    KVExecutionTablePool(MemorySpan backing, const KVExecutionTableLayout& layout,
                          const DeviceKVPagePool& pages);
 
     KVExecutionTablePool(const KVExecutionTablePool&)            = delete;

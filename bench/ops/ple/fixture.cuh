@@ -1,0 +1,121 @@
+#pragma once
+
+#include "core/buffer.h"
+#include "options.h"
+#include "ninfer/ops/ple.h"
+
+#include <memory>
+#include <numeric>
+
+namespace ninfer::bench::ple {
+
+inline constexpr int H = 2560, C = 4, D = H * C;
+
+struct ConvFixture {
+    const Options& options;
+    int tokens, capacity;
+    DeviceBuffer residual;
+    DeviceBuffer gated;
+    DeviceBuffer kernel;
+    DeviceBuffer norm;
+    DeviceBuffer history;
+    DeviceBuffer records;
+    DeviceBuffer updated;
+    DeviceBuffer normalized;
+    std::vector<int> counts;
+    DeviceBuffer valid;
+    DeviceBuffer slots;
+    DeviceBuffer offsets;
+    std::unique_ptr<SavedBuffer> saved;
+
+    ConvFixture(const Options& o, int t)
+        : options(o), tokens(t), capacity(t + o.offset),
+          residual(make_bf16(std::size_t(D) * t * o.batch, 101, -1, 1)),
+          gated(make_bf16(std::size_t(D) * t * o.batch, 103, -1, 1)),
+          kernel(make_bf16(D * 4, 107, -.25f, .25f)), norm(make_bf16(D, 109)),
+          history(make_bf16(std::size_t(D) * 9 * o.batch, 113, -1, 1)),
+          records(make_bf16(std::size_t(D) * capacity * o.batch, 127, -1, 1)),
+          updated(o.inplace ? DeviceBuffer{} : make_zeros(std::size_t(D) * t * o.batch * 2)),
+          normalized(o.op == "conv-add-norm" ? make_zeros(std::size_t(D) * t * o.batch * 2)
+                                             : DeviceBuffer{}),
+          counts(extents(o.valid, t, o.batch)), valid(measurement::make_i32(counts)),
+          offsets(measurement::make_i32(std::vector<int>(o.batch, o.offset))) {
+        std::vector<int> indices(o.batch);
+        std::iota(indices.begin(), indices.end(), 0);
+        slots = measurement::make_i32(indices);
+        if (o.inplace) saved = std::make_unique<SavedBuffer>(residual);
+    }
+
+    void restore(CudaExecutionView cuda) const {
+        if (saved) saved->restore(cuda);
+    }
+
+    void launch(CudaExecutionView execution) {
+        const int b = options.batch;
+        Tensor h(residual.span(), DType::BF16, {H, C, tokens, b}),
+            u(gated.span(), DType::BF16, {H, C, tokens, b});
+        Tensor w(kernel.span(), DType::BF16, {D, 4}),
+            y(options.inplace ? residual.span() : updated.span(), DType::BF16, {H, C, tokens, b});
+        const ops::PleBatchView batch{Tensor(valid.span(), DType::I32, {b})};
+        const ops::PleConvStateView before{Tensor(history.span(), DType::BF16, {D, 9, b}),
+                                           Tensor(slots.span(), DType::I32, {b})};
+        const ops::PleConvRecordWindowView current{
+            Tensor(records.span(), DType::BF16, {D, capacity, b}),
+            Tensor(offsets.span(), DType::I32, {b})};
+        if (options.op == "conv-add-norm") {
+            Tensor weight(norm.span(), DType::BF16, {H, C}),
+                z(normalized.span(), DType::BF16, {H, C, tokens, b});
+            ops::ple_conv_add_norm(h, u, w, batch, before, current, weight, 1e-6f, y, z, execution);
+        } else
+            ops::ple_conv_add(h, u, w, batch, before, current, y, execution);
+    }
+};
+
+struct ExtractFixture {
+    const Options& options;
+    int tokens;
+    DeviceBuffer history;
+    DeviceBuffer records;
+    DeviceBuffer after;
+    DeviceBuffer slots;
+    DeviceBuffer valid;
+    DeviceBuffer accepted;
+    std::vector<int> counts, commits;
+    std::unique_ptr<SavedBuffer> saved;
+
+    ExtractFixture(const Options& o, int t)
+        : options(o), tokens(t), history(make_bf16(std::size_t(D) * 9 * o.batch, 211)),
+          records(make_bf16(std::size_t(D) * t * o.batch, 223)),
+          after(o.inplace ? DeviceBuffer{} : make_zeros(std::size_t(D) * 9 * o.batch * 2)),
+          counts(extents(o.valid, t, o.batch)),
+          commits(o.accepted == "dense" ? counts : extents(o.accepted, t, o.batch)) {
+        for (int i = 0; i < o.batch; ++i)
+            if (commits[i] > counts[i])
+                throw std::invalid_argument("accepted exceeds recorded prefix");
+        std::vector<int> indices(o.batch);
+        std::iota(indices.begin(), indices.end(), 0);
+        slots    = measurement::make_i32(indices);
+        valid    = measurement::make_i32(counts);
+        accepted = measurement::make_i32(commits);
+        if (o.inplace) saved = std::make_unique<SavedBuffer>(history);
+    }
+
+    void restore(CudaExecutionView cuda) const {
+        if (saved) saved->restore(cuda);
+    }
+
+    void launch(CudaExecutionView execution) {
+        const int b = options.batch;
+        const Tensor indices(slots.span(), DType::I32, {b}), a(accepted.span(), DType::I32, {b});
+        ops::ple_state_extract(
+            {Tensor(history.span(), DType::BF16, {D, 9, b}), indices},
+            {Tensor(records.span(), DType::BF16, {D, tokens, b}),
+             Tensor(valid.span(), DType::I32, {b})},
+            a,
+            {Tensor(options.inplace ? history.span() : after.span(), DType::BF16, {D, 9, b}),
+             indices},
+            execution);
+    }
+};
+
+} // namespace ninfer::bench::ple

@@ -77,8 +77,7 @@ LinearPolicy common_policy(std::span<const WeightInput> inputs) {
     return result;
 }
 
-SingleProjectionWeight single(std::span<const WeightInput> inputs) {
-    auto view         = concatenate_rows(inputs);
+SingleProjectionWeight single(const WeightView& view, std::span<const WeightInput> inputs) {
     const auto region = contiguous_weight_region(view);
     const auto policy = common_policy(inputs);
     float divisor     = 0;
@@ -112,39 +111,8 @@ SingleProjectionWeight single(std::span<const WeightInput> inputs) {
     return {native_weight(view, divisor), policy};
 }
 
-ProjectionWeights input_projection(std::span<const WeightInput, 4> inputs, bool attention) {
-    const auto& q      = matrix(inputs[0]);
-    const auto& k      = matrix(inputs[1]);
-    const auto& third  = matrix(inputs[2]);
-    const auto& fourth = matrix(inputs[3]);
-    const bool dense =
-        attention ? q == std::vector<std::uint64_t>{6144, 5120} &&
-                        k == std::vector<std::uint64_t>{1024, 5120} && third == q && fourth == k
-                  : q == std::vector<std::uint64_t>{2048, 5120} && k == q &&
-                        third == std::vector<std::uint64_t>{6144, 5120} && fourth == third;
-    const bool moe =
-        attention ? q == std::vector<std::uint64_t>{4096, 2048} &&
-                        k == std::vector<std::uint64_t>{512, 2048} && third == q && fourth == k
-                  : q == std::vector<std::uint64_t>{2048, 2048} && k == q &&
-                        third == std::vector<std::uint64_t>{4096, 2048} && fourth == third;
-    require(dense || moe, "input projection: unsupported logical projection geometry");
-    const auto joined = concatenate_rows(inputs);
-    if (contiguous(joined)) {
-        auto result       = single(inputs);
-        const auto format = result.weight.qtype;
-        const bool supported =
-            (moe && format == QType::Q8_G32_FP16) ||
-            (dense && (format == QType::NVFP4 || format == QType::FP8_E4M3FN_ROW_BF16 ||
-                       (attention && format == QType::BF16)));
-        require(supported, "input projection: unsupported single-parent format");
-        return result;
-    }
-    require(dense, "input projection: unsupported multi-parent geometry");
-    const auto first  = single(inputs.first<2>());
-    const auto second = single(inputs.last<2>());
-    require(first.weight.qtype == QType::Q4_G64_FP16 && second.weight.qtype == QType::Q5_G64_FP16,
-            "input projection: paired native form requires Q4 and Q5");
-    return PairedProjectionWeights{first.weight, second.weight};
+SingleProjectionWeight single(std::span<const WeightInput> inputs) {
+    return single(concatenate_rows(inputs), inputs);
 }
 
 } // namespace
@@ -157,41 +125,49 @@ SingleProjectionWeight prepare_linear_weight(std::span<const WeightInput> rows) 
     return single(rows);
 }
 
-SingleProjectionWeight prepare_attn_input_proj_weights(const WeightInput& query,
-                                                       const WeightInput& key,
-                                                       const WeightInput& value) {
-    const auto& q = matrix(query);
-    require((q == std::vector<std::uint64_t>{4096, 2048} ||
-             q == std::vector<std::uint64_t>{4096, 5120}) &&
-                matrix(key) == std::vector<std::uint64_t>{1024, q[1]} &&
-                matrix(value) == matrix(key),
-            "QKV input projection: unsupported logical geometry");
-    const std::array inputs{query, key, value};
-    auto result = single(inputs);
-    // Q8 serves the main model's QKV projection; the fork-format DFlash2 drafter stores
-    // its QKV as weight-only NVFP4, which attn_input_proj dispatches to the NVFP4 route.
-    require(result.weight.qtype == QType::Q8_G32_FP16 || result.weight.qtype == QType::NVFP4,
-            "QKV input projection: native form requires Q8 or NVFP4");
-    return result;
+ProjectionWeights prepare_projection_weights(std::span<const WeightInput> rows) {
+    const auto view = concatenate_rows(rows);
+    if (contiguous(view)) return single(view, rows);
+
+    const auto columns = view.shape[1];
+    WeightView bank{{0, columns}, {}};
+    std::uint64_t elements = 0;
+    std::vector<WeightInput> bank_rows;
+    std::vector<SingleProjectionWeight> banks;
+    const auto finish_bank = [&] {
+        require(elements % columns == 0, "projection parent boundary must align to a matrix row");
+        bank.shape[0] = elements / columns;
+        banks.push_back(single(bank, bank_rows));
+    };
+    for (const auto& input : rows) {
+        bool included = false;
+        for (const auto& part : input.weight.parts) {
+            if (!bank.parts.empty() &&
+                (part.parent != bank.parts.back().parent || part.begin != bank.parts.back().end)) {
+                finish_bank();
+                require(banks.size() < 2, "projection bank requires more than two native regions");
+                bank.parts.clear();
+                bank_rows.clear();
+                elements = 0;
+                included = false;
+            }
+            bank.parts.push_back(part);
+            elements += part.end - part.begin;
+            if (!included) {
+                bank_rows.push_back(input);
+                included = true;
+            }
+        }
+    }
+    finish_bank();
+    return PairedProjectionWeights{banks[0].weight, banks[1].weight};
 }
 
-ProjectionWeights prepare_attn_input_proj_weights(const WeightInput& query, const WeightInput& key,
-                                                  const WeightInput& gate,
-                                                  const WeightInput& value) {
-    const std::array inputs{query, key, gate, value};
-    return input_projection(inputs, true);
-}
-
-ProjectionWeights prepare_gdn_input_proj_weights(const WeightInput& query, const WeightInput& key,
-                                                 const WeightInput& value, const WeightInput& z) {
-    const std::array inputs{query, key, value, z};
-    return input_projection(inputs, false);
-}
-
-ProjectionWeights prepare_gdn_gating_proj_weights(const WeightInput& a, const WeightInput& b) {
+ProjectionWeights prepare_gdn_control_proj_weights(const WeightInput& a, const WeightInput& b) {
     const auto& shape = matrix(a);
     require(shape == matrix(b) && (shape == std::vector<std::uint64_t>{48, 5120} ||
-                                   shape == std::vector<std::uint64_t>{32, 2048}),
+                                   shape == std::vector<std::uint64_t>{32, 2048} ||
+                                   shape == std::vector<std::uint64_t>{48, 2560}),
             "GDN control: unsupported A/B geometry");
     const std::array inputs{a, b};
     if (contiguous(concatenate_rows(inputs))) {
@@ -199,7 +175,8 @@ ProjectionWeights prepare_gdn_gating_proj_weights(const WeightInput& a, const We
         require(result.weight.qtype == QType::BF16, "GDN control requires BF16 weights");
         return result;
     }
-    require(shape[0] == 48, "GDN control: this geometry requires a combined parent");
+    require(shape == std::vector<std::uint64_t>{48, 5120},
+            "GDN control: this geometry requires a combined parent");
     const auto first  = prepare_linear_weight(a);
     const auto second = prepare_linear_weight(b);
     require(first.weight.qtype == QType::BF16 && second.weight.qtype == QType::BF16,

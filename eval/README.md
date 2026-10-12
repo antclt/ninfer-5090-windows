@@ -171,7 +171,7 @@ separate so each is independently resumable. The harness that used to start the 
 no longer carried (see the note under Environment), so start it with the flags the next paragraph
 describes.
 
-The script starts a fresh local server for each step. The text server uses a 252,928-token context
+The script starts a fresh local server for each step. The NVFP4 text server uses a 252,928-token context
 (the largest that fits the RTX 5090 after weights; 262,144 is rejected at startup) and omits
 `--vision`, so Vision's fixed GPU allocations do not reduce the KV pool needed by long reasoning.
 The multimodal server is restarted with `--vision` and an 81,920-token context. Across the cached
@@ -181,17 +181,9 @@ only by each EvalScope request. The target and ordinary jobs use concurrency two
 at concurrency one so its 245,760-token output budget can accommodate the observed long tail. AIME
 uses 122,880 output tokens per request, while IFBench and both multimodal datasets use 65,536.
 
-The completed formal run recorded these scores (run directories `eval/runs/20260818T132336Z-c16a8902`
-and `eval/runs/20260818T223812Z-da6cdbce`):
-
-| Benchmark | Accuracy | Correct / total |
-|---|---:|---:|
-| IFBench (prompt-level strict) | 77.00% | 231 / 300 |
-| AIME 2025 | 96.67% | 29 / 30 |
-| AIME 2026 | 96.67% | 29 / 30 |
-| GPQA-Diamond | 90.40% | 179 / 198 |
-| ERQA | 66.25% | 265 / 400 |
-| RealWorldQA | 83.53% | 639 / 765 |
+The completed NVFP4 run used `eval/runs/20260818T132336Z-c16a8902` and
+`eval/runs/20260818T223812Z-da6cdbce`. Published scores and correct/total counts are maintained in
+the [NVFP4 model card](../model-cards/Qwen3.8-27B-nvfp4-NInfer/README.md#evaluation).
 
 The Qwen3.8-27B groupwise-int profile ran the same protocol, with the full 262,144-token context
 because its 16.96 GiB artifact leaves more GPU memory, and both steps at concurrency four (run

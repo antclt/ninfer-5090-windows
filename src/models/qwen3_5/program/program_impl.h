@@ -2,6 +2,7 @@
 #include "models/qwen3_5/program/internal.h"
 
 #include "core/arena.h"
+#include "core/buffer.h"
 #include "core/gdn_replay_records.h"
 #include "core/host_kv_arena.h"
 #include "ninfer/ops/gdn_replay.h"
@@ -149,7 +150,7 @@ struct DFlashDraftHandoff {
     DFlashDraftHandoff(const DeviceContext& device, std::size_t count)
         : ids(count * sizeof(TokenId)), ready(device) {}
 
-    [[nodiscard]] std::span<TokenId> tokens() const noexcept {
+    [[nodiscard]] std::span<TokenId> tokens() noexcept {
         return {static_cast<TokenId*>(ids.data()), ids.size() / sizeof(TokenId)};
     }
 };
@@ -172,7 +173,6 @@ struct SequenceState {
     std::array<TokenId, qwen3_5::kMtpDecodeMaximumDrafts> mtp_drafts{};
     std::uint32_t mtp_draft_count = 0;
     bool tail_hidden_valid        = false;
-    bool endpoint_valid           = false;
 };
 
 struct CaptureReservation {
@@ -359,9 +359,9 @@ public:
     const std::size_t graph_allowance_bytes;
     const WorkspacePlan workspace_plan;
 
-    DeviceArena persistent;
-    DeviceArena workspace_storage;
-    WorkspaceArena work;
+    DeviceBuffer persistent;
+    DeviceBuffer workspace_storage;
+    MemoryArena work;
     std::unique_ptr<qwen3_5::DecoderState> decoder;
     std::unique_ptr<HostContextArena> host_context_arena;
     std::unique_ptr<HostKVArena> host_kv_arena;
@@ -542,7 +542,6 @@ public:
     [[nodiscard]] const SequenceState& active_sequence(std::uint32_t lane) const;
     void clear_lane(SequenceState&, RequestControl&) noexcept;
     void clear_execution_failure_lanes(std::span<const std::uint32_t>) noexcept;
-    void ordered_reset(SequenceState&);
     void refresh_state_views(SequenceState&);
     [[nodiscard]] StateImageSelectors state_selectors(const SequenceState&) const;
     void settle_state_fork(SequenceState&);
@@ -554,15 +553,12 @@ public:
     [[nodiscard]] PagedKVCache* backend_kv_cache() noexcept;
     [[nodiscard]] const PagedKVCache* backend_kv_cache() const noexcept;
     [[nodiscard]] std::uint32_t backend_kv_valid(const SequenceState&) const noexcept;
-    [[nodiscard]] PagedKVCacheView text_kv_view(const SequenceState&) const;
     [[nodiscard]] PagedKVCacheView mtp_kv_view(const SequenceState&) const;
     [[nodiscard]] PrefillProgress wrap_prefill(std::uint32_t lane, runtime::PrefillStepResult);
     [[nodiscard]] PendingBatch wrap_pending(std::span<const std::uint32_t>,
                                             const runtime::BatchedGeneratedRound&);
     [[nodiscard]] runtime::PrefillStepResult advance_prefill_raw(std::uint32_t,
                                                                  runtime::ExecutionTiming*);
-    [[nodiscard]] runtime::ExecutionTiming resolve_prefill_raw(std::uint32_t, bool,
-                                                               runtime::ExecutionTiming*);
     [[nodiscard]] runtime::ExecutionTiming
     resolve_pending_raw(std::span<const std::uint32_t>, std::span<const std::uint32_t>,
                         std::span<const std::uint8_t>, std::span<const std::uint8_t>,

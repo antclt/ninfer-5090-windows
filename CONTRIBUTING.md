@@ -88,9 +88,7 @@ Each pull request must represent one coherent engineering decision:
 
 There is no mechanical line-count or file-count limit. A necessary solution may cross several
 files, but every changed part must belong to the same contract and be reviewable and verifiable as
-one unit. A large change that combines independent decisions, crosses ownership boundaries without
-prior agreement, or requires the maintainer to reconstruct its design is not maintainable and will
-not be accepted. Use the Issue, not a draft implementation, to resolve architecture and scope.
+one unit.
 
 ## Engineering and verification
 
@@ -129,8 +127,7 @@ review is not a substitute for contributor debugging or engineering supervision.
 ## Pull request description
 
 Use the [PR template](.github/pull_request_template.md) to describe the problem and scope,
-implementation, and verification. One PR completes one agreed change, including its necessary
-implementation, verification and report; submit independent changes separately.
+implementation, and verification.
 
 A pull request description must include:
 

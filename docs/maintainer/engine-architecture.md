@@ -121,14 +121,58 @@ ModelInstance 持有 Model、const Parameters、Frontend 与 Program。Planner �
 运行期改变 ownership、mapping、frontier 与 replica placement。每个 Program 独占可变状态和 Device
 allocation；销毁时先结束 Engine worker 与未决设备工作，再销毁 Program、Frontend、Parameters 和 Model。
 
-模型代码维护有限调用写法、跨 Op 融合和阶段关系。例如 Q/K 为一个 Q4 parent、gate/V 为一个 Q5 parent
-时，Attention 投影使用两个权重参数；完整 FP8/NVFP4 parent 保存 Q/K/gate/V 时使用单权重入口。
+模型代码维护有限调用写法、跨 Op 融合和阶段关系。纯分段投影统一调用 LinearSplit；Parameters 保存
+逻辑输出行顺序及单/双 parent 参数。例如 Q4 的 Q/K 与 Q5 的 gate/V 按逻辑行拼接，完整
+FP8/NVFP4 parent 直接提供同一行序。通用权重准备解析存储视图，实际 Op 检查可执行的格式与分段。
 View 保留 parent 几何、planes 和元素范围，共享对象只驻留一次，各使用位置保留独立 Use。
 激活许可为 `A16Only={A16}`、`AllowA8={A16,A8}`、`AllowA4={A16,A8,A4}`；融合调用取相关许可交集。
 
 Reader、binder、原生参数准备、容量查询、warmup 和执行各自检查所消费的合同。可执行范围由实际
 消费者决定。数学公式、权重表示值和实现精度分别解释；不同量化、batch、prefill 或 speculative 路径的
 数值与状态正确性按 [Op 合同](op-development.md)及独立 oracle 验证。
+
+### 2.6 内存位置与执行环境
+
+`Device` 描述 CPU 或具体 CUDA ordinal；`None` 只用于未绑定的描述符和容量规划。
+`Tensor`、权重 parent 及其派生视图记录实际位置，reshape、slice、permute 和 layout binding
+保留该位置。数值格式、逻辑形状与内存位置独立，运行时位置不写入 artifact。
+
+`HostBuffer` 拥有对齐的普通 CPU 内存，`PinnedHostBuffer` 拥有可用于 CUDA 异步传输的锁页内存，
+`DeviceBuffer` 拥有指定 GPU 的分配。`MemorySpan` / `ConstMemorySpan` 借用 backing，记录容量、
+位置及 host pinned 属性。`MemoryArena` 只管理 span 上的分配游标；Program 分别持有 backing
+和 workspace arena，scope 退出只回退游标，不等待设备工作。容量规划使用无 backing 的描述符。
+
+`DeviceContext` 拥有 CUDA streams 和设备属性，并创建只读的 `CudaExecutionView`。Program、
+模型上下文及组合 Op 沿调用链传递该视图；Op 入口检查实际操作数和 workspace 属于执行 GPU，
+私有 launcher 再取出 stream。借用外部 stream 时在其所有者边界核对设备，调用点不得从 Tensor
+位置和裸 stream 拼装执行环境。Engine worker 在执行前绑定设备。
+
+通用字节传输通过 `copy_bytes` / `copy_bytes_async` 表达。CPU copy 同步完成；CUDA async copy
+要求 CPU 端为 pinned memory，CUDA 端属于执行 GPU。调用者持有 backing，负责 stream/event
+排序及完成后的复用；Tensor 和 span 不携带“已就绪”状态。KV 等有专用布局的传输保留其专用接口。
+这些基础类型允许 CPU 数据参与编排；现有模型执行和 CUDA Ops 仍在 GPU 上运行。
+
+### 2.7 CPU 执行基础
+
+`CpuTopology` 记录发现线程允许使用的 OS CPU、物理核和可见缓存关系，不改变线程绑定。
+线程数量与 affinity 在创建资源前解析；Core 消费明确配置，不自行选择模型计算分工。
+媒体的自动线程数使用允许的 CPU 数量，保持最多 16 个 worker。
+
+`TaskPool` 为独立任务提供固定线程和有界 FIFO。Frontend 媒体准备与 HTTP 使用同一实现的
+独立实例；HTTP 可以等待媒体，二者不共享队列。立即提交被拒绝时不消费任务；阻塞提交在
+等待容量时允许调用方检查取消。任务拥有结果和异常通道，池不额外创建 future。关闭先停止
+新提交，再排空已接受任务并 join；拥有者在销毁前结束所有外部调用。
+
+`CpuExecutor` 拥有固定绑核计算团队，由它产生借用的 `CpuExecutionView`。团队实际 ISA 是
+各 worker 绑核后检测结果的交集。同步 collective 向全队发布同一次工作，返回时全部写入
+对调用者可见；提交线程不参与计算。同一团队不接受嵌套或并发 collective。worker 使用
+nearest-even、屏蔽异常和 gradual underflow，计算保留控制模式，算法的指令数值特性由 Op
+负责。团队只提供 rank、连续范围分工与全队 barrier；scratch 由调用者用现有 HostBuffer、
+MemoryArena 和布局类型管理，进入团队前完成划分。
+
+两种执行器共享启动确认、初始化失败清理和线程回收机制。CPU 团队不调用 CUDA，也不持有
+传输槽、模型状态或权重副本。Engine/Scoring 的控制线程继续拥有各自的工作循环。
+当前 CPU 团队独立可用，尚未接入模型计算或 MoE offload。
 
 ## 3. 请求生命周期
 
