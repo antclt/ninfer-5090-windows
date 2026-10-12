@@ -169,7 +169,7 @@ that earlier builds shipped.
 
 | Launcher | Artifact | Spec | Vision | Context | Decode | Draft accept |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start_quasar_v3_dflash2_vision.bat` | QUASAR QAT | DFlash2 (9) | yes | 262,144 | **343 tok/s** | 49.1% |
+| `start_quasar_v3_dflash2_vision.bat` | QUASAR QAT | DFlash2 (9) | yes | 262,144 | **346 tok/s** | 49.1% |
 | `start_quasar_v3_mtp4_vision.bat` | QUASAR QAT | MTP (4) | yes | 262,144 | **225 tok/s** | 60.4% |
 | `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **361 tok/s** | 51.7% |
 | `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 207 tok/s | 55.0% |

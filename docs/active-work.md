@@ -3897,14 +3897,20 @@ re-measured against the bound as written (`CONTEXT.md:97`: "a change is adopted 
 worst case improves by at least as much as the worst disclosed non-code cell gives up"), on the merged
 engine and the cells the decisions were made on.
 
-* **quasar dflash2's depth flips to 7.** Depth 9 loses the deciding cell - 36,000 characters of real
-  code, depth 7 at 244.7 tok/s and 37.6% against 9's 230.0 and 29.4%, so -6.0% - *and* gives up 8.1% on
-  the worst non-code cell (long Chinese 132.3 against 121.6, where the pre-merge note recorded depth 9
-  leading). It improves nothing and gives up twice, so there is no trade to weigh. Both margins are
-  single-round; what makes the flip robust is that it rests on neither, though each is at or above this
-  tool's recorded within-run spread of 0.3 to 5.1%. The 225-character deciding cell is a built-in
-  prompt inside `lane_fingerprint.py` and is not reproducible from a file, so it is the one input the
-  re-derivation does not cover - depth 9 would have to win it by more than 14% to reverse the call.
+* **quasar dflash2's depth does not flip: 9 stands.** Read as a change to depth 7, the bound is not
+  met. On the deciding cells, depth 7 ties the 225-character prompt (324.2 tok/s both, with depth 9
+  lower on acceptance at 43.1% against 52.4%, where the 2026-10-09 reading had 9 losing that cell by
+  12.5%) and leads 36,000 characters of real code 244.7 against 230.0; the lane's own fingerprint run at
+  depth 7 reads that cell 210.8 against 184.9, +14.0%. Against that, depth 7 gives up the worst non-code
+  cell by 8.1% (long Chinese 132.3 against 121.6, the sign reversed from the +8.8% for 9 recorded on
+  2026-10-09) and by 27.8% under the fingerprint. The bound adopts a change only when the deciding
+  cells' worst case improves by at least as much as the worst non-code cell gives up, and on both
+  readings the gain (0.0% and +14.0%) is smaller than the loss (8.1% and 27.8%), so the change is
+  refused and the incumbent stands. **The misreading this corrects:** the bound governs *adopting a
+  change*, not an incumbent's standing, so an incumbent is not overturned by failing a test it was never
+  subject to. This session read it the other way, changed the shipped depth to 7, and the measurement of
+  the change itself is what refused it - the field is back at 9 and the lane's note records both the
+  re-derivation and this.
 * **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
   cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
   29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged
