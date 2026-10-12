@@ -1156,6 +1156,61 @@ int test_incremental_encoding_matches_full() {
     return failures;
 }
 
+// The spliced path must honour the caller's token limit the way the uncached path does. The caller
+// detects a truncated encode by an equality (`processor.cpp:801`: `size() == maximum_tokens`), and
+// the tail carries the request's own options, so a splice that encodes the tail at the *full* limit
+// and then prepends the cached prefix returns more tokens than the caller asked for -- and the
+// equality then reports "complete", sending the caller on to resolve frontiers over a truncated id
+// list. The oracle is the same text through an uncached encode at the same limit.
+int test_incremental_encoding_respects_the_token_limit() {
+    int failures = 0;
+    try {
+        const FrontendResources fixture = resources();
+        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
+                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
+                                  .generation_config_json = fixture.generation_config_json});
+        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
+                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
+                                  .generation_config_json = fixture.generation_config_json});
+
+        const std::string first      = "the resolver reads each pending worklist entry thinking";
+        const std::string second     = "and the scheduler coalesces adjacent runs thinking";
+        const std::string short_text = first + second;
+        const std::string tail       = "then the arena hands the run back";
+        const std::string long_text  = short_text + tail;
+        const std::vector<std::size_t> short_boundaries{first.size(), short_text.size()};
+        const std::vector<std::size_t> long_boundaries{first.size(), short_text.size(),
+                                                       long_text.size()};
+
+        // The limit has to sit between the two prompts: the shorter one is only remembered when it
+        // was not truncated, and the longer one has to be unable to fit inside the limit.
+        const std::size_t limit =
+            cold.encode_with_boundaries(long_text, long_boundaries).input_ids.size() - 1U;
+        const std::size_t short_tokens =
+            cold.encode_with_boundaries(short_text, short_boundaries).input_ids.size();
+        failures += check(short_tokens < limit,
+                          "the short prompt already exceeds the limit, so this test proves nothing");
+
+        (void)warm.encode_with_boundaries(short_text, short_boundaries,
+                                          fi::EncodeOptions{.max_tokens = limit});
+        const fi::BoundaryEncodedText spliced = warm.encode_with_boundaries(
+            long_text, long_boundaries, fi::EncodeOptions{.max_tokens = limit});
+        failures += check(warm.encode_cache_splices() == 1,
+                          "the extending encode did not splice, so this test proves nothing yet");
+        failures += check(spliced.input_ids.size() <= limit,
+                          "a spliced encode returned more tokens than the caller's limit");
+
+        const fi::BoundaryEncodedText truncated = cold.encode_with_boundaries(
+            long_text, long_boundaries, fi::EncodeOptions{.max_tokens = limit});
+        failures += check(spliced.input_ids == truncated.input_ids,
+                          "a spliced encode at the limit did not reproduce the uncached truncation");
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "  limited incremental encoding threw: %s\n", error.what());
+        failures += 1;
+    }
+    return failures;
+}
+
 // The counterexample ADR-0010's safety argument left open: two encodes that share a token prefix and
 // a boundary set, and differ only in a literal span *below* the seam's window. A literal span
 // suppresses added-token recognition inside it, so the same bytes carry different ids -- which is what
@@ -3061,6 +3116,7 @@ int main() {
     failures += test_bpe_merge_order();
     failures += test_boundary_aware_tokenization();
     failures += test_incremental_encoding_matches_full();
+    failures += test_incremental_encoding_respects_the_token_limit();
     failures += test_repeated_encoding_matches_full();
     failures += test_incremental_encoding_declines_differing_below_window_spans();
     failures += test_rendered_special_tokens();

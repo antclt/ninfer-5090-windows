@@ -48,7 +48,8 @@ __launch_bounds__(S::kLaunchBoundThreads, S::kMinBlocks) __global__
                                     typename Bf16KvCacheView<Input::writes_cache>::Value* cache_v,
                                     const int* tables, const int* validity, const int* table_rows,
                                     int table_stride, int runtime_width, float scale,
-                                    Bf16KvPartition partition, CausalPartialView partial) {
+                                    int visible_capacity, Bf16KvPartition partition,
+                                    CausalPartialView partial) {
     const int width = S::kFixedWidth ? S::kFixedWidth : runtime_width;
     constexpr int D = G::kHeadDim, M = S::kQueryRows, N = S::kKeyRows;
     constexpr int NK = N / S::kWarpsKV, QKNt = NK / 8, QKKs = D / 16;
@@ -71,7 +72,12 @@ __launch_bounds__(S::kLaunchBoundThreads, S::kMinBlocks) __global__
     const int tile  = S::kFixedWidth ? 0 : blockIdx.x / G::KVHeads;
     const int split = blockIdx.y, batch = MultiBatch ? blockIdx.z : 0;
     const int row_begin = tile * M, packed_rows = width * G::GroupSize;
-    const int live = Masked ? validity[batch] : width;
+    // Clamped the way every other route clamps it: `PagedKVBatchMetadata::valid_tokens`
+    // (`src/ops/kernel/paged_kv_address.cuh:29`) and the quantized grouped routes' own clamp
+    // (`k8v4/grouped_mma.cuh:83`). Unclamped, a count past `width` makes `positions[live - 1]` and
+    // the append loop's `positions[token]` read past this tile's own positions, and the append
+    // source index run past this tile's own K/V rows.
+    const int live = Masked ? (validity[batch] <= 0 ? 0 : min(validity[batch], width)) : width;
     q += static_cast<std::int64_t>(batch) * width * D * G::QHeads;
     positions += batch * width;
     if constexpr (Input::writes_cache) {
@@ -97,7 +103,12 @@ __launch_bounds__(S::kLaunchBoundThreads, S::kMinBlocks) __global__
         }
     };
     if (row_begin >= live * G::GroupSize) return;
-    const int first = positions[0], window = positions[live - 1] + 1;
+    // The four quantized grouped routes refuse the same way (`k8v4/grouped_mma.cuh:108` and its
+    // siblings). `validate_bf16_kv_operands` has already established that the block table covers
+    // `visible_capacity`, so a position at or past it indexes that table past its own row.
+    const int first = positions[0], last = positions[live - 1];
+    if (first < 0 || last < 0 || last >= visible_capacity) return;
+    const int window = last + 1;
     const auto work = partition.live(window);
     if (split >= work.splits) return;
     const int start     = split * work.keys_per_split;

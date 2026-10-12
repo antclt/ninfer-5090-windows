@@ -60,6 +60,11 @@ struct KVCacheAppendPrefixExecutionEnvelope {
  * overwritten, and no unrelated cache row is read or written. Inputs and every cache plane/table
  * are pairwise non-overlapping. The Op owns no persistent allocation, frontier, request identity,
  * or commit authority.
+ *
+ * The caller guarantees T>0, nonnegative positions within the layer's logical capacity, and a
+ * materialized table entry for every position. The Op bounds T against that capacity but does not
+ * read the device positions, so a position outside it indexes the block table out of range; the
+ * prefix overload states the same bound on its own positions.
  */
 void kv_cache_append(const Tensor& k, const Tensor& v, const Tensor& positions,
                      PagedKVLayerView cache, cudaStream_t stream);

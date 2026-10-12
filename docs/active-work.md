@@ -3290,7 +3290,7 @@ scoped evidence.
       there is nothing left to fix; the remaining exposure is a *probe* that idles a lane, and the
       probes start a serve lane, which carries the guard.
 
-**Why the release shipped with item 1.** It is disclosed in the release notes' known limitations and
+**Why the release shipped with item 1.** It was disclosed in the release notes' known limitations and
 reproducible from this file; no shipped configuration reaches it; the fix is a fused kernel rather than a
 patch; widening the criterion is forbidden by this repository's own rules; and reverting the route would
 restore a fallback that violated its compute policy. The publish is still pending, so the decision to
@@ -3298,6 +3298,11 @@ ship with it is still open.
 **2026-10-11, later the same day: the fix has landed on `dev`, so the tagged cut carries the limitation
 and `dev` does not.** Re-cutting `v1.2.0` before publishing would ship the fused route and drop the
 limitation; publishing the tag as it stands would ship it. That choice is the release owner's.
+**2026-10-12: the notes were still describing it as a limitation on `dev`, which is the stale half of
+that choice.** The bullet is gone from `RELEASE_NOTES.md`'s known limitations and the fix is recorded in
+its "What changed in 1.2.0" section with the extents the profile now passes and the measured cost (3-7%
+slower at T=17-32, 8.5% faster at 129, a much tighter tail), so a re-cut from `dev` no longer ships a
+notes file that contradicts its own binary. Publishing the tag instead would need that bullet restored.
 **Three of the review's warnings were false positives, and all three are recorded here so they are not
 re-raised.** The 405 branch in `src/serve/http_server.cpp` is **reachable**: the vendored library is at
 `third_party/cpp-httplib/httplib.h` and defines `MethodNotAllowed_405 = 405` (line 966), which it returns
@@ -3511,8 +3516,10 @@ again in the chat template's render, where a parse error is not a `RequestError`
 with the request logged as an internal failure. The fix belongs at the frontend, where the parse error
 can become a rejected request, not at the boundary.
 
-**Candidates not fixed, each with what would confirm it.** These are detect-phase candidates: none has
-dynamic evidence, and the reviewers were required to say so.
+**The candidates as the detect phase reported them, each with what would confirm it.** These were
+detect-phase candidates with no dynamic evidence, and the reviewers were required to say so. Every one
+is now closed — the section "the review's remaining candidates, each closed" at the end of this file
+records each disposition with its fix or its evidence.
 
 1. **A pinned checkpoint released through a `noexcept` path terminates the process**
    (`src/runtime/engine/context_cache/resource_manager.h:901`, reached from
@@ -3606,10 +3613,141 @@ worse outcome than the throw it replaced. The call now checks the return and thr
 `InvalidJsonSchema` and the serve layer to a rejected request. That this was caught by re-running the
 reviewer's own probe, rather than by the suite, is the reason its sources and build script were kept.
 
-**Still open from this reviewer**: a continuation filename in an artifact's JSON may be drive-relative
-(`"C:foo"`), which `parse_files` does not reject — it checks `.`, `..`, `/` and `\` but not a Windows
-root-name — so for an artifact not on the named drive `CreateFileW` resolves it against the process's
-per-drive current directory, outside the artifact's directory. Measured with a compiled probe:
-`fs::path("D:\\models") / "C:foo"` is `C:foo` and `is_absolute()` is false. The impact is bounded — the
-file must still carry the `NINPRT` magic, the right shard index, the artifact id and the exact length —
-so it is a trust-boundary gap rather than demonstrated corruption, and it is not fixed here.
+**From this reviewer, and closed in the next batch**: a continuation filename in an artifact's JSON may
+be drive-relative (`"C:foo"`), which `parse_files` did not reject — it checked `.`, `..`, `/` and `\`
+but not a Windows root-name — so for an artifact not on the named drive `CreateFileW` resolves it
+against the process's per-drive current directory, outside the artifact's directory. Measured with a
+compiled probe: `fs::path("D:\\models") / "C:foo"` is `C:foo` and `is_absolute()` is false. The impact
+is bounded — the file must still carry the `NINPRT` magic, the right shard index, the artifact id and
+the exact length — so it was a trust-boundary gap rather than demonstrated corruption, and it is fixed:
+`parse_files` rejects a two-character prefix whose second character is a colon
+(`src/artifact/schema.cpp`).
+
+## 2026-10-12 - the review's remaining candidates, each closed
+
+The first-pass review left ten candidates open because each was a detect-phase finding with no dynamic
+evidence. All ten are closed here: eight by a fix, one of those with a regression test falsified in
+both directions, and two by the evidence that settles them. Nothing is deferred. What is *not*
+established is named per item, and every closure that rests on a reading says so.
+
+**1. A pinned checkpoint released through a `noexcept` path terminates the process**
+(`src/runtime/engine/context_cache/resource_manager.h:898`, reached from
+`src/runtime/engine/engine_core.h:663`, `:682`, `:2157`). **Fixed at the throw.** The reviewer's
+suggested repair — defer the release the way `reclaim` does — is **wrong and was not applied**:
+`prune` does not retry `release_unreferenced` (read in full,
+`src/runtime/engine/context_cache/resource_manager.h:932`: it only `forget`s handles whose checkpoint
+is already invalid), and every one of its seven callers is a release path rather than a sweep (lines
+233, 280, 291, 342, 386, 424, 929 of that file), so a deferred release would wait for an event on a
+handle the manager has already dropped and the Native checkpoint would leak instead.
+`release_unreferenced` now returns rather than throwing, so the `noexcept` callers cannot reach
+`std::terminate` and the catch-all cleanup that errors out the other in-flight requests still runs.
+**Unverified**: the interleaving. The reviewer's confirm step has not been run, so this is a defence
+against a condition whose reachability is unproven — and the cost of it is the unreleased checkpoint in
+exactly that condition.
+
+**2. A moved-from `materializing_` hangs one client forever** (`src/runtime/engine/engine_core.h:1410`).
+**Fixed**: the `std::move` became a copy. The optional is reset on every path below it (`:1414`,
+`:1467`), so the move bought nothing, and the cleanup at `:2166` reads exactly this optional — with a
+moved-from `shared_ptr` it completed nothing, and the request had already been erased from `pending_`
+and reaches `slots_` only later, so no lane, queue or paused list held it and its consumer waited on a
+condition variable that could never fire. Behaviour-identical for every input that does not throw
+between the two points.
+
+**3. Three defence asymmetries in `src/ops`.** All three fixed, and the third one's premise did not
+hold as stated:
+
+- The unclamped live-column count (`src/ops/softmax_attention/dense/causal_cache/bf16/grouped_mma.cuh:80`,
+  `src/ops/softmax_attention/dense/causal_cache/bf16/merge.cuh:67`) is clamped now, in the form every
+  other route already uses: `PagedKVBatchMetadata::valid_tokens`
+  (`src/ops/kernel/paged_kv_address.cuh:29`) and the quantized grouped routes' own clamp
+  (`src/ops/softmax_attention/dense/causal_cache/k8v4/grouped_mma.cuh:84`, `min(remaining,
+  tile_tokens)`). Unclamped, a count past `width` made `positions[live - 1]` and the append loop's
+  `positions[token]` read past the tile's own positions, and the append source index run past the
+  tile's own K/V rows.
+- The block table indexed by positions with no capacity check
+  (`src/ops/softmax_attention/dense/causal_cache/bf16/grouped_mma.cuh:110`) now carries the same
+  condition the four quantized grouped routes test — `first < 0 || last < 0 || last >=
+  visible_capacity`, which is `k8v4`'s `positions[0] < 0 || last_pos < 0 || last_pos >=
+  logical_capacity` at `src/ops/softmax_attention/dense/causal_cache/k8v4/grouped_mma.cuh:108` under
+  this file's names (`fp8:113`, `int8:117` and `nvfp4:111` are the others) — with `visible_capacity`
+  plumbed through the launch. The launch had already established that the table covers
+  `visible_capacity` (`src/ops/softmax_attention/dense/causal_cache/bf16/template_launch.cuh:21`), so
+  a position at or past it indexed that table past its own row.
+- The **tiled** route the candidate named with it
+  (`src/ops/softmax_attention/dense/causal_cache/bf16/tiled_mma.cuh:51`) is **not an asymmetry**: no
+  tiled route in any format takes a capacity to guard with. The four quantized grouped kernels are the
+  only causal-cache kernels that do — a tree-wide search for their parameter name, `logical_capacity`,
+  matches those four and the unrelated context attention op, and no tiled route — so bf16 matches every
+  sibling there and was left alone. Its token count is already clamped through
+  `metadata.valid_tokens` (line 44 of that file).
+- The single-sequence `kv_cache_append` (`src/ops/kv_cache/append/kv_cache_append.cpp:177`) validates T
+  against the layer's logical capacity but does not read the device positions, so the bound is now
+  **documented on the declaration** the way the prefix overload documents its own
+  (`include/ninfer/ops/kv_cache_append.h`). A device-side check would need a D2H copy on a hot op's
+  path.
+
+**Evidence**: `ninfer_softmax_attention_bf16_test` — the route's independent mathematical oracle —
+passes with the guards in place, and the other four formats are unchanged: 9/9 across
+`ninfer_softmax_attention_*` and `ninfer_kv_cache_append*`.
+
+**4. Two `src/models` candidates.** One was already closed by the body depth bound; the other is fixed
+with a regression test.
+
+- The JSON-schema recursion (`src/models/qwen3_5/frontend/tool_contract.cpp:93`) is **closed** by the
+  depth bound landed with the seventh defect: a schema's nesting is bounded twice — the request body
+  and the walker — and the body bound fires first for inline schemas, which is how every protocol here
+  carries them.
+- The spliced encode returning more tokens than the caller's `max_tokens`
+  (`src/models/qwen3_5/frontend/tokenizer.cpp:1051`) is **fixed**: the tail now carries the request's
+  *remaining* allowance (`options.max_tokens - *seam_frontier`) instead of the whole of it, and a seam
+  at or past the allowance declines the splice (`:1045`) so the uncached path truncates the whole text
+  and reports the signal. The caller's truncation signal is an equality
+  (`src/models/qwen3_5/frontend/processor.cpp:801`: `size() == maximum_tokens`), so before this an
+  over-limit spliced encode was not recognised as truncated at all and the caller went on to resolve
+  frontiers over a truncated id list — work the uncached path returns before.
+  `test_incremental_encoding_respects_the_token_limit`
+  (`tests/models/qwen3_5/test_frontend.cpp:1165`) encodes the same text through an uncached tokenizer
+  at the same limit as its oracle and asserts the splice fired. **Falsified in both directions**: with
+  the fix reverted it fails on both assertions ("a spliced encode returned more tokens than the
+  caller's limit", "…did not reproduce the uncached truncation") while the splice-fired guard still
+  passes, and it passes with the fix restored. **Not established**: that the reviewer's 500 follows
+  from this. The rejection class for an over-limit prompt is 400 either way
+  (`src/models/qwen3_5/frontend/processor.cpp:1119`), and the reviewer's own case was not reproduced
+  live; what is fixed is the contract break and the caller's signal. The fix changes no accepted
+  request: a tail that fits the reduced limit was not truncated at the full one either.
+
+**5. Three `src/serve` candidates.** Two fixed, one closed as designed:
+
+- `redacted_thinking` accepted and silently dropped
+  (`src/serve/anthropic_messages_request.cpp:333`) is now **refused** with
+  `reasoning_content_not_supported`, matching the Responses surface's refusal of its analogue and this
+  adapter's own refusal of `thinking.display='omitted'`. Accepting the block while dropping its payload
+  gives the model a history that differs from the client's with no way for the client to tell.
+- A client disconnect classified as an internal error on the aggregate Anthropic path is **fixed** in
+  both places it appeared: the handler records `make_client_disconnected_failure` exactly where the
+  streaming path does (`src/serve/anthropic_messages_http.cpp:124`, immediately after
+  `lifecycle->done(outcome)`), and the encoder's `Cancelled` arm returns `end_turn` instead of throwing
+  (`src/serve/anthropic_messages_response.cpp:79`) — so the encoder is total for every engine outcome,
+  which is the property both OpenAI encoders have.
+- The Chat tool history with unmatched or duplicate call ids
+  (`src/serve/openai_chat_request.cpp:327`) is **closed as designed, with the evidence**: the Chat
+  surface validates the *shape* of a tool message (lines 452-457 of that file: a string
+  `tool_call_id`) and carries the id into the template without matching it,
+  `tests/test_openai_schema.cpp:663` pins that tool-call identifiers may be empty "without changing
+  history", and `docs/serving.md:579` promises `invalid_tool_history` only on the Responses surface.
+  It is an asymmetry between surfaces whose histories are represented differently, not an unkept
+  promise.
+
+**Also in this batch, from the earlier reviewer**: the drive-relative continuation filename
+(`src/artifact/schema.cpp:202`) — `parse_files` now rejects a two-character prefix whose second
+character is a colon, the shape of a Windows root-name. And the Chat surface's `tool_calls` arguments
+are parsed tolerantly and rejected as a request error instead of throwing from inside nlohmann
+(`src/models/qwen3_5/frontend/chat_template.cpp:233`), which is where the earlier reverted
+boundary-validation attempt belonged.
+
+**What this batch does not claim.** No sanitizer ran and no live server was started for items 1, 2 or
+5: those three are host-side readings plus the affected suites — 16 of 17 in the set (artifact,
+Anthropic, OpenAI, tool, JSON-schema, media, frontend) ran and passed, with
+`ninfer_qwen3_5_tools_real_test` skipped because it needs `NINFER_TEST_ARTIFACT` — and 9/9 on the
+attention and append oracles. The lane figures were re-fingerprinted against the rebuilt engine, so
+the recorded provenance names the binary these fixes are in.

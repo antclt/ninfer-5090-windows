@@ -193,8 +193,14 @@ void parse_files(Directory& out, const Json& files, std::string_view entry_name)
         } else {
             file.path        = require_id(value.at("path"), "file path");
             const auto& path = *file.path;
+            // A Windows root-name is neither absolute nor caught by the separator tests: measured,
+            // `fs::path("D:\\models") / "C:foo"` is `C:foo`, so for an artifact on another drive -- or
+            // one named relatively -- CreateFileW would resolve the continuation against the process's
+            // per-drive current directory, outside the artifact's own directory. A root-name is exactly
+            // a two-character prefix whose second character is a colon.
             if (path == "." || path == ".." || path.find('/') != std::string::npos ||
-                path.find('\\') != std::string::npos || !names.insert(path).second) {
+                path.find('\\') != std::string::npos || (path.size() >= 2 && path[1] == ':') ||
+                !names.insert(path).second) {
                 throw ArtifactError("invalid or duplicate sibling filename: " + path);
             }
         }

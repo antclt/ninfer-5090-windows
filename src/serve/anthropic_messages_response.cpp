@@ -77,7 +77,12 @@ StopPresentation stop_presentation(const GenerationOutcome& outcome) {
     case ninfer::FinishReason::None:
         return StopPresentation{.reason = "end_turn"};
     case ninfer::FinishReason::Cancelled:
-        throw std::logic_error("cancelled generation cannot be serialized as an Anthropic message");
+        // Anthropic has no "cancelled" stop reason, so this is `end_turn` -- and in practice the
+        // response is never delivered, because a cancelled outcome means the client disconnected. The
+        // aggregate handler checks for that before reaching here and records it as a disconnect; this
+        // arm exists so the encoder is total for every engine outcome, which is the property both
+        // OpenAI encoders have and the one this protocol's aggregate path lacked.
+        return StopPresentation{.reason = "end_turn"};
     }
     throw std::logic_error("unknown Engine finish reason");
 }

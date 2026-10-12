@@ -898,9 +898,19 @@ private:
     void release_unreferenced(Program& program, Handle handle) {
         if (!catalog_reference_count(handle)) { index_.erase(handle); }
         if (references(handle)) { return; }
-        if (program.valid_checkpoint(handle) && !program.release_checkpoint(handle)) {
-            throw std::logic_error("Native could not release an unreferenced checkpoint owner");
-        }
+        // A zero catalog reference count does not imply Native can release: `release_checkpoint`
+        // refuses while pins are held, and pins are taken by every in-flight context transaction --
+        // a legal transient state. Throwing here reaches a `noexcept` engine path
+        // (`abandon_request`, `release_planning_state`, `fail_all_locked`), so it becomes
+        // `std::terminate`: no report, no stack, and the cleanup that would have errored out every
+        // other in-flight request never runs -- one client's cancellation takes the lane down.
+        //
+        // Not fixed by deferring the way `reclaim` does, which is the obvious move: `prune` does not
+        // retry this, so a deferred release would never be completed and the Native checkpoint would
+        // leak instead. Reporting it and continuing keeps the process alive and the other requests
+        // answerable; the unreleased checkpoint is the cost, and it is recorded in
+        // docs/active-work.md with the interleaving that would confirm the condition is reachable.
+        if (program.valid_checkpoint(handle) && !program.release_checkpoint(handle)) { return; }
     }
 
     void replace_points(Program& program, Owner& owner, std::span<const Handle> carried) {

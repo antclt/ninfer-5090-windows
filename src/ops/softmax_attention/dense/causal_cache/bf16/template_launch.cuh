@@ -61,7 +61,8 @@ void launch_bf16_kv_grouped_mma(const CausalAttentionOperands& p, Bf16KvCacheVie
                         partition.capacity, p.batch);
         kernel<<<grid, S::kThreads, dynamic, stream>>>(
             p.q, input, p.positions, cache.keys, cache.values, cache.tables, cache.valid_columns,
-            cache.table_rows, cache.table_stride, p.width, p.scale, partition, partials);
+            cache.table_rows, cache.table_stride, p.width, p.scale, p.visible_capacity, partition,
+            partials);
     }
     CUDA_CHECK(cudaGetLastError());
 }

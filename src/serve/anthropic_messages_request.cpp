@@ -324,7 +324,15 @@ ChatTurn parse_assistant_blocks(const Json& content) {
                 bad_request("cache_control is not valid on redacted_thinking blocks", "messages",
                             "invalid_cache_control");
             }
-            // Claude-encrypted reasoning is intentionally opaque to the local model.
+            // Claude-encrypted reasoning is opaque to the local model, and accepting the block while
+            // dropping its payload would give the model a history that differs from the client's with
+            // no way for the client to tell. The sibling surface refuses its analogue
+            // (`openai_responses_request.cpp` rejects an encrypted reasoning item with
+            // `reasoning_content_not_supported`), and this adapter refuses `thinking.display:"omitted"`
+            // for the same reason, so this refuses too rather than silently discarding.
+            bad_request("redacted_thinking blocks are not supported: NInfer has no encrypted reasoning "
+                        "state to restore",
+                        "messages", "reasoning_content_not_supported");
         } else if (type == "tool_use") {
             assistant.tool_calls.push_back(parse_tool_use(block));
             if (const auto ttl = cache_boundary(block, "messages")) {

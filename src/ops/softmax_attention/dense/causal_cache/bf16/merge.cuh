@@ -62,7 +62,10 @@ __launch_bounds__(Schedule::kThreads) __global__
     }
 
     if constexpr (MultiBatch) { positions += batch * tokens; }
-    const int live_columns = Masked ? valid_columns[batch] : tokens;
+    // Clamped as the grouped kernels clamp it: unclamped, a count past `tokens` makes
+    // `positions[live_columns - 1]` below read past this launch's own positions.
+    const int live_columns =
+        Masked ? (valid_columns[batch] <= 0 ? 0 : min(valid_columns[batch], tokens)) : tokens;
     int output_column      = token;
     if constexpr (MultiBatch) { output_column += batch * tokens; }
     if constexpr (Masked) {

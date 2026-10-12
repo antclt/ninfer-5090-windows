@@ -1401,7 +1401,13 @@ private:
             owner->speculative_stats  = std::move(progress.request_speculative);
         }
         if (materializing_) {
-            const auto control  = std::move(*materializing_);
+            // A copy, not a move. `fail_all_locked`'s cleanup reads this optional to complete the
+            // request, and a moved-from shared_ptr leaves the optional engaged holding
+            // null -- so if any call between here and the reset throws, nothing completes the request:
+            // it was erased from pending_ at admission and reaches slots_ only later, so no lane, queue
+            // or paused list holds it, and its consumer waits on a condition variable that can never
+            // fire. The optional is reset on every path below, so the move bought nothing.
+            const auto control  = *materializing_;
             const auto& request = control.request;
             if (!progress.published) {
                 complete_detached_cancelled(request);

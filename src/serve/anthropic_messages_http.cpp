@@ -115,6 +115,15 @@ void HttpServer::handle_messages(const httplib::Request& req, httplib::Response&
             return;
         }
         lifecycle->done(outcome);
+        // A cancelled outcome means the client disconnected, and the streaming path records exactly
+        // that before it stops. Without this check the aggregate encoder's Cancelled case throws a
+        // logic_error, which the catch below classifies as an internal failure -- a 500 and a bumped
+        // response_failures metric for an ordinary disconnect.
+        if (outcome.finish_reason == ninfer::FinishReason::Cancelled) {
+            lifecycle->response_failure(
+                make_client_disconnected_failure(RequestFailurePhase::Transport));
+            return;
+        }
         try {
             set_owned_json_content(res, make_anthropic_messages_response(identity, outcome),
                                    prepared.lifetime);

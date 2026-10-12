@@ -1032,10 +1032,23 @@ Tokenizer::splice_from_cache(std::string_view text, std::span<const std::size_t>
                 tail_boundaries.push_back(byte_boundaries[index] - seam_offset);
                 tail_source.push_back(index);
             }
+            // The tail carries the request's *remaining* allowance, not the whole of it. Encoding it
+            // with `options.max_tokens` and then prepending the prefix below returns more tokens than
+            // the caller asked for, and the caller's truncation signal is an equality
+            // (`processor.cpp:801`: `size() == maximum_tokens`), so an over-limit spliced encode is
+            // not recognised as truncated at all -- the caller resolves frontiers over a truncated id
+            // list, which the uncached path never does because it returns before that work. A seam at
+            // or past the allowance cannot leave a tail inside it, so the splice is declined and the
+            // uncached path truncates the whole text and reports the signal. Every request whose
+            // spliced length fits the allowance is unchanged by this: a tail that fits the reduced
+            // limit was not truncated at the full one either.
+            if (*seam_frontier >= options.max_tokens) { continue; }
+            EncodeOptions tail_options = options;
+            tail_options.max_tokens    = options.max_tokens - *seam_frontier;
             const std::vector<text::ByteSpan> tail_spans =
                 spans_within(literal_spans, seam_offset, text.size());
             const BoundaryEncodedText tail =
-                encode_with_boundaries_uncached(tail_text, tail_boundaries, options, tail_spans);
+                encode_with_boundaries_uncached(tail_text, tail_boundaries, tail_options, tail_spans);
 
             BoundaryEncodedText spliced;
             spliced.input_ids.assign(entry.input_ids.begin(),

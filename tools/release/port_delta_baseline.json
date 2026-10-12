@@ -289,7 +289,7 @@
       "status": "M",
       "disposition": "windows",
       "review": "",
-      "reason": ""
+      "reason": "Port addition: the code suite's smoke pair, humaneval_smoke and live_code_bench_smoke. The capability set covered math, science, tool-calling and retrieval while the product's workload is coding, and EvalScope already carries the benchmarks, so the gap was the configuration rather than the framework. The added block's own comment says the same thing."
     },
     "examples/cli/messages/long_niah_128k.json": {
       "status": "M",
@@ -326,6 +326,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "Declares the selector codebooks as weights of logical shape [256,248320] in either format, which is what lets candidate_selector_path take them as Weight rather than as a raw pointer -- the change that lets an NVFP4 drafter artifact be served at all."
+    },
+    "include/ninfer/ops/kv_cache_append.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: the single-sequence kv_cache_append validates T against the layer's logical capacity but does not read the device positions it indexes the block table with, while its prefix sibling documents that bound as a caller guarantee. The bound is documented on this declaration in the same terms, because enforcing it would need a device-to-host copy on a hot op's path. Found by the c-review detect pass."
     },
     "include/ninfer/ops/linear_swiglu.h": {
       "status": "M",
@@ -518,6 +524,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "The other half of the Reader widening: Reader::object and Reader::component forward to the Directory it owns, so the config parser can reach metadata without every caller holding the inner type. Both Directory and Reader exist on both sides."
+    },
+    "src/artifact/schema.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "",
+      "reason": "Windows necessity, and a trust-boundary fix: a continuation filename in an artifact's JSON could be drive-relative (C:foo), which the sibling-name check did not reject -- it tested '.', '..', '/' and a backslash but not a Windows root-name -- so for an artifact not on the named drive CreateFileW resolved it against the process's per-drive current directory, outside the artifact's directory. Measured with a compiled probe: joining a root-name continuation onto a directory on another drive yields the continuation itself, and is_absolute() is false. The check now rejects a two-character prefix whose second character is a colon. Found by the c-review detect pass."
     },
     "src/core/paged_kv_cache.h": {
       "status": "M",
@@ -1053,6 +1065,24 @@
       "review": "product",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
     },
+    "src/ops/softmax_attention/dense/causal_cache/bf16/grouped_mma.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: the bf16 grouped route lacked the two defences its four quantized siblings have. The live-column count is clamped the way PagedKVBatchMetadata::valid_tokens and the quantized grouped routes clamp theirs, and a position at or past visible_capacity now returns the way the k8v4 grouped route does -- the launch had already established that the block table covers visible_capacity, so an unguarded position indexed that table past its own row. Both are hardening: each is reachable only if a caller violates a documented guarantee. Verified against the route's own mathematical oracle (ninfer_softmax_attention_bf16_test). Found by the c-review detect pass."
+    },
+    "src/ops/softmax_attention/dense/causal_cache/bf16/merge.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: the bf16 merge's live-column count was unclamped, so a count past the launch's token count made the window read positions at an index past this launch's own positions. Clamped as the grouped kernels clamp it. Hardening: reachable only if a caller violates a documented guarantee. Verified against the route's own mathematical oracle. Found by the c-review detect pass."
+    },
+    "src/ops/softmax_attention/dense/causal_cache/bf16/template_launch.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: passes visible_capacity to the grouped kernel, which uses it for the position guard its quantized siblings already had. The launch had validated that the block table covers visible_capacity since before this change, so the guard adds no new precondition."
+    },
     "src/ops/softmax_attention/dense/causal_cache/k8v4/launch.cu": {
       "status": "M",
       "disposition": "unknown",
@@ -1231,7 +1261,7 @@
       "status": "M",
       "disposition": "windows",
       "review": "windows",
-      "reason": "Windows necessity: MSVC has no __int128, so core/uint128.h provides the type -- a real 128-bit builtin under GCC and a two-word struct with the needed operators under MSVC. Here it replaces upstream's cast in a comparison whose product overflows 64 bits. Pinned by the port-delta baseline and protected by src/core/uint128.h's own tests."
+      "reason": "Windows necessity: MSVC has no __int128, so core/uint128.h provides the type -- a real 128-bit builtin under GCC and a two-word struct with the needed operators under MSVC. Here it replaces upstream's cast in a comparison whose product overflows 64 bits. Pinned by the port-delta baseline and protected by src/core/uint128.h's own tests. Second (2026-10-12): release_unreferenced returned by throwing when Native refused to release an unreferenced checkpoint, and its callers are noexcept engine paths, so a pinned checkpoint released through one terminated the process -- no report, no stack, and the catch-all cleanup that errors out the other in-flight requests never ran. It now returns instead. Deferring the release the way reclaim does was rejected: prune does not retry release_unreferenced, so a deferred release would never be completed and the checkpoint would leak. Found by the c-review detect pass."
     },
     "src/runtime/engine/engine.cpp": {
       "status": "M",
@@ -1243,7 +1273,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "Two port changes, both restored 2026-10-06 after item 16 found the b9114396 merge had taken them. First, the other half of the kv_capacity.h deduplication: that header is still present and still included by model_instance.h and causal_score_core.h, but its caller in memory_summary() had been reverted to the inline publication it replaced, so the dedup was half-applied. Second, a settle-order fix: 'Free the slot and publish the post-release snapshot before waking the caller, so a runtime_stats() read after generate() returns reflects the released lane instead of the last decode boundary.' It has three coupled parts, and the third is what makes it safe -- cancel_active_requests held const auto& request = slots_[lane] and remove_completed_slot resets that slot, so reordering without taking a copy is a use-after-free. Restored at the two sites the port's change covered, with the deferred publish removed. Verified by the full suite and the baseline gate."
+      "reason": "Two port changes, both restored 2026-10-06 after item 16 found the b9114396 merge had taken them. First, the other half of the kv_capacity.h deduplication: that header is still present and still included by model_instance.h and causal_score_core.h, but its caller in memory_summary() had been reverted to the inline publication it replaced, so the dedup was half-applied. Second, a settle-order fix: 'Free the slot and publish the post-release snapshot before waking the caller, so a runtime_stats() read after generate() returns reflects the released lane instead of the last decode boundary.' It has three coupled parts, and the third is what makes it safe -- cancel_active_requests held const auto& request = slots_[lane] and remove_completed_slot resets that slot, so reordering without taking a copy is a use-after-free. Restored at the two sites the port's change covered, with the deferred publish removed. Verified by the full suite and the baseline gate. Third (2026-10-12): the materializing_ optional is copied rather than moved. The cleanup reads exactly that optional to complete the request, so a moved-from shared_ptr left it engaged holding null, and a throw between the move and the reset completed nothing -- the request had already been erased from pending_ and reaches slots_ only later, so its consumer waited on a condition variable that could never fire. The optional is reset on every path below, so the move bought nothing. Found by the c-review detect pass."
     },
     "src/runtime/engine/kv_capacity.h": {
       "status": "M",
@@ -1251,11 +1281,23 @@
       "review": "product",
       "reason": "A deduplication: the two execution cores held identical copies of this, and the header's own comment says why it lives in one place now -- the resolution is published into the summary both cores report, so two copies could disagree. The same class as ops/common/validation.h and the route catalog."
     },
+    "src/serve/anthropic_messages_http.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: a cancelled generation on the aggregate Anthropic path reached the encoder, whose Cancelled arm threw, and the surrounding catch classified that as an internal failure -- a 500 and a bumped response_failures metric for an ordinary client disconnect. The handler now records make_client_disconnected_failure exactly where the streaming path does. Found by the c-review detect pass."
+    },
     "src/serve/anthropic_messages_request.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "Port change: stop_sequences had no count or length bound. A stop string is matched against the pending output on every decoded token, so a long list of long strings makes decode quadratic in the generated length and lets one request hold a lane for minutes. Count is now capped at four (matching the OpenAI surface) and length at 256 bytes, and the messages say the bound is this engine's rather than the protocol's. Found by the c-review detect pass."
+      "reason": "Port change: stop_sequences had no count or length bound. A stop string is matched against the pending output on every decoded token, so a long list of long strings makes decode quadratic in the generated length and lets one request hold a lane for minutes. Count is now capped at four (matching the OpenAI surface) and length at 256 bytes, and the messages say the bound is this engine's rather than the protocol's. Found by the c-review detect pass. Second (2026-10-12): a redacted_thinking block was accepted and its payload silently dropped, which gives the model a history that differs from the client's with no way for the client to tell. It is now refused with reasoning_content_not_supported, matching the Responses surface's refusal of its analogue and this adapter's own refusal of thinking.display omitted. Found by the same review."
+    },
+    "src/serve/anthropic_messages_response.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": "Port change: the aggregate encoder's Cancelled arm threw, so the encoder was non-total for a reachable engine outcome -- the property both OpenAI encoders have and this one lacked. It now returns end_turn, and the aggregate handler records the disconnect before reaching it. Found by the c-review detect pass."
     },
     "src/serve/generation_service.cpp": {
       "status": "M",

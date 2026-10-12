@@ -219,14 +219,23 @@ RenderedChat CompiledChatTemplate::render(const std::vector<ChatMessage>& messag
         if (!message.tool_calls.empty()) {
             value["tool_calls"] = Json::array();
             for (const auto& call : message.tool_calls) {
+                // Parsed tolerantly, and a failure is a request error rather than an exception thrown
+                // from inside nlohmann. The Chat surface deliberately does not validate this string at
+                // the request boundary (tests/test_openai_schema.cpp pins that, in its own words), so
+                // this is where it has to be caught: otherwise the serving layer sees a parse_error,
+                // which is not a RequestError, and answers a malformed client field with a 500 and an
+                // internal-failure log line instead of a rejected request.
+                const Json arguments = call.arguments_json.empty()
+                                           ? Json::object()
+                                           : Json::parse(call.arguments_json, nullptr, false);
+                if (arguments.is_discarded()) {
+                    throw RequestError(RequestErrorKind::InvalidToolConstraint,
+                                       "assistant tool_calls arguments must be JSON: " + call.name);
+                }
                 value["tool_calls"].push_back(
                     {{"id", call.id},
                      {"type", "function"},
-                     {"function",
-                      {{"name", call.name},
-                       {"arguments",
-                        (call.arguments_json.empty() ? Json::object()
-                                                     : Json::parse(call.arguments_json))}}}});
+                     {"function", {{"name", call.name}, {"arguments", arguments}}}});
             }
         }
         if (!message.tool_call_id.empty()) value["tool_call_id"] = message.tool_call_id;
