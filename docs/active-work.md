@@ -3944,6 +3944,39 @@ reuse path (`tools/bench/check_shared_prefix_reuse.py`), determinism across path
 4. **Over-refusal**, which nothing in this tree measures.
 5. **Agent-session state drift** - the `state drift` material already here is GDN numerical drift, a
    different thing wearing the same words.
+
+**Four of the five gaps are now built, three of them measured (2026-10-12).** Building them corrected
+several of my own calls, each by running rather than by reading:
+
+* `tools/bench/report_latency_percentiles.py` - p50/p90/p95/p99 for `queue_wait`, `prepare`, `prefill`,
+  `ttft`, `total` and `decode` from a request log, verified by reproducing a probe's own printed phases
+  to the digit (`prepare` 0.0126, `prefill` 0.3122, `ttft` 0.3284, `total` 0.3285). Two field-selection
+  attempts were wrong first: a leaf-name search picked up `host_exposed.total` and a decode round count,
+  and a `timings` container match found nothing, because `timings[...]` is how a probe prints a record
+  rather than how the log stores it. The container is `timings_seconds.*`, already in seconds.
+* `tools/bench/probe_long_context_accuracy.py` - a (haystack length x needle depth) sweep with a **fresh
+  random needle per cell** and exact-match scoring. All six cells hit at 8,000 and 36,000 characters on
+  the ninfer dflash2 lane (2,578-11,025 prompt tokens). Two harness defects read as misses first: at a
+  48-token budget the lane spent it on `reasoning_content` while echoing the needle correctly, and a
+  needle sentence with no query made half the cells inert text. RULER places the query at the end of the
+  sequence and this does too.
+* `tools/bench/probe_over_refusal.py` - OR-Bench's hard-1k and toxic sets (Cui et al., ICML 2025,
+  CC-BY-4.0, fetched into `eval/corpora/or-bench/`), reported as the pair the benchmark is designed
+  around rather than either rate alone. The ninfer dflash2 lane refuses **0 of 15** hard-safe prompts and
+  5 of 15 toxic ones; the printed samples show one refusal classified inside reasoning text, which is the
+  marker classifier's known imprecision made visible instead of folded into a rate.
+* `tools/bench/probe_concurrency_curve.py` - aggregate and per-request throughput against concurrency,
+  with a distinct prompt per request so no two share a prefix. The ninfer dflash2 lane saturates in
+  aggregate by concurrency 2 (194.6 to 223.1 tok/s) while per-request throughput falls to 158.8 at 2 and
+  90.1 at 4: a coding agent issuing parallel tool calls pays per-request speed for ~15% aggregate
+  headroom. My earlier claim that this curve was "the least relevant" for a single-user server was
+  wrong - an agent fires parallel tool calls.
+
+**Still missing**: agent-session state drift. The instruments the research names are tau-bench and the
+agent-reliability framing; the cheapest honest version is a long-session consistency check, where a
+constraint set in the first turns must still be respected after many. None of the four tools above has a
+unit test yet, so none runs in the hook - their verification is the runs recorded here, which is weaker
+than a test that would catch a regression.
 * **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
   cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
   29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged
