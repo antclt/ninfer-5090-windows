@@ -41,6 +41,29 @@ class SchemaContracts(unittest.TestCase):
                 expected = [validator.is_valid(value) for value in values]
                 self.assertEqual(report["accepted"], expected, (schema, values, report, expected))
 
+    def test_a_schema_past_the_depth_bound_is_refused_rather_than_crashing(self):
+        """The walk recursed once per nesting level with a measured 1808-byte frame, so a ~21 KB schema
+        at depth 570 killed the serving process with STATUS_STACK_OVERFLOW instead of returning an
+        error. The bound is 64 levels; past it the probe must report an error and keep running, which
+        is the whole difference between a refusal and the crash this case exists for.
+        """
+        deep = {"type": "string"}
+        for _ in range(100):
+            deep = {"type": "object", "properties": {"a": deep}}
+        payload = compact({"schema": deep, "candidates": ["{}"]}) + "\n"
+        result = subprocess.run([str(PROBE), "--probe"], input=payload, text=True, encoding="utf-8",
+                                capture_output=True, check=True, timeout=90)
+        report = json.loads(result.stdout.splitlines()[0])
+        self.assertIn("error", report, report)
+        self.assertIn("64", json.dumps(report), report)
+
+    def test_a_schema_inside_the_depth_bound_still_compiles(self):
+        """The control for the case above: a schema of comparable size but inside the depth bound must
+        still be accepted, so the refusal cannot be passing by refusing everything.
+        """
+        wide = {"type": "object", "properties": {f"k{i}": {"type": "string"} for i in range(200)}}
+        self.run_cases([(wide, [{}])])
+
     def test_values_against_independent_validator(self):
         scalars = [None, False, True, -2, -1, 0, 1, 2, 3, 7, 8, "", "a", "ab", [], {}]
         strings = ["", "a", "ab", "abc", "你", "你好", "😀", "\n", "\t", "\0", '"', "\\", "a\n", "\r\b\f"]
