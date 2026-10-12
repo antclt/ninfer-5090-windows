@@ -55,50 +55,55 @@ The pp512 row's 13.3% acceptance is the bench corpus, not the lane: this reposit
 that the tiled corpus reads 0.085–0.129 on a one-token seed, and real domains sit at 0.44–0.55. The
 pp8192 row is the one to quote.
 
-## The draft window is set too short: depth 9 → 11 is +14.3%
+## The draft window: a corpus result that real text reverses, and a setting already decided
 
-Swept first, grouped (`decode_output_tok_s_mean`, pp8192+tg128):
+This section first read "+14.3%, ready to take". It is kept with the correction because the way it was
+wrong is the point, and because this repository's rule is to preserve an adverse finding rather than
+quietly drop it.
 
-| depth | tok/s | rounds | acceptance |
-|---|---|---|---|
-| 3 | 218.7 | 195 | 77.4% |
-| 5 | 239.2 | 160 | 61.5% |
-| 7 | 280.8 | 140 | 50.5% |
-| 9 (shipped) | 287.4 | 140 | 40.2% |
-| **11** | **321.4** | 120 | 40.9% |
-| 15 | 319.1 | 115 | 30.6% |
+**What the bench corpus said.** `ninfer_bench -pg 8192,128`, dflash2, k8v4, interleaved, three paired
+rounds: depth 9 280.6/288.4/289.0 tok/s against depth 11 320.2/330.3/330.3, +14.1 to +14.5%, with each
+arm's own spread at 2.1-3.1%. Mechanism from the same runs: 0.91 to 1.07 tokens per round over 140 and
+120 rounds.
 
-Then **interleaved**, because this card drifts up to ~9% between windows and measuring A then B measures
-the window. Three paired rounds, two shapes:
+**What real text says.** `tools/bench/realtext_acceptance.py --lane quasar_v3_dflash2_vision`, real text,
+greedy, three prompts of 12,000 characters, two interleaved rounds per depth:
 
-| round | pp8192: 9 → 11 | pp32768: 9 → 11 |
-|---|---|---|
-| 1 | 280.6 → 320.2 (**+14.1%**) | 571.8 → 609.6 (+6.6%) |
-| 2 | 288.4 → 330.3 (**+14.5%**) | 588.8 → 622.5 (+5.7%) |
-| 3 | 289.0 → 330.3 (**+14.3%**) | 586.7 → 619.3 (+5.6%) |
+| depth | round 1 | round 2 | accepted | drafted | acceptance |
+|---|---|---|---|---|---|
+| **9 (shipped)** | **241.2 tok/s** | **240.5** | 1,139 | 3,515 | **32.40%** |
+| 11 | 232.0 | 229.6 | 1,128 | 4,394 | 25.67% |
 
-Per-round spread of each arm: **2.1–3.1%**, so the effect is 5–7× the instrument's own noise, and the
-sign is the same in all six pairs.
+Depth 11 is **−4.5% on decode and −6.7 points of acceptance**, and the accepted count *falls* while the
+drafted count rises 25%: the extra positions are overhead. The instrument is tight — acceptance identical
+to four decimals across rounds, decode within 1% — so the reversal is about five times its own spread.
 
-**The mechanism**, from the same runs at pp8192:
+**Why the two disagree, in the instrument's own words.** `realtext_acceptance.py` exists because "a bench
+corpus cannot answer this question from either end of its range... the same corpus behind a real prompt
+saturates it (0.991 in four consecutive runs), because the corpus is synthetic and tiled. Real domains sit
+at 0.44-0.55". The corpus arm read 40.2% at pp8192 — near that band but not in it — and this real-text arm
+reads 32.4%. The synthetic corpus is easier to predict than the text it stands in for, and at these widths
+that difference is larger than the effect being measured.
 
-| depth | rounds for 128 tokens | acceptance | tokens per round |
-|---|---|---|---|
-| 9 | 140 | 40.2% | 0.91 |
-| 11 | 120 | 40.9% | 1.07 |
+**And the setting is already decided by a better measurement than either.** All four DFlash2 lanes' depths
+come from multi-domain sweeps at served length, decided by **maximin over domains** — the width that
+maximises the *worst* domain — which is the rule a single-domain measurement cannot satisfy:
 
-The wider window does not raise the *rate* much; it raises the *yield per round* by 17.6%, and the round
-costs less than that. Per draft position, path acceptance at pp8192 is 83.3% at pos0, 34.8% at pos4 and
-**still 26.1% at pos5–pos10** — the tail keeps paying, which is why 9 was too short. Depth 11 to 15 is a
-plateau (321.4 against 319.1, inside the spread), so 11 is the first point on it.
+* **Swift (7)**: "Width 7 was measured against every window 1-15 on the code domain and re-measured on four
+  others: 13 is 33% faster on code and slower on chinese, prose and dialogue, so the width that maximises
+  the worst domain is the one already shipped."
+* **NVIDIA (9)**: "depth 9 leads by 13.2% on 36,000 characters of real code (258.5 against 228.3) and
+  loses 8.9% on 36,000 characters of Chinese (295.9 against 324.8). Maximin over the two served domains
+  takes depth 9."
+* **ninfer (9)**: swept against depth 7 on all five domains, then re-measured through the matrix's widths
+  protocol with three interleaved rounds inside one lane each — 9 leads on all three treatments, and the
+  greedy readings that disagreed were single-run comparisons that "cannot resolve anything this size".
+* **QUASAR (9)**: moved 7 to 9 on the served regime, where "prose is the known cost at −4.2%".
 
-**What this does not establish.** One artifact (QUASAR's DFlash2 drafter); the pp32768 arm ran at 94–99%
-acceptance, which is the tiled corpus saturating the drafter rather than real traffic, so only its *sign*
-is reported and its magnitude is not; and the shipped lanes' own figures come from the fingerprint's real
-prompts at depth 9, which is a different workload again. Applying the change means regenerating the
-launchers, re-running the lane fingerprint, and updating the `Spec` column the profile-consistency gate
-checks — and the Swift lane's drafter is a different artifact, so its own optimum has to be measured
-rather than assumed.
+So the corpus result here is not a discovery: it reproduces the documented *code-domain* effect, which
+those lanes already trade against their worst domain. **No change is made**, and the honest residue is one
+gap: widths 11-13 have not been measured per domain for QUASAR, ninfer or NVIDIA, so a future sweep could
+still find something — but it would have to be a maximin sweep, not a corpus one.
 
 ## Where the time goes: a kernel profile, and the one that was void
 
@@ -191,15 +196,21 @@ MiMo-V2.5-Pro-FP4 + DFlash, **+18.1%** Inkling-NVFP4 + MTP8, **+14.6%** Muse-Gli
 report transcribed the last as 14.7%; the PR says 14.6. Small, but it is the kind of difference that is
 worth checking rather than repeating.)
 
-Two things follow for this port, and they agree with each other:
+Two things follow for this port, and the second corrects the first:
 
-* The static form of the same lever is worth **+14.3% here**, measured above by widening the draft window
-  from 9 to 11 on the same drafter class. That is one flag per lane and it is ready to take.
+* The static form of the same lever was measured here as **+14.3%** by widening the draft window from 9
+  to 11 — on the bench corpus. **Real text reverses it**: the same lane, real text, greedy, two
+  interleaved rounds per depth, reads depth 9 at 241.2/240.5 tok/s and 32.40% acceptance against depth 11
+  at 232.0/229.6 and 25.67%. So the corpus arm was measuring the synthetic corpus, not the served regime,
+  and no lane's window is changed. The mechanism the PR names still stands, and it is *why* the shipped
+  windows are what they are: wider windows pay on the domains where drafts survive and cost on the others,
+  which is a maximin decision over domains rather than a single-domain one.
 * The adaptive form is the same lever taken further, and its measured gains are largest exactly where
-  drafts overrun acceptance. Its prerequisite is the part to cost before wanting it: the attention backend
-  must accept a **variable** verify length, and this port captures its decode round into a CUDA graph per
-  width. The acceptance estimator itself is cheap here -- the draft already runs this tree's LM head, so
-  `logit(q_max)` is already computed.
+  drafts overrun acceptance — which is a per-request decision, not a per-lane one, and so is not something
+  a fixed window can capture either way. Its prerequisite is the part to cost before wanting it: the
+  attention backend must accept a **variable** verify length, and this port captures its decode round into
+  a CUDA graph per width. The acceptance estimator itself is cheap here -- the draft already runs this
+  tree's LM head, so `logit(q_max)` is already computed.
 
 ## One thing the instrument itself showed
 

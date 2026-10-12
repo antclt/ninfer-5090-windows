@@ -3339,3 +3339,37 @@ One defect was found on the way and fixed on its own: `tools/release/check_text_
 `FileNotFoundError` on any commit that deletes a tracked file, because `git commit <pathspec>` builds a
 temporary index from HEAD and exports it to the hook, so a deleted path reappears in the list with no bytes
 behind it. `af6c7b00` skips a path the working tree does not have.
+
+## 2026-10-12 - the DFlash2 draft window, re-raised and closed against the record
+
+The session that took the prefill and decode baseline (`docs/research/measured-baseline-2026-10-12.md`)
+measured a bench-corpus gain of +14.3% from widening the DFlash2 draft window from the shipped 9 to 11, and
+the commit that filed that document (`00402ece`) is titled "find the draft window set too short". **That
+title is wrong, and this entry is the correction** -- history is not rewritten, the living record carries
+it.
+
+Real text reverses the result. `tools/bench/realtext_acceptance.py` on the QUASAR lane, greedy, three
+prompts of 12,000 characters, two interleaved rounds per depth:
+
+| depth | round 1 | round 2 | accepted | drafted | acceptance |
+|---|---|---|---|---|---|
+| 9 (shipped) | 241.2 tok/s | 240.5 | 1,139 | 3,515 | 32.40% |
+| 11 | 232.0 | 229.6 | 1,128 | 4,394 | 25.67% |
+
+The wider window drafts 25% more tokens and accepts *fewer* of them: -4.5% on decode and -6.7 points of
+acceptance, with acceptance identical to four decimals across rounds. The corpus arm read 40.2% acceptance
+where real text reads 32.4%, which is the synthetic-corpus effect `realtext_acceptance.py` documents in its
+own docstring -- "the same corpus behind a real prompt saturates it... because the corpus is synthetic and
+tiled".
+
+**No lane's window is changed.** Item 8b above already settled the widths, by maximin over domains, and
+that rule is exactly why the corpus result is not new information: Swift's note records "13 is 33% faster
+on code and slower on chinese, prose and dialogue, so the width that maximises the worst domain is the one
+already shipped"; NVIDIA's records depth 9 leading 13.2% on 36,000 characters of real code and losing 8.9%
+on Chinese; ninfer's swept all five domains and re-measured through the matrix's widths protocol; and
+QUASAR's moved 7 to 9 on the served regime. A single-domain measurement cannot decide a maximin setting,
+and the corpus is one domain at that.
+
+Residue, stated rather than deferred: widths 11-13 have not been measured *per domain* for QUASAR, ninfer
+or NVIDIA, so a future sweep could still find something -- but it would have to be a maximin sweep over
+domains, and its prerequisite is the same served-regime protocol those lanes' notes describe.
