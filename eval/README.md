@@ -23,6 +23,15 @@ The pinned stack is EvalScope 1.10.0 with its BFCL, IFBench, and Needle-in-a-Hay
 caches remain owned by their upstream libraries. Installing dependencies does not download the
 Qwen model or create a `.ninfer` artifact.
 
+**On Windows, two things above are written for the host the harness was first run on.** The environment
+is created with the interpreter this repository uses for tooling and lives at `eval\.venv\Scripts\python.exe`
+(no `bin\`), so every `eval/.venv/bin/python` command below needs that substitution. And the three
+`run_qwen3_8_27b_*.sh` runners are POSIX-only: each also names an artifact this port does not hold at
+that path — the two `nvfp4` ones want the retired line, which is
+`C:\AI\models\_superseded\qwen3_8_27b_nvfp4.v3.ninfer`, and the groupwise one wants the `groupwise-int`
+peer, which exists nowhere here. `run_qwen3_8_27b_quasar_gpqa_budgets.ps1` is the Windows runner for
+the shipped lane's GPQA budget campaign.
+
 ## Configuration
 
 See [`configs/capability-suite.yaml`](configs/capability-suite.yaml) for the suites: AIME25, AIME26,

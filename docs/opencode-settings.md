@@ -310,6 +310,10 @@ is not displaced for a cold admission), not a missing eviction path.
 
 ## Caveats
 
+The config keys above are the client's own schema, not this port's: `provider` (singular), the model
+entry fields and `compaction` are defined by the OpenCode Desktop API, whose authority is that
+project's own documentation. What this page contributes is the measured values inside them.
+
 The tasks are short, self-contained functions. They separate reliability and speed
 cleanly, and they do not stress long-horizon agentic work, where reasoning may pay off in
 ways this grid cannot see. The truncation finding matters more than the pass rates: it is a

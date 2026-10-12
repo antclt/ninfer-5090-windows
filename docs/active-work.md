@@ -3826,11 +3826,21 @@ re-checked the one removal that looked as if it might have cost data — the nee
 `_rebuild` — against the document that names them: they live in `profiles/bench/needle-2026-10-09/`, all
 thirteen of them, so the `_rebuild` copies were duplicates and nothing was lost there.
 
-**Found and not fixed, because each needs a decision rather than a rename.** Four `eval/` scripts name
-artifacts that do not exist on this machine: `run_qwen3_8_27b_groupwise_reasoning.sh` wants
-`out/qwen3_8_27b.ninfer`, and the three `run_qwen3_8_27b_nvfp4_*.sh` want
-`out/qwen3_8_27b_nvfp4.ninfer`. The artifact reference gives the first one's identity in §13
-(`filename = qwen3_8_27b.ninfer`, `weights_id = groupwise-int`) without the file, and the two groupwise
-builds this pass removed carried different names, so repointing these is a decision about what each run
-should measure. Separately, `out/openapi.json` is the OpenCode Desktop API spec that
-`docs/opencode-settings.md` draws on and never cites.
+**Found and not fixed: the eval harnesses are Linux-era, and one reference document has no home.**
+*Three* `run_qwen3_8_27b_*` harnesses name artifacts this port does not hold at the path given. The two
+`nvfp4` ones want `out/qwen3_8_27b_nvfp4.ninfer`, which is the retired line and lives as
+`_superseded\qwen3_8_27b_nvfp4.v3.ninfer`; `run_qwen3_8_27b_groupwise_reasoning.sh` wants
+`out/qwen3_8_27b.ninfer`, the `groupwise-int` peer of §13, which exists nowhere here — its published
+table in `eval/README.md` cites run directories on the Linux host, and the peer artifact it needs is
+absent, so that suite cannot be re-run from this tree. This file first said *four*: the fourth,
+`run_qwen3_8_27b_quasar_gpqa_budgets.ps1`, points at the shipped QAT artifact and is the Windows runner
+the port added for it. But the paths are the smaller half — all three `.sh` harnesses call
+`eval/.venv/bin/python`, and this machine's `eval/.venv` is a Windows environment with `Scripts\` and no
+`bin\`, so none of them can run here. That is why the fix is a host note in `eval/README.md` (added
+with this entry) or a `.ps1` port, not a repoint.
+
+Separately, `out/openapi.json` — 251,897 bytes, BOM-prefixed, `opencode HttpApi`, 115 paths and 247
+schemas — is the schema behind the config keys `docs/opencode-settings.md` recommends. Nothing cites
+it, and the running app serves only an HTML `/doc` (7,202 bytes at every path tried), so it is not
+regenerable here. Whether to delete it or track it is a decision about a copy whose currency cannot be
+checked against the app.
