@@ -3977,6 +3977,35 @@ agent-reliability framing; the cheapest honest version is a long-session consist
 constraint set in the first turns must still be respected after many. None of the four tools above has a
 unit test yet, so none runs in the hook - their verification is the runs recorded here, which is weaker
 than a test that would catch a regression.
+
+**The fleet campaign, 2026-10-12: the owner asked whether every shipped lane is at its best on the
+measurements that matter for coding - 262k context, token speed, accuracy, MTP and DFlash numbers, the
+better KV format, and the rest of the priority list. Each axis becomes a yes by a run, and this records
+which are done.**
+
+* **Axis 1, 262k context: 8 of 8 lanes pass, verified.** Every lane served a **260,030-token** prompt at
+  the 262,144 configuration's limit, with the needle at **mid-context** - the position where a
+  long-context failure shows first - and every lane answered it correctly (out 120-182 tokens). The
+  haystack is assembled from the corpus's 16 files, 961,774 characters, because no single one is large
+  enough for a 262k-token prompt; `tools/bench/probe_long_context_accuracy.py --haystack <dir>` does the
+  concatenation. Method: a fresh random needle per cell, exact-match scoring, the query at the end as
+  RULER places it. A hit means the lane prefilled ~260k tokens and read the middle of them, which is what
+  "262k on each model" claims.
+* **Axis 2, fp8 against k8v4: running.** `tools/bench/compare_kv_formats.py` measures the alternative
+  format on each lane's two **code cells** - the rule decides on the worst of those - and compares
+  against the incumbent's recorded figures. One lane had been done by hand (quasar dflash2: k8v4 stands,
+  fp8 gains 29.5% on the deciding cell and gives up 30.5% on the worst non-code cell).
+* **Axes 3+: not measured.** The depth re-derivations for the seven lanes whose depths have not been
+  re-derived under the restated bound (quasar dflash2's is done and moved 9 to 7); serving-path
+  percentiles per lane (the tool exists, run once); over-refusal per lane (the tool exists, run once on
+  one lane: 0 of 15 hard-safe prompts refused, 5 of 15 toxic); the concurrency curve (run once, one
+  lane: aggregate saturates by concurrency 2 while per-request throughput falls to 90.1 at 4); and
+  per-artifact perplexity at the shipped quantization, whose figures exist in the docs but were not
+  re-measured today.
+
+The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
+accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
+lane by lane, and nothing here claims them until a run does.
 * **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
   cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
   29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged

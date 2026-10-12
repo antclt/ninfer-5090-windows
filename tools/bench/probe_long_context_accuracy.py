@@ -72,6 +72,10 @@ def main() -> int:
     parser.add_argument("--chars", default="8000,36000", help="comma-separated haystack sizes")
     parser.add_argument("--depths", default="0.0,0.5,1.0", help="comma-separated depth fractions")
     parser.add_argument("--artifact", type=Path, default=None, help="override the lane's artifact")
+    parser.add_argument("--haystack", type=Path, default=CORPUS,
+                        help="a file, or a directory whose files are concatenated - the full 262k-token "
+                             "check needs about 1 MB of English, and the perplexity corpus is 3.8 MB "
+                             "across 16 files while no single one is large enough")
     parser.add_argument("--port", type=int, default=8098)
     parser.add_argument("--seed", type=int, default=20261012)
     parser.add_argument("--max-tokens", type=int, default=512,
@@ -87,12 +91,18 @@ def main() -> int:
     raw = profile["art"]
     artifact = args.artifact or (Path(raw) if Path(raw).is_absolute()
                                  else Path(r"C:\AI\models") / raw)
-    haystack = CORPUS.read_text(encoding="utf-8", errors="replace")
+    haystack_path = args.haystack
+    if haystack_path.is_dir():
+        haystack = "".join(p.read_text(encoding="utf-8", errors="replace")
+                           for p in sorted(haystack_path.glob("*.txt")))
+    else:
+        haystack = haystack_path.read_text(encoding="utf-8", errors="replace")
     rng = random.Random(args.seed)
     lengths = [int(c) for c in args.chars.split(",")]
     depths = [float(d) for d in args.depths.split(",")]
 
-    print(f"lane {profile['file']}  artifact {artifact.name}  haystack {CORPUS.name}")
+    print(f"lane {profile['file']}  artifact {artifact.name}  haystack {haystack_path.name}"
+          f" ({len(haystack)} chars available)")
     print(f"  {len(lengths)} length(s) x {len(depths)} depth(s) = {len(lengths) * len(depths)} cell(s),"
           f" a fresh needle each\n")
 
