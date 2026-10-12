@@ -1,3 +1,4 @@
+#include "product/logging/console_code_page.h"
 #include "product/logging/logging.h"
 #include "product/logging/startup_log.h"
 #include "serve/generation_service.h"
@@ -52,31 +53,6 @@ struct MillisecondTimerResolution {
     MillisecondTimerResolution& operator=(const MillisecondTimerResolution&) = delete;
 };
 
-// The console's output code page belongs to the console, not to this process: setting it changes it
-// for every program attached to that console, and it outlives this one. Measured on this machine --
-// a child that set 65001 left its parent reading 65001 after it exited. So it is read first, set only
-// when stdout is actually a console and the page differs, and restored on the way out.
-class ConsoleOutputCodePage {
-public:
-    ConsoleOutputCodePage() {
-        const HANDLE out = ::GetStdHandle(STD_OUTPUT_HANDLE);
-        if (out == nullptr || out == INVALID_HANDLE_VALUE || !::GetConsoleMode(out, &mode_)) {
-            return; // redirected, or no console: nothing to change and nothing to restore
-        }
-        previous_ = ::GetConsoleOutputCP();
-        if (previous_ != CP_UTF8 && ::SetConsoleOutputCP(CP_UTF8) != FALSE) { changed_ = true; }
-    }
-    ~ConsoleOutputCodePage() {
-        if (changed_) { ::SetConsoleOutputCP(previous_); }
-    }
-    ConsoleOutputCodePage(const ConsoleOutputCodePage&)            = delete;
-    ConsoleOutputCodePage& operator=(const ConsoleOutputCodePage&) = delete;
-
-private:
-    DWORD mode_    = 0;
-    UINT previous_ = 0;
-    bool changed_  = false;
-};
 #endif
 
 } // namespace
@@ -86,7 +62,7 @@ int main(int argc, char** argv) {
     // The manifest sets the process code page; the console is a separate thing, and these are the
     // calls for it (cmake/windows-utf8.manifest carries the measurement). The code page guard restores
     // the console on the way out, because that setting is the console's and not this process's.
-    const ConsoleOutputCodePage console_code_page;
+    const ninfer::product::ConsoleOutputCodePage console_code_page;
     const MillisecondTimerResolution timer_resolution;
 #endif
     ninfer::serve::ServeOptions options;
