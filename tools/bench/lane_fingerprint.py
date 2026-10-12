@@ -174,6 +174,13 @@ def main() -> int:
                 line += f"  accept {acc * 100:>5.1f}%"
 
             # The table is the reference on its own cell; every other cell's reference is the last run.
+            #
+            # Measured 2026-10-12: an earlier record can describe conditions nothing reproduces today,
+            # so a drift against one is not evidence of a regression until the same prompt has been
+            # re-measured on a known engine. This lane's long-chinese record read 305.3 tok/s; the
+            # pre-merge binary reads 104.3 on that cell now and the merged one reads 187.9, so the
+            # record was the outlier -- and a drift against it was reported as a regression that did
+            # not exist. Compare engines before concluding.
             if name == TABLE_CELL:
                 published = float(profile.get("tok") or 0.0)
                 table_acc = float(str(profile.get("acc", "0")).rstrip("%"))

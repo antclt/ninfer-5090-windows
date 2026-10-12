@@ -3855,3 +3855,17 @@ app serves only an HTML `/doc` (7,202 bytes at every path tried), so it was not 
 currency could not be checked against the app either, the spec saying 0.0.1 where the app is 2.0.16. The
 page now names the client's own documentation as the authority for those keys, and the snapshot is
 **deleted**.
+
+The recorded long-cell figures are **stale, and a drift against them is not a regression** - measured
+2026-10-12, after a merge that changed the engine. The fingerprint's table holds one figure per lane
+on the `code` cell; every other cell is compared against the previous *record*, and a record can
+describe conditions nothing reproduces today. On the nvidia dflash2 lane's long-chinese cell the
+record reads 305.3 tok/s; the pre-merge binary reads **104.3** on that cell now and the merged engine
+reads **187.9** with acceptance 27.3% against the pre-merge's 7.6%, so the record was the outlier and
+the merged engine is the faster of the two. A drift against that record was reported in this session
+as a regression that did not exist, which is why `tools/bench/lane_fingerprint.py`'s comparison site
+now carries the caveat. An nsys A/B on the same prompt is what settled it: the same kernels at the
+same per-instance cost (2.49 against 2.44 ms), with the merged engine issuing more, smaller launches
+per round (~7 attention calls against ~1) and winning on acceptance anyway. **Open**: the long cells'
+records need re-measuring on a known engine, and until then a long-cell drift is a
+prompt-or-record question first.
