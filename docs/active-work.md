@@ -1,4 +1,4 @@
-# Active work — current as of 2026-10-05
+# Active work — current as of 2026-10-12
 
 **This file is temporary.** It is the single current record of work in progress. Per `AGENTS.md`,
 remove it when the list is empty; do not grow it into a roadmap and do not add a parallel `v2`.
