@@ -3909,6 +3909,41 @@ engine and the cells the decisions were made on.
   320.9), so no measured alternative beats it. The earlier reading of this entry refused the depth change
   under the vetoing bound and set the field back to 9; the contradiction between the document's two
   paragraphs is what that turned on, and the lane's note and `CONTEXT.md` now both carry the resolution.
+
+**The measurement priority, audited against this tree (2026-10-12).** `CONTEXT.md` now carries the
+owner's priority list: latency as TTFT/TPOT/end-to-end plus the 99th percentile; bytes per token and the
+context that fits; quality at the shipped quantization per domain; run-to-run spread; then throughput
+against concurrency, prefill rate, long-context quality, acceptance, cache hit and path, stability, and
+agentic reliability - with energy excluded. It was audited item by item against what this tree already
+does, and the audit corrected two of my own claims: the concurrency instrument exists
+(`bench/README.md:84` documents `--concurrency <1..8>`) and needle-in-a-haystack fixtures exist
+(`bench/fixtures/ttft/manifest.json` carries `long_niah_8k`, `_64k` and `_256k`), so what is missing
+there is the published curve and the scoring, not the ability to measure.
+
+Present and in use: token speed and speculative acceptance (`tools/bench/lane_fingerprint.py`,
+`tools/bench/realtext_acceptance.py`), accuracy and perplexity at the shipped quantization, prefill rate
+as its own number (`tools/bench/report_serve_phases.py`), bytes per token per KV format
+(`docs/research/kv-dtype-evidence.md`), run-to-run spread (the fingerprint's own column), cache hit *and*
+reuse path (`tools/bench/check_shared_prefix_reuse.py`), determinism across paths
+(`tools/bench/probe_cross_path_determinism.py`), soak and cancellation
+(`tools/bench/probe_cancellation.py`), and op-level percentiles in the bench CSVs.
+
+**Missing, in the order worth closing them:**
+
+1. **Serving-path latency percentiles.** The request log carries per-request `ttft`, `total` and the
+   phase fields, so p95/p99 is computable from a log that already exists - nobody computes it. Cheapest
+   of the five, and the one the priority list puts first.
+2. **Long-context accuracy.** The fixtures exist for latency; no scoring exists. The method is settled:
+   a (context length x needle depth) sweep with an exact-match check and a **fresh random needle per
+   cell**, because a repeated needle prompt can be served from the replay path and would then score the
+   cache rather than the model. RULER's harder categories - multi-key, multi-value, multi-query,
+   multi-hop and aggregation - are the ones worth adding, and the number to report is the length at
+   which the hard tasks still pass rather than the length the model accepts.
+3. **The published concurrency curve.** The instrument exists; the curve is not published, and for
+   single-user work its left end is the interesting part.
+4. **Over-refusal**, which nothing in this tree measures.
+5. **Agent-session state drift** - the `state drift` material already here is GDN numerical drift, a
+   different thing wearing the same words.
 * **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
   cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
   29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged

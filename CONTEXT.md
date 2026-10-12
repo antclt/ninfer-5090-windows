@@ -119,6 +119,35 @@ that keep it honest:
   "+0.3 %, well inside one invocation's spread" was left on the incumbent, and at served length depth 7
   leads by 9.8 % -- a tie is a reason to measure again, not a reason to keep what is there.
 * **record the mean beside the worst case**, so a trade is visible rather than implicit.
+
+**The measurement priority, set 2026-10-12 (owner's directive).** When testing or building, these are
+what to measure, with token speed and accuracy assumed rather than repeated:
+
+1. **Latency as three numbers plus the tail.** TTFT (prefill plus queueing), TPOT/ITL (steady-state
+   decode), end-to-end latency, and the **99th percentile** - which is what MLPerf scores on (6 s TTFT
+   and 175 ms TPOT at p99 for long-context server work). A mean hides the stalls a user feels. Report
+   the definition with the figure: tools disagree on whether TTFT is inside the TPOT average, vLLM's
+   per-request TPOT and its token-weighted ITL differ, and the input/output length distribution is part
+   of the number.
+2. **Memory: bytes per token, and the context that actually fits.** VRAM sets the effective context,
+   not the model's advertised window, and host spill is a cliff rather than a slope.
+3. **Quality at the quantization that ships, per domain.** Perplexity as the cheap proxy and task
+   accuracy as the real one, because that is where the quality is spent.
+4. **Run-to-run spread.** Without it no other figure means anything: 10.3% session-to-session on this
+   card against 0.3-5.1% within a run.
+
+Then as refinements: throughput as a **curve against concurrency** rather than a point, where the left
+end matters most for single-user work; prefill rate as its own number; **long-context quality beyond
+retrieval**, where RULER sits 10-25 points below single-needle NIAH and multi-needle drops further, and
+the number to report is the length at which the hard tasks still pass rather than the length the model
+accepts; speculative acceptance and tokens per round; cache hit tokens *and* the reuse path, because a
+hit can be a replay rather than a cache; stability as determinism across paths, soak behaviour, and
+whether an abandoned request frees its slot; and, where a local model drives tools, tool-call validity,
+over-refusal, and state drift over a long session.
+
+**Energy is excluded** (owner's directive, same date): power draw is not a criterion here. Where this
+list meets the code-weighted rule above, the rule decides *which scenario decides* - the code cells -
+and this list says what is measured in each.
 * **when the worst-case gap is itself inside the spread, the mean decides.** That is what the nvidia lane's
   depth change of 2026-10-09 turned on: a 0.3 % tie on the short set, and on the served set a worst case
   that favours depth 9 by 29.6 % while the mean over both sets favours it by 4.1 %. A tie is not a licence
