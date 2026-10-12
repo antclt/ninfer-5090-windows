@@ -3860,12 +3860,23 @@ The recorded long-cell figures are **stale, and a drift against them is not a re
 2026-10-12, after a merge that changed the engine. The fingerprint's table holds one figure per lane
 on the `code` cell; every other cell is compared against the previous *record*, and a record can
 describe conditions nothing reproduces today. On the nvidia dflash2 lane's long-chinese cell the
-record reads 305.3 tok/s; the pre-merge binary reads **104.3** on that cell now and the merged engine
-reads **187.9** with acceptance 27.3% against the pre-merge's 7.6%, so the record was the outlier and
-the merged engine is the faster of the two. A drift against that record was reported in this session
-as a regression that did not exist, which is why `tools/bench/lane_fingerprint.py`'s comparison site
-now carries the caveat. An nsys A/B on the same prompt is what settled it: the same kernels at the
-same per-instance cost (2.49 against 2.44 ms), with the merged engine issuing more, smaller launches
-per round (~7 attention calls against ~1) and winning on acceptance anyway. **Open**: the long cells'
-records need re-measuring on a known engine, and until then a long-cell drift is a
-prompt-or-record question first.
+record read 305.3 tok/s; the pre-merge binary reads **104.3** on that cell now and the merged engine
+reads **187.9** with acceptance 27.3% against the pre-merge's 7.6%, so that record was the outlier and
+the merged engine is the faster of the two. A drift against it was reported in this session as a
+regression that did not exist, which is why `tools/bench/lane_fingerprint.py`'s comparison site now
+carries the caveat. An nsys A/B on the same prompt is what settled it: the same kernels at the same
+per-instance cost (2.49 against 2.44 ms), with the merged engine issuing more, smaller launches per
+round (~7 attention calls against ~1) and winning on acceptance anyway. **Re-measured**: the record
+now holds the merged engine's own figures (engine `dc33f6f0`, measured 2026-10-12T18:32Z), so that
+stale entry is gone. What remains true is the method: compare engines, not records.
+
+The `code` cell's acceptance differs between the two engines on **every** lane, and the shifts are
+**mixed in sign**, from -8.9 to +7.4 points. A/B'd on two of them: the pre-merge binary reproduces
+the old table exactly (nvidia 45.9%, quasar 58.0%) while the merged engine reads 44.9% and 49.1%, and
+the pre-merge binary is faster on quasar's `code` cell (402.4 against 342.6 tok/s) while the merged
+one is far faster on nvidia's long cell (187.9 against 104.3). So the shift is the merged engine's own
+behaviour - upstream's 40 commits plus the port's carried features - and not one route of ours: it
+appears in **both** drafter families, the one carried route that could plausibly account for it (the
+NVFP4 `context_kv` materialize) is dflash2-only, and the oracle tests cover the routes this session
+carried. That is what was checked; no per-lane investigation has been done, so a single lane's shift
+being a defect is an open question nobody has asked. The table and the docs carry the merged figures.
