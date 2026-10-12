@@ -137,6 +137,70 @@ of decode, so roughly 40% of the work is missing from the capture and every shar
 subset. What it shows — NVFP4 GEMM kernels holding most of the time, attention at ~10% — is consistent
 with decode being GEMM-bound, but by `VOID.md`'s standard that is a direction to check, not a result.
 
+## Harvested: the NVFP4 down-projection tile at verify widths, verified here
+
+Upstream issue #364 / PR #365 (not ours to fix; read for the mechanism) name a route this port runs
+unchanged: the NVFP4 W4A4 `linear_add` for `[5120, 17408]`. At 64 output rows per CTA it launches 80
+CTAs on this card's 170 SMs, so a speculative verify streams the down projection's 50 MB of weights from
+under half the device. The PR's fix is to select `M32N32` with a deeper pipeline when the geometry is
+`17408` and the width is at most 32 — 12 lines, and this port's `src/ops/linear_add/nvfp4/
+nvfp4_linear_add_a4.cu` was the pre-image line for line.
+
+**Applied and measured here**, `ninfer_nvfp4_linear_add_bench --n 5120 --k 17408 --policy a4`, median of
+20, two interleaved rounds of the two binaries (`op-tile-new.csv`, `op-tile-new-r2.csv`, `op-tile-old.csv`):
+
+| T | M32N64 (before) | M32N32 (after), round 1 | round 2 | change |
+|---|---|---|---|---|
+| 1 | 36.224 | 36.224 | 36.192 | 0.0% |
+| 2 | 36.192 | 36.192 | 36.224 | 0.0% |
+| 4 | 38.240 | 38.272 | 38.272 | 0.0% |
+| **8** | 42.368 | 38.272 | 38.272 | **−9.7%** |
+| 12 | 42.368 | 39.712 | 39.712 | −6.3% |
+| 16 | 44.384 | 40.320 | 39.712 | −9.2 to −10.5% |
+| 24 | 44.384 | 39.744 | 40.320 | −9.2 to −10.5% |
+| 32 | 44.384 | 40.320 | 40.288 | −9.1 to −9.2% |
+| 33 | 44.416 | 44.384 | 43.840 | 0.0% |
+| 48 | 44.416 | 44.384 | 44.416 | 0.0% |
+| 64 | 44.384 | 44.384 | 44.384 | 0.0% |
+
+The two rounds of the new arm agree to within 0.6 µs (1.5%), so the effect is about six times the arm's
+own reproducibility. The seam behaves: T=33 returns to `M32N64` and reads the same as before, and T≤4 is
+untouched.
+
+**Bit-identity is established by this repository's own oracle**, not by the PR's claim:
+`ninfer_linear_add_nvfp4_test` compares the route against its independent reference, and a `T=33` case was
+added at the 32/33 seam the change creates — the width list had 32 but not 33, so the boundary was
+uncovered until now. It passes.
+
+**What is not established.** The end-to-end effect. The PR reports −1.6..−2.5% on a DFlash2 round; a single
+op kernel is a fraction of a round's GPU time, and this card's round-to-round spread is 2-3%, so an
+end-to-end A/B here would need more repetitions than one session can interleave — the op-level number is
+the one this session can stand behind. The route's five shipped images all take it (every lane's verify
+width is ≤32: DFlash2 draft 7/9 gives T≤8/10, MTP draft 4/5 gives T=5/6), and the lane fingerprint was
+re-run after the rebuild to confirm no lane figure moved.
+
+## Cross-check: the strongest external item, verified at its source
+
+`docs/research/external-engine-techniques-2026-10-12.md` ranks vLLM's **adaptive verification** first. Read
+at the source rather than through the summary: PR #52228, "[Model Runner V2][Spec Decode] Adaptive
+Verification without a confidence head", state **MERGED**, 900 additions / 28 deletions. Its mechanism is
+an **online acceptance estimator** that predicts a draft token's acceptance from the draft's own logits --
+the feature is `logit(q_max)`, the log-odds of the draft distribution's most likely token -- so the verify
+length becomes per-round and per-request instead of a fixed window. Its results summary reads **+18.5%**
+MiMo-V2.5-Pro-FP4 + DFlash, **+18.1%** Inkling-NVFP4 + MTP8, **+14.6%** Muse-Glimmer-30B + DFlash2. (The
+report transcribed the last as 14.7%; the PR says 14.6. Small, but it is the kind of difference that is
+worth checking rather than repeating.)
+
+Two things follow for this port, and they agree with each other:
+
+* The static form of the same lever is worth **+14.3% here**, measured above by widening the draft window
+  from 9 to 11 on the same drafter class. That is one flag per lane and it is ready to take.
+* The adaptive form is the same lever taken further, and its measured gains are largest exactly where
+  drafts overrun acceptance. Its prerequisite is the part to cost before wanting it: the attention backend
+  must accept a **variable** verify length, and this port captures its decode round into a CUDA graph per
+  width. The acceptance estimator itself is cheap here -- the draft already runs this tree's LM head, so
+  `logit(q_max)` is already computed.
+
 ## One thing the instrument itself showed
 
 At depth 11 the per-position counters read **exactly 26.1% at positions 5 through 10**, with `proposed`
