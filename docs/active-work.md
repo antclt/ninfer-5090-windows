@@ -3825,3 +3825,12 @@ documents that other documents cite; it now has a "Dated records" section for th
 re-checked the one removal that looked as if it might have cost data — the needle CSVs under
 `_rebuild` — against the document that names them: they live in `profiles/bench/needle-2026-10-09/`, all
 thirteen of them, so the `_rebuild` copies were duplicates and nothing was lost there.
+
+**Found and not fixed, because each needs a decision rather than a rename.** Four `eval/` scripts name
+artifacts that do not exist on this machine: `run_qwen3_8_27b_groupwise_reasoning.sh` wants
+`out/qwen3_8_27b.ninfer`, and the three `run_qwen3_8_27b_nvfp4_*.sh` want
+`out/qwen3_8_27b_nvfp4.ninfer`. The artifact reference gives the first one's identity in §13
+(`filename = qwen3_8_27b.ninfer`, `weights_id = groupwise-int`) without the file, and the two groupwise
+builds this pass removed carried different names, so repointing these is a decision about what each run
+should measure. Separately, `out/openapi.json` is the OpenCode Desktop API spec that
+`docs/opencode-settings.md` draws on and never cites.
