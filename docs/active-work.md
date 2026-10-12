@@ -3373,3 +3373,32 @@ and the corpus is one domain at that.
 Residue, stated rather than deferred: widths 11-13 have not been measured *per domain* for QUASAR, ninfer
 or NVIDIA, so a future sweep could still find something -- but it would have to be a maximin sweep over
 domains, and its prerequisite is the same served-regime protocol those lanes' notes describe.
+
+## 2026-10-12 - issue #374: the NVFP4 residual update is width-independent now
+
+**Fixed.** The fused residual `linear_add` rounded its update differently depending on the batch width:
+the multiply by the activation scale and the add of the residual were separate statements, so only the
+`FullTokens` launches -- those whose width filled every token tile -- let the compiler contract them into
+one FMA. The same token therefore prefilled to different bits depending on where it fell in the chunk.
+Both operations now live in one epilogue call whose rounding is explicit, so no caller's live-column
+predicate can decide it. The NVFP4 route rounds `__fmul_rn` then `__fadd_rn`, which is the rounding the
+long chunks already used -- so only the launches that were the exception change.
+
+Evidence, and the parts of it that are weak:
+
+* `ninfer_linear_add_nvfp4_test` gained a width-invariance check, and it is falsified in both directions:
+  with the fix it passes, and reverting the two call sites fails it with "T=32: token 0's bits depend on
+  the batch width -- 4480 of 5120 bf16 word(s) differ from T=17". Getting to a check that *can* fail took
+  three formulations: the first swept across the A4 frontier and compared two different kernels, and the
+  second used a generic residual, which hides the difference in the output's bf16 rounding.
+* 23/23 pass across every route that shares the epilogue.
+* Perplexity **4.684860**, identical to every digit against the 2026-10-07 shipping-gate baseline. This is
+  a no-regression check and not a probe of the tails: the protocol's 4096-token windows are tile-aligned,
+  so they never take the path that changed.
+
+**Residue, stated rather than deferred: the FP8 A8 route has the same defect and is not fixed.** Its scale
+is a two-factor product (`activation_scale * weight_scale`) shared with the swiglu path, at
+`src/ops/linear/fp8/fp8_a8_mma_common.cuh` and `src/ops/linear/fp8/fp8_split_k.cuh`, so collapsing it into
+one rounding is a change to a shared helper rather than a local edit. No shipped lane uses that route --
+all five artifacts are NVFP4 -- so it was left alone rather than changed without its own width sweep. A fix
+there needs the same two things this one had: an explicit rounding, and a sweep that can fail.

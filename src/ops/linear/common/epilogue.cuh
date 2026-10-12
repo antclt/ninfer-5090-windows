@@ -8,6 +8,10 @@ namespace ninfer::ops::detail {
 // owns predicates and synchronization; epilogues only receive valid coordinates.
 struct LinearIdentityEpilogue {
     __device__ __forceinline__ float apply(int, int, float value) const { return value; }
+
+    __device__ __forceinline__ float apply_scaled(int, int, float value, float scale) const {
+        return value * scale;
+    }
 };
 
 struct LinearResidualAddEpilogue {
@@ -15,6 +19,17 @@ struct LinearResidualAddEpilogue {
 
     __device__ __forceinline__ float apply(int row, int token, float value) const {
         return value + residual.load(row, token);
+    }
+
+    // Scaling belongs to the fused residual update, and it is rounded as a product and then a sum in
+    // every tile. Whether the caller's live-column predicate is compile-time must not decide the
+    // rounding: it used to, because the multiply and the add were separate statements, so only
+    // launches whose width filled every token tile let the compiler contract them into one FMA. Those
+    // widths then rounded differently from all the others, and the same token prefilled to different
+    // bits depending on where it fell in the chunk.
+    __device__ __forceinline__ float apply_scaled(int row, int token, float value,
+                                                  float scale) const {
+        return __fadd_rn(__fmul_rn(value, scale), residual.load(row, token));
     }
 };
 

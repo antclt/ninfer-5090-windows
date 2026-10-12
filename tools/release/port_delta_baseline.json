@@ -831,6 +831,12 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path. MSVC alignment necessity, measured by tools/scripts/probe_tma_align.cmd and quoted in the file's own comment: CUtensorMap carries no alignment attribute under this build (cuda.h applies alignas(TENSOR_MAP_ALIGN) only when __cplusplus >= 201103L, and nvcc's MSVC host pass reports 199711L), so the by-value descriptor needs an explicit `alignas(64)`, and 128 is rejected with C2719. The struct above it declares no override for the same reason. Kept through the 2026-10-07 merge alongside upstream's new predicated-K block, which mutates the descriptor arrays and is why they are no longer const."
     },
+    "src/ops/linear/common/epilogue.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the fused residual update gained apply_scaled, so the multiply by the activation scale and the add of the residual round in one place whose rounding is explicit. Harvested from issue #374 and the two fork commits that fix it; this port's file was the pre-image. NVFP4 rounds __fmul_rn then __fadd_rn (the rounding the long chunks already used, so only the exception launches change); perplexity is unchanged to every digit against the 2026-10-07 baseline."
+    },
     "src/ops/linear/fp8/fp8_a8_mma.cuh": {
       "status": "M",
       "disposition": "unknown",
@@ -902,6 +908,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "Cited in the diff -- dedup: ops/common/validation.h. Open it before changing this path."
+    },
+    "src/ops/linear/nvfp4/nvfp4_a4_mma.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the non-collective path passes the raw accumulator and the scale to epilogue.apply_scaled instead of multiplying first and adding second, which is what made the rounding depend on whether the launch filled every token tile. Covered by the width-invariance check in tests/ops/linear_add/test_nvfp4.cpp, falsified in both directions."
     },
     "src/ops/linear/nvfp4/nvfp4_a4_tma.cuh": {
       "status": "M",
@@ -1421,7 +1433,7 @@
     },
     "tests/ops/linear_add/test_nvfp4.cpp": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "product",
       "review": "product",
       "reason": "Port change: a T=33 case at the 32/33 seam the schedule change creates. The width list had 32 but not 33, so the boundary the new branch keys on was uncovered."
     },
