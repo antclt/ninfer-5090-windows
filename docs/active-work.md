@@ -3890,3 +3890,27 @@ called that question unasked, which was imprecise: the per-lane code cell is a s
 (`docs/research/proposal-head-per-lane-2026-10-10.md` is a per-lane table of it, and
 `docs/research/lane-coverage-2026-10-08.md:289` reads one lane's cell against the published figure), and
 what had not been asked is whether the *merged engine's* shifts leave the rule's conclusions standing.
+
+**The code-weighted bound, re-derived on the merged engine (2026-10-12).** The rule chose the per-lane
+depth, kv dtype and proposal head on pre-merge figures, and the merge moved them, so the choices were
+re-measured against the bound as written (`CONTEXT.md:97`: "a change is adopted when the deciding cells'
+worst case improves by at least as much as the worst disclosed non-code cell gives up"), on the merged
+engine and the cells the decisions were made on.
+
+* **quasar dflash2's depth flips to 7.** Depth 9 loses the deciding cell - 36,000 characters of real
+  code, depth 7 at 244.7 tok/s and 37.6% against 9's 230.0 and 29.4%, so -6.0% - *and* gives up 8.1% on
+  the worst non-code cell (long Chinese 132.3 against 121.6, where the pre-merge note recorded depth 9
+  leading). It improves nothing and gives up twice, so there is no trade to weigh. Both margins are
+  single-round; what makes the flip robust is that it rests on neither, though each is at or above this
+  tool's recorded within-run spread of 0.3 to 5.1%. The 225-character deciding cell is a built-in
+  prompt inside `lane_fingerprint.py` and is not reproducible from a file, so it is the one input the
+  re-derivation does not cover - depth 9 would have to win it by more than 14% to reverse the call.
+* **quasar dflash2's kv dtype stands, by one point.** Going back to fp8 gains 29.5% on the deciding
+  cell (long code 239.4 against 184.9) and gives up 30.5% on long Chinese (129.5 against 186.2), so
+  29.5 < 30.5 and the bound is not met. The pre-merge decision was a 0.2% tie on Chinese; on the merged
+  engine the deciding cell has swung 29.5% toward fp8, which makes this the tightest call in the set
+  and worth re-measuring at more rounds before it is trusted either way.
+* **Not measured, margins stated.** The six proposal-head choices (4.4 to 9.9% on 2026-10-10) are all
+  inside the merged engine's per-lane shifts (2.2 to 12.6%), so they are at risk and unmeasured; swift
+  dflash2's depth (14.4%) is borderline; the mtp depths (26%), nvidia dflash2's depth (9.8% against a
+  0.3% shift) and the width choice (33%) are beyond the shift's reach.
