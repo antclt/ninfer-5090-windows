@@ -111,10 +111,10 @@ def main() -> int:
         rel = doc.relative_to(REPO).as_posix()
         text = read(doc)
         # A record states what was true when it was written, and a path in one is correct for its date -
-        # rewriting those stops them being records. docs/research also cites other projects by
-        # construction, and their layouts are not this tree's to resolve. Both classes are excluded here
-        # for the same reason the count check excludes them.
-        if rel.startswith(RECORD_DIRS):
+        # rewriting those stops them being records. A **dated filename is a record** for the same reason
+        # (docs/upstream-survey-2026-09-18.md), and docs/research also cites other projects by
+        # construction, whose layouts are not this tree's to resolve.
+        if rel.startswith(RECORD_DIRS) or re.search(r"\d{4}-\d{2}-\d{2}", doc.name):
             continue
         for token in sorted(set(PATH_TOKEN.findall(text))):
             if token.startswith(("http", "www.")) or "\\" in token:
@@ -169,6 +169,34 @@ def main() -> int:
     print(f"\n4. 'current as of' headers (a reminder, not a verdict): {len(stale_headers)}")
     for rel, date in sorted(stale_headers, key=lambda pair: pair[1])[:20]:
         print(f"   {date}  {rel}")
+
+    # 5. Artifacts a live document names. The shipped names are profiles.py's own `art=` values; a name
+    # in neither that list nor the machine's artifact home is either retired or misspelled, and both
+    # send a reader to something they cannot run. Advisory, because a document may legitimately discuss
+    # a retired artifact - docs/maintainer/qwen3.8-27b-artifact.md keeps the retired ones on purpose.
+    shipped = set(re.findall(r'art="?([\w.]+)"?', read(REPO / "tools" / "release" / "profiles.py")))
+    home = Path(r"C:\AI\models")
+    present = {p.name for p in home.glob("*.ninfer")} if home.is_dir() else set()
+    unknown_artifacts: list[tuple[str, str]] = []
+    RETIRED = re.compile(r"retired|superseded|_superseded|withdrawn|official stock|no longer", re.I)
+    for doc in docs:
+        rel = doc.relative_to(REPO).as_posix()
+        if rel.startswith(RECORD_DIRS) or re.search(r"\d{4}-\d{2}-\d{2}", doc.name):
+            continue
+        # line by line, because a mention that says it is retired is not a stale mention:
+        # docs/perplexity-baseline.md writes "(superseded) ... verified from `_superseded`" beside the
+        # name, and the first version of this check flagged it for naming the artifact at all.
+        for line in read(doc).splitlines():
+            for name in sorted(set(re.findall(r"`([A-Za-z0-9][\w.-]*\.ninfer)`", line))):
+                if name in shipped or name in present or RETIRED.search(line):
+                    continue
+                unknown_artifacts.append((rel, name))
+    print(f"\n5. artifacts a live document names that ship nowhere: {len(unknown_artifacts)}")
+    for rel, name in unknown_artifacts[:20]:
+        print(f"   {rel}  ->  {name}")
+    if not unknown_artifacts:
+        print(f"   (the {len(shipped)} names in profiles.py and the {len(present)} under {home} cover"
+              f" every artifact the live documents mention)")
 
     findings = len(missing_paths) + len(stale_counts) + len(superseded_live)
     print(f"\n  findings (classes 1-3): {findings}")
