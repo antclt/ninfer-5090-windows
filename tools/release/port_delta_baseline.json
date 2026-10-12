@@ -209,7 +209,7 @@
     },
     "docs/README.md": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "product",
       "reason": "Cited in the diff -- port: this port. Open it before changing this path."
     },
@@ -281,7 +281,7 @@
     },
     "eval/README.md": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "product",
       "reason": "Cited in the diff -- doc: docs/perplexity-baseline.md. Open it before changing this path."
     },
@@ -290,6 +290,24 @@
       "disposition": "windows",
       "review": "",
       "reason": "Port addition: the code suite's smoke pair, humaneval_smoke and live_code_bench_smoke. The capability set covered math, science, tool-calling and retrieval while the product's workload is coding, and EvalScope already carries the benchmarks, so the gap was the configuration rather than the framework. The added block's own comment says the same thing."
+    },
+    "eval/run_qwen3_8_27b_groupwise_reasoning.sh": {
+      "status": "D",
+      "disposition": "deleted",
+      "review": "",
+      "reason": "Port deletion: the harness is POSIX-only -- it calls `eval/.venv/bin/python`, and this port's `eval/.venv` is a Windows environment with `Scripts\\` and no `bin\\` -- and it needs the `groupwise-int` peer artifact of the artifact reference's section 13, which exists nowhere on this machine. Its campaign is recorded: the protocol in `eval/configs/qwen3_8_27b_groupwise_reasoning.yaml` and the published table in `eval/README.md`."
+    },
+    "eval/run_qwen3_8_27b_nvfp4_gpqa_budgets.sh": {
+      "status": "D",
+      "disposition": "deleted",
+      "review": "",
+      "reason": "Port deletion: POSIX-only for the same reason as its siblings, and it needs the retired nvfp4 image, which this port does not ship. Its campaign is recorded in `eval/README.md` and its protocol in `eval/configs/qwen3_8_27b_nvfp4_gpqa_budgets.yaml`, which the Windows runner `eval/run_qwen3_8_27b_quasar_gpqa_budgets.ps1` still reads."
+    },
+    "eval/run_qwen3_8_27b_nvfp4_reasoning.sh": {
+      "status": "D",
+      "disposition": "deleted",
+      "review": "",
+      "reason": "Port deletion: POSIX-only for the same reason as its siblings, and it needs the retired nvfp4 image, which this port does not ship. Its protocol stays in `eval/configs/qwen3_8_27b_nvfp4_reasoning.yaml`, which `docs/research/task-accuracy-protocol.md` cites, and its published table is in `eval/README.md`."
     },
     "examples/cli/messages/long_niah_128k.json": {
       "status": "M",

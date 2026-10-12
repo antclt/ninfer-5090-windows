@@ -3826,21 +3826,31 @@ re-checked the one removal that looked as if it might have cost data — the nee
 `_rebuild` — against the document that names them: they live in `profiles/bench/needle-2026-10-09/`, all
 thirteen of them, so the `_rebuild` copies were duplicates and nothing was lost there.
 
-**Found and not fixed: the eval harnesses are Linux-era, and one reference document has no home.**
-*Three* `run_qwen3_8_27b_*` harnesses name artifacts this port does not hold at the path given. The two
-`nvfp4` ones want `out/qwen3_8_27b_nvfp4.ninfer`, which is the retired line and lives as
-`_superseded\qwen3_8_27b_nvfp4.v3.ninfer`; `run_qwen3_8_27b_groupwise_reasoning.sh` wants
-`out/qwen3_8_27b.ninfer`, the `groupwise-int` peer of §13, which exists nowhere here — its published
-table in `eval/README.md` cites run directories on the Linux host, and the peer artifact it needs is
-absent, so that suite cannot be re-run from this tree. This file first said *four*: the fourth,
-`run_qwen3_8_27b_quasar_gpqa_budgets.ps1`, points at the shipped QAT artifact and is the Windows runner
-the port added for it. But the paths are the smaller half — all three `.sh` harnesses call
-`eval/.venv/bin/python`, and this machine's `eval/.venv` is a Windows environment with `Scripts\` and no
-`bin\`, so none of them can run here. That is why the fix is a host note in `eval/README.md` (added
-with this entry) or a `.ps1` port, not a repoint.
+**Closed: the eval harnesses were Linux-era, and the API-schema snapshot is gone.** *Three*
+`run_qwen3_8_27b_*` harnesses named artifacts this port does not hold at the path given — the two
+`nvfp4` ones the retired line, and the groupwise one the `groupwise-int` peer of §13, which exists
+nowhere here. But the paths were the smaller half: all three called `eval/.venv/bin/python`, and this
+machine's `eval/.venv` is a Windows environment with `Scripts\` and no `bin\`, so none of them could run
+here. The lines they measured are retired (`nvfp4`) or unheld (`groupwise-int`), the port ships neither,
+so the three harnesses are **removed** and `eval/README.md` now gives the generic coordinator commands
+instead. Their campaigns stay as records: the configs in `eval/configs/` — the budgets one is still read
+by the Windows runner `run_qwen3_8_27b_quasar_gpqa_budgets.ps1`, the reasoning one is cited by
+`docs/research/task-accuracy-protocol.md`, and the groupwise one is the published table's protocol — plus
+the published tables in `eval/README.md`. This file first said *four* scripts; the fourth is the Windows
+runner, and it points at the shipped QAT artifact.
 
-Separately, `out/openapi.json` — 251,897 bytes, BOM-prefixed, `opencode HttpApi`, 115 paths and 247
-schemas — is the schema behind the config keys `docs/opencode-settings.md` recommends. Nothing cites
-it, and the running app serves only an HTML `/doc` (7,202 bytes at every path tried), so it is not
-regenerable here. Whether to delete it or track it is a decision about a copy whose currency cannot be
-checked against the app.
+**`_superseded` is not in that class, and the check is worth recording.** It is *read* by two release
+tools, not merely cited: `tools/release/v3_profile_matrix.py` addresses three of its members as absolute
+paths (`ninfer` = the retired nvfp4 image, `swift` = the Swift 1.0 build "every Swift 1.5 figure is
+quoted against", `swift15q8` = the Q8-draft variant) and says they are deliberately unreachable through
+profile mode, and `tools/release/verify_shipping_artifacts.py` verifies the retired and Swift 1.0 images
+under the instruction "check all previous models". Its other members carry roles in the table in
+`docs/maintainer/qwen3.8-27b-artifact.md`. The directory stays unless those tools' inputs are
+deliberately dropped. (A first pass said four members; the count is three.)
+
+`out/openapi.json` — 251,897 bytes, BOM-prefixed, `opencode HttpApi`, 115 paths and 247 schemas — was the
+schema behind the config keys `docs/opencode-settings.md` recommends. Nothing cited it, and the running
+app serves only an HTML `/doc` (7,202 bytes at every path tried), so it was not regenerable here; its
+currency could not be checked against the app either, the spec saying 0.0.1 where the app is 2.0.16. The
+page now names the client's own documentation as the authority for those keys, and the snapshot is
+**deleted**.

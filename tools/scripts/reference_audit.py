@@ -137,9 +137,13 @@ def audit(path_text: str, quiet: bool) -> tuple[int, list[str]]:
         directory = ""
 
     print(f"--- {path_text}")
-    if git("ls-files", "--error-unmatch", path.as_posix()).strip():
-        print("    tracked by git: a removal candidate never is; nothing to audit")
-        return 2, [path_text]
+    is_tracked = bool(git("ls-files", "--error-unmatch", path.as_posix()).strip())
+    if is_tracked:
+        # Audited anyway, then refused: a tracked removal needs its references more than an untracked
+        # one does, because a commit will carry the deletion. The first version returned here and left
+        # the caller to find the README lines and the header note by hand.
+        print("    tracked by git: this tool's candidates are untracked files, but its references are"
+              " still the ones a commit would need")
 
     hits = names_it(name)
     references = [(p, n, t) for p, n, t in hits if Path(p).name not in PATTERN_FILES]
@@ -187,8 +191,8 @@ def audit(path_text: str, quiet: bool) -> tuple[int, list[str]]:
                 print(safe(f"      {p}:{number}: {line[:130]}"))
 
     if references or retention:
-        return 1, [path_text]
-    return 0, [path_text]
+        return (2 if is_tracked else 1), [path_text]
+    return (2 if is_tracked else 0), [path_text]
 
 
 def main() -> int:

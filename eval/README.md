@@ -23,14 +23,15 @@ The pinned stack is EvalScope 1.10.0 with its BFCL, IFBench, and Needle-in-a-Hay
 caches remain owned by their upstream libraries. Installing dependencies does not download the
 Qwen model or create a `.ninfer` artifact.
 
-**On Windows, two things above are written for the host the harness was first run on.** The environment
+**On Windows, one thing above is written for the host the harness was first run on.** The environment
 is created with the interpreter this repository uses for tooling and lives at `eval\.venv\Scripts\python.exe`
-(no `bin\`), so every `eval/.venv/bin/python` command below needs that substitution. And the three
-`run_qwen3_8_27b_*.sh` runners are POSIX-only: each also names an artifact this port does not hold at
-that path — the two `nvfp4` ones want the retired line, which is
-`C:\AI\models\_superseded\qwen3_8_27b_nvfp4.v3.ninfer`, and the groupwise one wants the `groupwise-int`
-peer, which exists nowhere here. `run_qwen3_8_27b_quasar_gpqa_budgets.ps1` is the Windows runner for
-the shipped lane's GPQA budget campaign.
+(no `bin\`), so every `eval/.venv/bin/python` command below needs that substitution. The three
+`run_qwen3_8_27b_*.sh` runners this page used to document are no longer carried: each was POSIX-only
+and each needed an artifact this port does not ship — the two `nvfp4` ones the retired line, the
+groupwise one the `groupwise-int` peer, which exists nowhere here. Their campaigns are recorded below
+and in `docs/research/task-accuracy-protocol.md`, with their protocol in `eval/configs/`.
+`run_qwen3_8_27b_quasar_gpqa_budgets.ps1` is the Windows runner for the shipped lane's GPQA budget
+campaign.
 
 ## Configuration
 
@@ -159,13 +160,16 @@ then run the text step (IFBench, AIME25, AIME26, and GPQA-Diamond) and the multi
 RealWorldQA):
 
 ```bash
-eval/run_qwen3_8_27b_nvfp4_reasoning.sh --plan
-eval/run_qwen3_8_27b_nvfp4_reasoning.sh
+eval/.venv/bin/python -m ninfer_eval plan \
+  --config eval/configs/qwen3_8_27b_nvfp4_reasoning.yaml --suite text_full --check-runtime
+eval/.venv/bin/python -m ninfer_eval run \
+  --config eval/configs/qwen3_8_27b_nvfp4_reasoning.yaml --suite text_full
 ```
 
-With no step argument the script runs the two steps back to back, restarting the server between
-them. Pass `text` or `multimodal` to run a single step only, and `--plan` to preview the plan for
-the selected step(s) without starting the server.
+`--suite text_full` is the four text benchmarks and `--suite multimodal_full` the two vision ones, kept
+separate so each is independently resumable. The harness that used to start the server for each step is
+no longer carried (see the note under Environment), so start it with the flags the next paragraph
+describes.
 
 The script starts a fresh local server for each step. The text server uses a 252,928-token context
 (the largest that fits the RTX 5090 after weights; 262,144 is rejected at startup) and omits
@@ -189,12 +193,12 @@ and `eval/runs/20260818T223812Z-da6cdbce`):
 | ERQA | 66.25% | 265 / 400 |
 | RealWorldQA | 83.53% | 639 / 765 |
 
-The Qwen3.8-27B groupwise-int profile runs the same protocol through
-`eval/run_qwen3_8_27b_groupwise_reasoning.sh`. Its 16.96 GiB artifact leaves more GPU memory, so the
-text step uses the full 262,144-token context and both steps run at concurrency four (run
+The Qwen3.8-27B groupwise-int profile ran the same protocol, with the full 262,144-token context
+because its 16.96 GiB artifact leaves more GPU memory, and both steps at concurrency four (run
 directories `eval/runs/20260819T031655Z-078bd8e0` and `eval/runs/20260819T141750Z-531a236a`; the
 multimodal step was resumed with `ninfer_eval resume` after a local proxy change interrupted
-RealWorldQA at 618/765 samples):
+RealWorldQA at 618/765 samples). Its protocol is `eval/configs/qwen3_8_27b_groupwise_reasoning.yaml`;
+neither the harness nor the artifact is carried here, so the numbers below are the record:
 
 | Benchmark | Accuracy | Correct / total |
 |---|---:|---:|

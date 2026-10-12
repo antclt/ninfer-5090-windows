@@ -1,5 +1,6 @@
-# GPQA-Diamond campaign for the shipped Qwen3.8-27B lane, Windows port of
-# run_qwen3_8_27b_nvfp4_gpqa_budgets.sh.
+# GPQA-Diamond campaign for the shipped Qwen3.8-27B lane, Windows port of the POSIX
+# run_qwen3_8_27b_nvfp4_gpqa_budgets.sh, which is no longer carried because it needed the
+# retired image named below.
 #
 # Same three thinking-budget tiers (8k/16k/32k) and the same EvalScope suites, but it starts the
 # server with the flags a *shipped* launcher passes (fp8 KV, DFlash2 depth 7, prefill 8192, one
