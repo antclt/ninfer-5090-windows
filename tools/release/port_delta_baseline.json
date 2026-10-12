@@ -120,7 +120,7 @@
     "bench/cpu/execution_bench.cpp": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: upstream's bench reads process CPU time through <sys/resource.h> and getrusage(), which MSVC does not have; the Windows path reads the same quantity through GetProcessTimes (100-ns user+kernel ticks, divided by 10 for microseconds). Checked by the bench building and by the two paths returning the same units."
     },
     "bench/fixtures/ttft/manifest.json": {
@@ -252,19 +252,19 @@
     "docs/maintainer/qwen4_exp-execution.md": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "an upstream defect this merge had to resolve to pass check_doc_links.py: the document links its own #implementation-status anchor, and no heading defines it -- in upstream's tree either. The link syntax is dropped and the visible text kept, because there is no heading to point at and inventing one would assert a section upstream did not write. Reported to upstream rather than silently repaired."
     },
     "docs/maintainer/qwen4_exp-model.md": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "the same upstream defect: it links qwen4_exp-execution.md#implementation-status, an anchor that document does not define. Link syntax dropped, text kept, reported upstream."
     },
     "docs/maintainer/qwen4_exp-ple-io.md": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "the same class: it links ../../profiles/bench/ple-io-20261007/REPORT.md, and profiles/ is gitignored in full, so the target cannot exist in any checkout of this repository. Link syntax dropped, text kept, reported upstream."
     },
     "docs/performance.md": {
@@ -312,19 +312,19 @@
     "eval/configs/capability-suite.yaml": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "Port addition: the code suite's smoke pair, humaneval_smoke and live_code_bench_smoke. The capability set covered math, science, tool-calling and retrieval while the product's workload is coding, and EvalScope already carries the benchmarks, so the gap was the configuration rather than the framework. The added block's own comment says the same thing."
     },
     "eval/run_qwen3_8_27b_nvfp4_gpqa_budgets.sh": {
       "status": "D",
       "disposition": "deleted",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "Port deletion: POSIX-only for the same reason as its siblings, and it needs the retired nvfp4 image, which this port does not ship. Its campaign is recorded in `eval/README.md` and its protocol in `eval/configs/qwen3_8_27b_nvfp4_gpqa_budgets.yaml`, which the Windows runner `eval/run_qwen3_8_27b_quasar_gpqa_budgets.ps1` still reads."
     },
     "eval/run_qwen3_8_27b_reasoning.sh": {
       "status": "D",
       "disposition": "deleted",
-      "review": "",
+      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
       "reason": "Port deletion: the harness is POSIX-only -- it calls `eval/.venv/bin/python`, and this port's `eval/.venv` is a Windows environment with `Scripts\\` and no `bin\\` -- and it needs the `groupwise-int` peer artifact of the artifact reference's section 13, which exists nowhere on this machine. Its campaign is recorded: the protocol in `eval/configs/qwen3_8_27b_groupwise_reasoning.yaml` and the published table in `eval/README.md`."
     },
     "examples/cli/messages/long_niah_128k.json": {
@@ -360,13 +360,13 @@
     "include/ninfer/ops/kv_cache_append.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain",
       "reason": "Port change: the single-sequence kv_cache_append validates T against the layer's logical capacity but does not read the device positions it indexes the block table with, while its prefix sibling documents that bound as a caller guarantee. The bound is documented on this declaration in the same terms, because enforcing it would need a device-to-host copy on a hot op's path. Found by the c-review detect pass."
     },
     "include/ninfer/ops/linear_split.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "the port's NVFP4 drafter geometry documented in upstream's contract, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- and by tests/ops/test_dflash2_nvfp4_routes.cpp, which exercises that route",
       "reason": "Port feature: the port registers one NVFP4 drafter geometry upstream does not carry (the BlockScaleK16M128x4 [6144,5120] parent writing q/k/v), so upstream's contract gains the paragraph that documents it. Checked by linear/split's nvfp4/shapes/n6144_k5120 and by tests/ops/test_dflash2_nvfp4_routes.cpp."
     },
     "include/ninfer/ops/linear_swiglu.h": {
@@ -564,25 +564,25 @@
     "src/artifact/schema.cpp": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "artifact framing/binding, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the artifact contract tests and a real artifact where semantics require it",
       "reason": "Windows necessity, and a trust-boundary fix: a continuation filename in an artifact's JSON could be drive-relative (C:foo), which the sibling-name check did not reject -- it tested '.', '..', '/' and a backslash but not a Windows root-name -- so for an artifact not on the named drive CreateFileW resolved it against the process's per-drive current directory, outside the artifact's directory. Measured with a compiled probe: joining a root-name continuation onto a directory on another drive yields the continuation itself, and is_absolute() is false. The check now rejects a two-character prefix whose second character is a colon. Found by the c-review detect pass."
     },
     "src/core/CMakeLists.txt": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: upstream gates the CPU execution layer to Linux x86-64 with a FATAL_ERROR. The port supplies a native Windows implementation (cpu/system_windows.cpp), so the guard widens to Windows x86-64 and the hwloc link is Linux-only. Checked by ninfer_cpu_system_test, ninfer_cpu_task_pool_test and ninfer_cpu_executor_test, which pass on Windows."
     },
     "src/core/cpu/system.cpp": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "cpp-cuda-review + the ASan subset (three host tests, clean) + the three CPU tests. Verified: the Windows affinity path flattens (group, index) the same way core/cpu/system.h numbers CpuAffinity, and the platform-independent half is a .inc body included by whichever platform file is compiled rather than a header.",
       "reason": "Windows necessity: the platform-independent half of this file (affinity validation, worker ordering, feature masking, worker startup) moved to cpu/system_portable.inc, which the port's system_windows.cpp includes. A definition in a header is emitted only by the TUs that use it, and this library's other TUs call these without instantiating them, so it is a .inc body included by whichever platform file is compiled rather than a header."
     },
     "src/core/cyclic_kv_cache.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: adds <string> for std::to_string, which libstdc++ provides transitively through another header and MSVC does not (C2039). Same class as the <span> include the previous merge added to generation_service.h."
     },
     "src/core/paged_kv_cache.h": {
@@ -792,19 +792,19 @@
     "src/ops/dynamic_grouped_conv/add/add.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review. Both non-overlap checks now size the projection by its own format: the Q8/BF16 byte arithmetic put an NVFP4 parent's extent in the wrong place and reported an overlap that was not there. The NVFP4 payload contract belongs to the Linear route that materializes it.",
       "reason": "Port feature: dispatches the port's NVFP4 route before the dense one, selected from the projection's own format, and that route materializes through the generic A16 Linear. Checked by tests/ops/test_dflash2_nvfp4_routes.cpp's conv sections."
     },
     "src/ops/dynamic_grouped_conv/operands.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review. Both non-overlap checks now size the projection by its own format: the Q8/BF16 byte arithmetic put an NVFP4 parent's extent in the wrong place and reported an overlap that was not there. The NVFP4 payload contract belongs to the Linear route that materializes it.",
       "reason": "Port feature: two changes: the NVFP4 parent's geometry is admitted (the payload contract belongs to the Linear route that materializes it), and both non-overlap checks size the projection by its own format -- the Q8/BF16 byte arithmetic put an NVFP4 parent's extent in the wrong place and reported an overlap that was not there."
     },
     "src/ops/dynamic_grouped_conv/prepare/prepare.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review. Both non-overlap checks now size the projection by its own format: the Q8/BF16 byte arithmetic put an NVFP4 parent's extent in the wrong place and reported an overlap that was not there. The NVFP4 payload contract belongs to the Linear route that materializes it.",
       "reason": "Port feature: the same format dispatch for rmsnorm_dynamic_grouped_conv_prepare."
     },
     "src/ops/dynamic_grouped_conv/sources.cmake": {
@@ -822,19 +822,19 @@
     "src/ops/kv_cache/context_materialize/dispatch.cu": {
       "status": "M",
       "disposition": "refactor",
-      "review": "",
+      "review": "cpp-cuda-review + the FP64 oracle. Verified: the NVFP4 divisors are written where the device views are built and read where the group scales decode; kLayers is derived from kContextKVMaterializeLayers so the loop bound cannot disagree with the array it writes; the key-post kernel has internal linkage. This is where the >256-column regression was found: the staging swizzle substituted by this merge was not the one the kernel was written against. The oracle now passes at every width including 257/512 with the port's own tile.",
       "reason": "the port's NVFP4 implementation family is selected from the layer weights' format rather than from the column count, because the two families are exclusive per call; the dense selector keeps upstream's signature. Also carries the two inverse-divisor fields into the device views. Checked by tests/ops/test_context_kv_materialize.cpp and the dflash2 route test."
     },
     "src/ops/kv_cache/context_materialize/dispatch.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + the FP64 oracle. Verified: the NVFP4 divisors are written where the device views are built and read where the group scales decode; kLayers is derived from kContextKVMaterializeLayers so the loop bound cannot disagree with the array it writes; the key-post kernel has internal linkage. This is where the >256-column regression was found: the staging swizzle substituted by this merge was not the one the kernel was written against. The oracle now passes at every width including 257/512 with the port's own tile.",
       "reason": "declares select_context_kv_materialize_nvfp4 beside upstream's selector."
     },
     "src/ops/kv_cache/context_materialize/epilogue.cuh": {
       "status": "M",
       "disposition": "product",
-      "review": "",
+      "review": "cpp-cuda-review + the FP64 oracle. Verified: the NVFP4 divisors are written where the device views are built and read where the group scales decode; kLayers is derived from kContextKVMaterializeLayers so the loop bound cannot disagree with the array it writes; the key-post kernel has internal linkage. This is where the >256-column regression was found: the staging swizzle substituted by this merge was not the one the kernel was written against. The oracle now passes at every width including 257/512 with the port's own tile.",
       "reason": "two additions the port's NVFP4 route needs: DeviceLayerView's inverse-divisor fields (an NVFP4 parent's stored divisor is not in its captured scales) and make_device_layers, which both families now share instead of each building the views. The key-post kernel also gains internal linkage, because a __global__ with external linkage in a header is a duplicate device symbol once a second TU includes it -- nvlink reported it by name."
     },
     "src/ops/kv_cache/context_materialize/sources.cmake": {
@@ -846,19 +846,19 @@
     "src/ops/linear/add/fp8/shapes/n5120_k17408.cu": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "Port feature: the port's band ladder, with its bounds named once so the ladder and the capacity function cannot disagree (docs/active-work.md item 12; the AGENTS.md rule earned by `tokens > 512 && tokens <= 384`). Upstream split the port's K-templated file into this and n5120_k6144.cu, which is why each is a separate entry now."
     },
     "src/ops/linear/add/fp8/shapes/n5120_k6144.cu": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "Port feature: the K=6144 half of the same ladder, and the smallest of the two: upstream's file held both K's in one function."
     },
     "src/ops/linear/add/nvfp4/shapes/n5120_k17408.cu": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "Port feature: the M32N32Deep tile for the [5120,17408] down projection at tokens <= 32, measured on this route at median of 20 two interleaved rounds: T=8 42.37 -> 38.27 us and T=12..32 44.38 -> 39.7..40.3 us. The comment in the file carries the figure and its configuration."
     },
     "src/ops/linear/common/epilogue.cuh": {
@@ -972,13 +972,13 @@
     "src/ops/linear/split/dispatch.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "Port feature: registers kNvfp4SplitN6144K5120, the port's NVFP4 drafter geometry, in upstream's shape selection."
     },
     "src/ops/linear/split/dispatch.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "declares that geometry beside upstream's."
     },
     "src/ops/linear/split/fp8/shapes/n14336_k5120/a8.cu": {
@@ -996,7 +996,7 @@
     "src/ops/linear/split/sources.cmake": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "lists the geometry's two files (dflash2.cu, shape.cpp)."
     },
     "src/ops/linear/swiglu/fp8/shapes/n34816_k5120/a8.cu": {
@@ -1020,31 +1020,31 @@
     "src/ops/linear/swiglu/sources.cmake": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
       "reason": "Port feature: lists nvfp4_linear_swiglu_matrix.cu, the port's wide-T A16 route above the small-T family. Its own comment records why it exists: routing those extents through a materialized BF16 projection measures 8.1e-3 against the profile's A16 tail bound of 6.3e-3."
     },
     "src/ops/linear_attention/gated_delta_net/input_conv/fp8/projection_a8.cu": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a schedule rename, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain",
       "reason": "Port feature: follows the port's rename of Fp8A8TmaSplitKSchedule to Fp8A8SplitKSchedule: its Base is any FP8 A8 schedule, not a TMA one, and item 12 needed the MMA transport to wrap the same geometry to twin the split-K tiles. The name is now wrong rather than merely stale, so upstream's callers were migrated with it."
     },
     "src/ops/reduction/sources.cmake": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + ninfer_topk_logprobs_test. The Op behind Engine::score_topk and ProgramImpl::causal_score_topk, moved from the wrapper/launcher layout upstream no longer has.",
       "reason": "Port feature: registers topk_logprobs.cpp and topk_logprobs_launch.cu, the Op behind Engine::score_topk and ProgramImpl::causal_score_topk. Upstream has no such Op; the port's files moved here from wrapper/ and launcher/, which upstream's organisation no longer has."
     },
     "src/ops/sampling/candidate_path/entry.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + c-review Detect (21 units across these six files). Verified: one workspace allocation serves both routes, aliasing checked against the seven live tensors, both packed codebook payloads and the configs; SelectorWorkspace has one member so the alias loop is complete; the NVFP4 route's divisors are read where the scales decode. Findings: the transposed codebook shape in the public header and bench/README (fixed), and unchecked token ids indexing the codebooks, which the header declares trusted from linear_topk (documented boundary, with a device-side clamp named as the belt). Unattributed: whether the four implementations of the K16M128x4 convention could share one wrong convention, and behaviour on non-finite unary_scores.",
       "reason": "Port feature: the port's selector takes its codebooks as Weight rather than Tensor, so a packed NVFP4 codebook can be described at all, plus the mixed-format guard whose comment records the measured illegal access (0x38AC) an NVFP4 predecessor with a BF16 successor produces."
     },
     "src/ops/sampling/candidate_path/execute.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + c-review Detect (21 units across these six files). Verified: one workspace allocation serves both routes, aliasing checked against the seven live tensors, both packed codebook payloads and the configs; SelectorWorkspace has one member so the alias loop is complete; the NVFP4 route's divisors are read where the scales decode. Findings: the transposed codebook shape in the public header and bench/README (fixed), and unchecked token ids indexing the codebooks, which the header declares trusted from linear_topk (documented boundary, with a device-side clamp named as the belt). Unattributed: whether the four implementations of the K16M128x4 convention could share one wrong convention, and behaviour on non-finite unary_scores.",
       "reason": "Port feature: allocates the SelectorWorkspace once per call and hands it to whichever route runs. The NVFP4 route taking its own from the same arena made a Lattice call need twice the capacity the Op's own query reports, which MemoryArena reported as std::bad_alloc."
     },
     "src/ops/sampling/candidate_path/launch.cu": {
@@ -1056,7 +1056,7 @@
     "src/ops/sampling/candidate_path/launch.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review + c-review Detect (21 units across these six files). Verified: one workspace allocation serves both routes, aliasing checked against the seven live tensors, both packed codebook payloads and the configs; SelectorWorkspace has one member so the alias loop is complete; the NVFP4 route's divisors are read where the scales decode. Findings: the transposed codebook shape in the public header and bench/README (fixed), and unchecked token ids indexing the codebooks, which the header declares trusted from linear_topk (documented boundary, with a device-side clamp named as the belt). Unattributed: whether the four implementations of the K16M128x4 convention could share one wrong convention, and behaviour on non-finite unary_scores.",
       "reason": "the same Weight-based codebooks on the launch entry."
     },
     "src/ops/sampling/candidate_path/plan.h": {
@@ -1068,13 +1068,13 @@
     "src/ops/sampling/sources.cmake": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain",
       "reason": "Port feature: registers candidate_path/nvfp4/path.cu, the port's NVFP4 codebook route."
     },
     "src/ops/softmax_attention/dense/causal_cache/fp8/plan.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "cpp-cuda-review. The occupancy guard and the shared tiled_partition_saturated are a duplication refactor: the split count changes work and storage, never kernel topology, and the live-row bound is unchanged. The plan builders are the port's own functions under upstream's plan-returning names, with identical signatures and validation. Measured: 8 of 8 steps qualify at width 8192, and the cap holds 1.62 GiB of the 2.246 GiB workspace at 24 heads.",
       "reason": "Port feature: the occupancy guard on the wave-balance split search, measured on this product's shapes: all eight steps from 1 to 8 qualify at a prefill width of 8192, and the cap costs 1.62 GiB of the 2.246 GiB workspace at 24 heads. Now one definition in causal_cache/partition.h, shared with k8v4/plan.cpp, because copying it into both was new duplication and check_duplication.py said so."
     },
     "src/ops/softmax_attention/dense/causal_cache/k8v4/launch.cu": {
@@ -1092,19 +1092,19 @@
     "src/ops/softmax_attention/kernels/causal/bf16/grouped_mma.cuh": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a port-carried kernel family, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the sparse-GQA and causal tests",
       "reason": "Port change: the bf16 grouped route lacked the two defences its four quantized siblings have. The live-column count is clamped the way PagedKVBatchMetadata::valid_tokens and the quantized grouped routes clamp theirs, and a position at or past visible_capacity now returns the way the k8v4 grouped route does -- the launch had already established that the block table covers visible_capacity, so an unguarded position indexed that table past its own row. Both are hardening: each is reachable only if a caller violates a documented guarantee. Verified against the route's own mathematical oracle (ninfer_softmax_attention_bf16_test). Found by the c-review detect pass."
     },
     "src/ops/softmax_attention/kernels/causal/bf16/merge.cuh": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a port-carried kernel family, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the sparse-GQA and causal tests",
       "reason": "Port change: the bf16 merge's live-column count was unclamped, so a count past the launch's token count made the window read positions at an index past this launch's own positions. Clamped as the grouped kernels clamp it. Hardening: reachable only if a caller violates a documented guarantee. Verified against the route's own mathematical oracle. Found by the c-review detect pass."
     },
     "src/ops/softmax_attention/kernels/causal/bf16/template_launch.cuh": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a port-carried kernel family, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the sparse-GQA and causal tests",
       "reason": "Port change: passes visible_capacity to the grouped kernel, which uses it for the position guard its quantized siblings already had. The launch had validated that the block table covers visible_capacity since before this change, so the guard adds no new precondition."
     },
     "src/product/CMakeLists.txt": {
@@ -1188,7 +1188,7 @@
     "src/serve/anthropic_messages_http.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "an advertised external protocol, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the schema tests and docs/serving.md are the contract",
       "reason": "Port change: a cancelled generation on the aggregate Anthropic path reached the encoder, whose Cancelled arm threw, and the surrounding catch classified that as an internal failure -- a 500 and a bumped response_failures metric for an ordinary client disconnect. The handler now records make_client_disconnected_failure exactly where the streaming path does. Found by the c-review detect pass."
     },
     "src/serve/anthropic_messages_request.cpp": {
@@ -1200,7 +1200,7 @@
     "src/serve/anthropic_messages_response.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "an advertised external protocol, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the schema tests and docs/serving.md are the contract",
       "reason": "Port change: the aggregate encoder's Cancelled arm threw, so the encoder was non-total for a reachable engine outcome -- the property both OpenAI encoders have and this one lacked. It now returns end_turn, and the aggregate handler records the disconnect before reaching it. Found by the c-review detect pass."
     },
     "src/serve/generation_service.cpp": {
@@ -1374,7 +1374,7 @@
     "tests/cpu/test_executor.cpp": {
       "status": "M",
       "disposition": "windows",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: sched_getcpu() has no MSVC equivalent; current_processor() reads GetCurrentProcessorNumberEx and flattens (group, index) the same way core/cpu/system.h numbers CpuAffinity, so the assertion that each worker runs on its planned CPU still compares like with like."
     },
     "tests/kv_cache_storage.h": {
@@ -1434,7 +1434,7 @@
     "tests/ops/linear/test_split_two_output.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: adds <array>, which this test uses directly and libstdc++ provides transitively; MSVC reports std::array as an undefined type (C2027) without it."
     },
     "tests/ops/linear_add/test_nvfp4.cpp": {
@@ -1488,19 +1488,19 @@
     "tests/ops/softmax_attention/qsa/cache_reference.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: replaces _Float16 with __half for the binary16 oracle conversions: _Float16 is a Clang/GCC type with no MSVC x64 equivalent, and __half is the same IEEE binary16 with the same round-to-nearest-even conversion."
     },
     "tests/ops/softmax_attention/qsa/sparse_gqa_fixture.h": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: the same replacement, and half()/unhalf() renamed to half_bits()/half_value() because <cuda_fp16.h> brings a global `half` type and the helper name became ambiguous."
     },
     "tests/ops/softmax_attention/qsa/test_sparse_gqa.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "the renamed helpers' call sites."
     },
     "tests/ops/test_candidate_selector.cpp": {
@@ -1740,7 +1740,7 @@
     "tools/convert/qwen4_exp.py": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a converter recipe, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- pytest tests/convert",
       "reason": "upstream's own dead import, removed for the port's ruff gate: `SafetensorsSource` is imported at line 13 and appears nowhere else in the file -- in upstream's copy either, checked with git show upstream/dev:tools/convert/qwen4_exp.py rather than assumed, because an unused import in a merged file is also the fingerprint of a dropped hunk (that is exactly how a test this merge lost from tests/convert/test_sources.py was found). `ruff check tools tests` lints this tree's tools and upstream does not run it. No behaviour changes: the import was unused."
     },
     "tools/convert/recipe.py": {
@@ -1764,7 +1764,7 @@
     "tools/convert/sources/modelopt_nvfp4.py": {
       "status": "M",
       "disposition": "unknown",
-      "review": "",
+      "review": "a converter source, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- pytest tests/convert, and the FP64 oracle that decodes the same stored words independently",
       "reason": "the same class: `result = []` needs its element type, and `return tuple(result)` does not satisfy the declared 4-tuple (2 suffixes x a multiplier and its reciprocal), so the return unpacks. The unpacking also enforces the count the return type asserts -- an indexed return would satisfy mypy while silently dropping a fifth element. Behaviour is unchanged: the loop has always produced exactly four."
     },
     "tools/convert/sources/safetensors.py": {
