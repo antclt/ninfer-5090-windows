@@ -2276,6 +2276,12 @@ int run_verify_width_cases(DeviceExecutionView execution, KvCacheStorage storage
     };
     for (int width = 2; width <= 16; ++width)
         for (int batch : {1, 8}) failures += run(width, batch, 0, false);
+    // NOTE: the bands above the halving are NOT covered here, and that gap has already cost one
+    // defect. A plan that lost its `width <= 16` guard produced a 26-wide query tile at width 51 --
+    // the width a warmup prefill takes -- and the engine refused to serve; the sweep above stops at
+    // 16, so the lane found it rather than this test. Extending the sweep to {17, 51, 80, 81} was
+    // tried and the harness fails fast (0xC0000409) at those widths, so covering them needs the
+    // harness fixed first, which is its own piece of work rather than a line in this list.
     for (int width : {2, 8, 16})
         for (int batch = 2; batch <= 7; ++batch) failures += run(width, batch, 0, false);
     for (int width : {7, 8, 9, 16})

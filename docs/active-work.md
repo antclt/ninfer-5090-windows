@@ -3402,3 +3402,40 @@ is a two-factor product (`activation_scale * weight_scale`) shared with the swig
 one rounding is a change to a shared helper rather than a local edit. No shipped lane uses that route --
 all five artifacts are NVFP4 -- so it was left alone rather than changed without its own width sweep. A fix
 there needs the same two things this one had: an explicit rounding, and a sweep that can fail.
+
+## 2026-10-12 - issue #279: a DFlash2 verify width reads the KV once, not twice
+
+**Fixed.** Above the grouped token tile the causal attention partitions the query axis, and every chunk
+sweeps the whole visible key range -- so the chunk count is the number of times the KV is read. The plan
+split W=9..16 as `(width+1)/2`, which made our DFlash2 lanes at draft 9 (W=10) two chunks of five. The
+24-head geometry's kernel bound is `Tokens * GroupSize <= 64` with `GroupSize = QHeads/KVHeads = 6`, so a
+10-wide tile is legal there, and the plan now takes the whole width as one chunk when the geometry admits
+it. Above that the halving stays; the 16-head geometry's GroupSize is 8 and stops at 8, which is why the
+new instantiations are pruned by geometry.
+
+Measured on `ninfer_causal_softmax_attention_bench`, d256-h24-kv4, k8v4, batch 1, cold, graph execution,
+64K context:
+
+| W | cached before | cached after | append before | append after |
+|---|---|---|---|---|
+| 8 | 94.912 us | 94.912 us | 94.912 us | 94.912 us |
+| **10** | **133.824 us** | **109.248 us (-18.4 %)** | 137.920 us | 113.824 us (-17.5 %) |
+| 16 | 158.368 us | 158.368 us | 162.496 us | 162.496 us |
+
+The arithmetic is unchanged, so acceptance is unaffected: this is a traffic change, not a mathematical one.
+It is 18.4 % of one kernel and not of a lane -- the KV read is about 40 % of that kernel's cost at this
+width, and the kernel is a fraction of a decode round.
+
+**A defect I introduced on the way, and how it was caught.** The first version of this change rewrote the
+`query_tile` expression and dropped the `width <= 16` guard on its else branch, so a 51-column width --
+the width a warmup prefill takes -- produced a 26-wide query tile, which the launch does not enumerate.
+Every lane on the two artifacts that ran that prefill refused to serve, and the engine said exactly why in
+its own log: `FATAL warmup failed | text/layers/3 prefill columns=51: K8V4 parallel plan exceeds its query
+tiles`. The throw was the plan's own, so it refused rather than computing anything wrong. Fixed by
+restoring the three bands, and the lane then served and answered 200.
+
+**Residue: the oracle does not cover the bands above the halving.** `causal_cache.cpp` sweeps width 2..16,
+so the width that broke was outside the test's range and the lane found it instead. Extending the sweep to
+{17, 51, 80, 81} was tried and the harness fails fast (`0xC0000409`) at those widths, so covering them
+needs the harness fixed first -- its own piece of work, not a line in the width list. A comment at that
+sweep records both the gap and why it is still open.

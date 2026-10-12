@@ -21,6 +21,14 @@ K8V4KvCausalPlan make_k8v4_kv_causal_plan(int heads, int width, int batch,
     const auto family           = width <= grouped_limit             ? K8V4KvFamily::Grouped
                                   : width <= kGroupedPrefillMaxWidth ? K8V4KvFamily::ParallelGrouped
                                                                      : K8V4KvFamily::Tiled;
+    // The parallel path partitions the QUERY axis, and every chunk sweeps the whole visible key range,
+    // so the number of chunks is the number of times the KV is read: at W=10 the old `(width+1)/2`
+    // split it into two chunks of five and read the KV twice. The kernel's own bound is
+    // `Tokens * GroupSize <= 64`, and GroupSize is QHeads/KVHeads -- 6 here, 8 on the 16-head geometry
+    // -- so a 24-head model can take a 10-wide query tile in one chunk, which is exactly what a
+    // DFlash2 lane at draft 9 runs. Above that the halving stays, so no other width changes shape.
+    constexpr int kHeads24QueryTileMax = 10;
+    const int max_query_tile = heads == 24 ? kHeads24QueryTileMax : grouped_limit;
     if (family == K8V4KvFamily::Tiled)
         return {
             family,
@@ -30,11 +38,19 @@ K8V4KvCausalPlan make_k8v4_kv_causal_plan(int heads, int width, int batch,
             0,
             envelope,
             mxfp8_tiled_partition(heads, width, envelope.max_visible_keys, multiprocessor_count)};
-    const int tiles =
-        family == K8V4KvFamily::ParallelGrouped ? (width + grouped_limit - 1) / grouped_limit : 1;
-    const int query_tile        = family == K8V4KvFamily::ParallelGrouped && width <= 16
-                                      ? (width + 1) / 2
-                                      : std::min(width, grouped_limit);
+    const int tiles = family == K8V4KvFamily::ParallelGrouped && width > max_query_tile
+                          ? (width + grouped_limit - 1) / grouped_limit
+                          : 1;
+    // Three bands, and the guard on the middle one is load-bearing: below the wider tile the whole
+    // width is one chunk; up to 16 it is halved; above that it is capped at the token tile, because
+    // the launch enumerates query tiles 5..10 and a halved width of 26 is not one of them. Dropping
+    // that guard is what made a 51-column warmup prefill fail with "K8V4 parallel plan exceeds its
+    // query tiles" -- the lane refused to serve rather than computing anything wrong.
+    const int query_tile =
+        family == K8V4KvFamily::ParallelGrouped
+            ? (width <= max_query_tile ? width
+                                       : (width <= 16 ? (width + 1) / 2 : grouped_limit))
+            : std::min(width, grouped_limit);
     const int independent_tiles = batch * (heads == 24 ? 4 : 2) * tiles;
     // Decode budgets two CTAs per SM; wider queries start with one and double the
     // budget if complete query-tile groups would leave over 10% of the SMs idle.

@@ -1041,6 +1041,18 @@
       "review": "product",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
     },
+    "src/ops/softmax_attention/dense/causal_cache/k8v4/launch.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the parallel dispatch enumerates query tiles 5..8, and now 9 and 10 as well -- pruned by geometry, because the 16-head geometry's GroupSize is 8 and its kernel bound rejects them. They exist so a 24-head model covers a DFlash2 verify width in one chunk."
+    },
+    "src/ops/softmax_attention/dense/causal_cache/k8v4/plan.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Port change: the parallel path partitions the query axis and every chunk sweeps the whole visible key range, so the chunk count is the KV read count. The plan split W=9..16 as (width+1)/2, which made a DFlash2 lane at draft 9 (W=10) two chunks. The 24-head geometry's kernel bound is Tokens * GroupSize <= 64 with GroupSize 6, so a 10-wide tile is legal and the plan takes the whole width as one chunk when it fits. Harvested from upstream issue #279. Measured: W=10 at 64K 133.824 -> 109.248 us cached, 137.920 -> 113.824 append; W=8 and W=16 unchanged. An earlier version of this change dropped the `width <= 16` guard and every lane on the affected artifacts refused to serve; the three bands are now commented as load-bearing."
+    },
     "src/ops/weight_input.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1453,7 +1465,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "Port change: the device test's own label table carried two more spellings for the same storages (fp8-e4m3fn-row256, nvfp4-g16); it calls ninfer::kv_storage_name() now. Labels only -- no assertion reads them."
+      "reason": "Port change: a comment at the width sweep records that the bands above the halving are not covered and why -- the harness fails fast (0xC0000409) at widths 17 and above, so covering them needs the harness fixed first. Recorded because a defect at width 51 was caught by a lane rather than by this test."
     },
     "tests/ops/softmax_attention/main.cpp": {
       "status": "M",

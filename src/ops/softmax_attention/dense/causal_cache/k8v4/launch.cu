@@ -100,15 +100,35 @@ void execute_parallel(const CausalAttentionOperands& p, K8V4KvReadView cache,
     const auto partial = allocate_causal_partials(workspace, plan.query_heads, plan.width,
                                                   plan.partition.capacity, plan.batch);
     const auto invoke  = [&]<class G>() {
-        switch (plan.query_tile) {
+        // The 24-head geometry has GroupSize 6, so its kernel bound `Tokens * GroupSize <= 64` admits
+        // a 10-wide tile; the 16-head geometry's 8 stops at 8. The plan selects 9 and 10 only for the
+        // first, and instantiating them for the second would fail that assert.
+        if constexpr (G::GroupSize <= 6) {
+            switch (plan.query_tile) {
 #define NINFER_K8V4_PARALLEL(T)                                                                    \
     case T:                                                                                        \
         return parallel_grouped<G, T>(p, cache, plan.partition, partial.view(), stream)
-            NINFER_K8V4_PARALLEL(5);
-            NINFER_K8V4_PARALLEL(6);
-            NINFER_K8V4_PARALLEL(7);
-            NINFER_K8V4_PARALLEL(8);
+                NINFER_K8V4_PARALLEL(5);
+                NINFER_K8V4_PARALLEL(6);
+                NINFER_K8V4_PARALLEL(7);
+                NINFER_K8V4_PARALLEL(8);
+                // 9 and 10 exist so a 24-head model can cover a DFlash2 verify width in ONE query
+                // chunk instead of two, which is one KV read instead of two.
+                NINFER_K8V4_PARALLEL(9);
+                NINFER_K8V4_PARALLEL(10);
 #undef NINFER_K8V4_PARALLEL
+            }
+        } else {
+            switch (plan.query_tile) {
+#define NINFER_K8V4_PARALLEL(T)                                                                    \
+    case T:                                                                                        \
+        return parallel_grouped<G, T>(p, cache, plan.partition, partial.view(), stream)
+                NINFER_K8V4_PARALLEL(5);
+                NINFER_K8V4_PARALLEL(6);
+                NINFER_K8V4_PARALLEL(7);
+                NINFER_K8V4_PARALLEL(8);
+#undef NINFER_K8V4_PARALLEL
+            }
         }
         throw std::logic_error("K8V4 parallel plan exceeds its query tiles");
     };
