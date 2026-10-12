@@ -53,7 +53,11 @@ REPO = Path(__file__).resolve().parents[2]
 JSCPD_VERSION = "5.4.0"  # measured 2026-10-03; see module docstring
 BASELINE = REPO / ".jscpd-baseline.json"
 REPORT_DIR = REPO / ".jscpd-report"  # gitignored; the readable detail when the gate fails
-SCOPE = ["src", "include"]
+# `apps/` is in scope because the three apps carried one guard verbatim -- the console code page class,
+# in cli, serve and perplexity -- and a scan that does not look there cannot see the next one. Its
+# pre-existing clones are in the baseline with everything else's; what the allowance measures is what is
+# *added*.
+SCOPE = ["src", "include", "apps"]
 MIN_LINES = 20
 ALLOW_NEW_CLONES = 5
 
