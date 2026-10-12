@@ -203,6 +203,7 @@ something, and each is named here so it gets used rather than rediscovered.
 | a lingering suspicion of flakiness | `ctest --test-dir build-test --repeat until-fail:5` |
 | what upstream already decided, whether a symptom is known, **or what is proposed and unmerged** | the upstream tracker, **both halves**: `gh issue list --repo Neroued/ninfer --search <term>` **and `gh pr list --repo Neroued/ninfer --state open`** — this project's reference corpus. Survey both: the open pull requests are the unmerged half, and six of one fork's sixteen engine changes (prompt-attention kernels, compact KV formats, overlapped decode, YaRN, agent-client compatibility, a cache redesign) were readable there for a month while only issues were searched, because an issue search cannot return a PR title and no artifact survey can surface an engine change |
 | **an unfamiliar subsystem, a wrong belief about the code, or a claim that a fix works** | **a skill — see [Skills](#skills-and-when-to-reach-for-one) below** |
+| a file you are about to remove | `tools/scripts/reference_audit.py <path>` — every tracked file naming it, every file naming its directory as a path, and every paragraph where retention language sits near a mention, with exit 1 when it finds one. A filename search is not a reference search: six `.stale` reports that two documents recorded as deliberately kept were removed by a guard that only matched names |
 
 CI is installed in two tiers, split by what needs the card. `.github/workflows/ci.yml` runs
 `bash .githooks/pre-commit` on `windows-latest` for every push and pull request to `dev`/`main`, so
@@ -342,7 +343,7 @@ which of the four it means.
   cache capacity, which changes the prefill the plan chooses. A harness that does not record its own
   configuration cannot be compared with one that does, and a repeated run does not test that.
 
-Sixty-six rules, each earned by a failure rather than chosen:
+Sixty-seven rules, each earned by a failure rather than chosen:
 
 - **Run a verification recipe through the recipe.** `ctest --test-dir build-asan -R <broad regex>`
   pulls in device tests, which ASan cannot instrument and which hang: one such run burned fifty
@@ -759,7 +760,11 @@ Sixty-six rules, each earned by a failure rather than chosen:
   `[System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))`, and
   re-read the file with whatever actually consumes it. Five files carried BOMs into a commit this way
   before the audit found them; audit the *committed* files too, because `git status` no longer lists
-  them.
+  them. The same codepage reaches **stdout**: a Python script that prints text read from this tree
+  aborts with `UnicodeEncodeError: 'charmap'` on the first em dash or CJK character, which killed two
+  of this session's own audit scripts mid-run. Print through a helper that replaces non-ASCII
+  (`text.encode("ascii", "replace").decode("ascii")`) or set the stream's encoding, and read the
+  output's size before believing a run that printed nothing.
 - **Compute a tool's memory cost before running it, and refuse the run when it is over budget.** On
   2026-09-29 a new artifact verifier exhausted this 47.8 GiB machine and took it down. Two defects,
   both arithmetic that was available before the run and not done: the NVFP4 parent was assembled from
@@ -846,3 +851,13 @@ Sixty-six rules, each earned by a failure rather than chosen:
   notification, so the per-step log file is the only reliable report of a long run. Instruments, the
   falsified alternatives and two probe defects found on the way:
   `docs/research/silent-shell-death-2026-10-10.md`.
+- **A document that records a file as kept is a reference to it.** A cleanup pass removed six `.stale`
+  conversion reports that two tracked documents had recorded as *renamed rather than deleted, so the
+  provenance survives*, and the guard it used searched for each file's **name**. Both documents
+  described the reports as a set, by their fate, so nothing matched: four of the six described builds
+  survive nowhere, and a conversion report is written at conversion time from source digests, so
+  inspecting an artifact does not regenerate it. `tools/scripts/reference_audit.py` prints every
+  tracked file naming a path, every file naming its directory as a path, and every paragraph where
+  retention language — kept, retained, renamed, preserved, moved to, rather than deleted, disposable —
+  sits near a mention, and exits 1 when it finds one. Run it before removing anything untracked, and
+  read what it prints rather than the exit code alone.

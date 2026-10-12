@@ -103,6 +103,13 @@ def debug_crt_import(path: Path) -> str | None:
 
 
 def main() -> int:
+    # Asked for help, print it and stop. This script gates and packages as soon as it is invoked, so a
+    # bare `--help` used to fall through to a full ctest run -- minutes of the card, and no usage line.
+    if {"-h", "--help"} & set(sys.argv[1:]):
+        print(__doc__.strip())
+        print()
+        print("Usage: python tools/release/package_release.py [version] [--skip-test-gate]")
+        return 0
     positional = [argument for argument in sys.argv[1:] if not argument.startswith("--")]
     skip_gate = "--skip-test-gate" in sys.argv[1:]
     # Default to the version RELEASE_NOTES.md titles. That default used to be v1.1.0, which the notes

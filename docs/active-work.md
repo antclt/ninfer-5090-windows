@@ -3793,7 +3793,10 @@ builds by this port's own tracked recipe — `qwen3_8_27b` in `tools/convert/off
 groupwise recipe — from sources already on disk (`hf-src/Qwen3.8-27B` at 51.8 GB and
 `hf-src/Swift-1.5-Qwen3.8-27b` at 55.5 GB). Nothing in the tree, and no lane in
 `tools/release/profiles.py`, uses either, so they were regenerable and had no role, and both were
-removed: 34.6 GB. Their reports went with them, because a report describes the artifact beside it.
+removed: `out/qwen3_8_27b_bf16.v3.ninfer` (18.7 GB) and `out/qwen3_8_27b_swift15_groupwise.v3.ninfer`
+(15.9 GB), 34.6 GB together. Their reports went with them, because a report describes the artifact
+beside it — and if either is wanted again, the recipe and both sources are still in the tree, which is
+the difference between these two and `_superseded`'s members.
 
 `C:\AI\models\_superseded` is kept in full, and the reason is stronger than the one this file first
 gave: `docs/maintainer/qwen3.8-27b-artifact.md` documents each member's role and states that **none is
