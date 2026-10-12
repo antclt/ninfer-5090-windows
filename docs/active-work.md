@@ -3870,13 +3870,23 @@ round (~7 attention calls against ~1) and winning on acceptance anyway. **Re-mea
 now holds the merged engine's own figures (engine `dc33f6f0`, measured 2026-10-12T18:32Z), so that
 stale entry is gone. What remains true is the method: compare engines, not records.
 
-The `code` cell's acceptance differs between the two engines on **every** lane, and the shifts are
-**mixed in sign**, from -8.9 to +7.4 points. A/B'd on two of them: the pre-merge binary reproduces
-the old table exactly (nvidia 45.9%, quasar 58.0%) while the merged engine reads 44.9% and 49.1%, and
-the pre-merge binary is faster on quasar's `code` cell (402.4 against 342.6 tok/s) while the merged
-one is far faster on nvidia's long cell (187.9 against 104.3). So the shift is the merged engine's own
-behaviour - upstream's 40 commits plus the port's carried features - and not one route of ours: it
-appears in **both** drafter families, the one carried route that could plausibly account for it (the
-NVFP4 `context_kv` materialize) is dflash2-only, and the oracle tests cover the routes this session
-carried. That is what was checked; no per-lane investigation has been done, so a single lane's shift
-being a defect is an open question nobody has asked. The table and the docs carry the merged figures.
+The `code` cell's acceptance differs between the two engines on **every** lane, and it is the cell the
+shipped configuration is chosen by - `CONTEXT.md:98`'s code-weighted bound ("the worst case improves by
+at least as much as the worst disclosed non-code cell gives up"), cited by
+`docs/research/kv-dtype-evidence.md` and by the lane notes in `tools/release/profiles.py`. Measured per
+lane on 2026-10-12 (the pre-merge release binary against the record's merged figures): acceptance is
+lower on five lanes and higher on three, from -8.9 points (quasar dflash2: 58.0 to 49.1, tok/s 397.6 to
+342.6) to +7.4 (swift dflash2: 51.8 to 59.2, tok/s 308.2 to 346.9); tok/s is lower on four lanes and
+higher on four. Mixed in sign and size across both drafter families and both artifact families, which
+is the shape of a changed engine rather than of one broken route - and no lane collapsed.
+
+**What that leaves open is not a detail.** The code-weighted rule chose the per-lane depth, kv dtype and
+proposal head on *pre-merge* code cells, and the merge moved those inputs on both sides of its bound -
+the code cells as tabulated, and the non-code worst case (nvidia dflash2's long-chinese record went
+305.3 to 162.5, while the pre-merge binary reads 104.3 on that cell now and the merged one 187.9). So
+the settings that rule justifies need re-deriving on the merged engine. Nothing here says a shipped
+setting is wrong; it says its justification rests on inputs that no longer hold. This entry first
+called that question unasked, which was imprecise: the per-lane code cell is a studied quantity
+(`docs/research/proposal-head-per-lane-2026-10-10.md` is a per-lane table of it, and
+`docs/research/lane-coverage-2026-10-08.md:289` reads one lane's cell against the published figure), and
+what had not been asked is whether the *merged engine's* shifts leave the rule's conclusions standing.
