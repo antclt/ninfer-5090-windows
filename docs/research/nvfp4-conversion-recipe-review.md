@@ -870,6 +870,23 @@ re-hashed afterwards and all five are unchanged. The six hazardous conversion re
 with a `.stale` suffix rather than deleted, per the recommendation in this section, so the provenance
 survives and the report can no longer be resolved.
 
+**Cleared 2026-10-12, and one correction to the paragraph above.** A repository cleanup removed, from
+`out/`: the `qwen3_8_27b_nvfp4qat.v3.ninfer.old` build and its report (the shipped QAT artifact is the
+2026-10-07 rebuild in `C:\AI\models`, and this section's own finding was that the `.old` copy sat in
+`out/` under a shipped name); the rejected `_nvdiv` build and its report (the rejection is recorded in
+`.audit/models-rebuild.tsv`); `_rebuild_check`'s report; and the session logs and data files that no
+tracked document names. It also removed the six `.stale` reports, **against the recommendation two
+paragraphs above, and that was a mistake.** Four of the six described builds whose artifacts survive
+nowhere on this machine — the three `nvfp4full` v1/v2/v3 builds and the `nvfp4qat` draft — so those
+reports were their only record, and a conversion report is not regenerable: it is written at conversion
+time from the source digests, which inspecting the artifact does not recover. They were untracked, and
+`os.unlink` bypasses the Recycle Bin, so they are not recoverable here. The figures this section quotes
+from them survive in the text above, and the other two (the `.old` QAT and the pre-1.5 Swift builds)
+still have their artifacts under `C:\AI\models\_superseded\`, so their recipes can be re-derived. What
+this pass did keep, deliberately: the four reports a tracked document cites
+(`qwen3_8_27b_nvfp4full`, `qwen3_8_27b_nvfp4nvidia`, and the `exp_bs4`/`exp_ctl` pair), the three chat
+templates, `agent_restore.log`, `agent_session_coding.log` and the three `issue5_*` files.
+
 ### 9.2 Every "official stock" baseline in this repo is the wrong file
 
 §7.2. The local copy is not the published artifact, and the published artifact is not on this

@@ -3751,3 +3751,53 @@ Anthropic, OpenAI, tool, JSON-schema, media, frontend) ran and passed, with
 `ninfer_qwen3_5_tools_real_test` skipped because it needs `NINFER_TEST_ARTIFACT` — and 9/9 on the
 attention and append oracles. The lane figures were re-fingerprinted against the rebuilt engine, so
 the recorded provenance names the binary these fixes are in.
+
+## 2026-10-12 - the cleanup pass: superseded builds, session logs and scratch
+
+The repository and the two working areas beside it had accumulated the superseded builds, session logs
+and one-off scratch of several weeks. A pass removed 39.4 GB, every path verified before it went:
+untracked, cited by no tracked document, and — for the artifacts — superseded by a copy that a shipped
+lane or the artifact reference resolves.
+
+**Removed.** The 18 probe object files at the repository root (48 MB, from the 2026-10-04 and 10-07
+probes, named in no tracked file). `build-bisect` and `build-dbg` (3.1 GB), the two build trees the
+vendored c-review skill names as *stale trees an exclude list must omit* — which is the reason to
+remove them, not to keep them. `out/qwen3_8_27b_nvfp4qat.v3.ninfer.old` (18.4 GB), the superseded QAT
+build whose current copy is the 2026-10-07 rebuild in `C:\AI\models`; the doc that named it called it a
+superseded build sitting in `out/` under a shipped name. `out/qwen3_8_27b_nvfp4full_nvdiv.v3.ninfer`
+(17.6 GB), the bake-off variant the decision log records as built and rejected. Four superseded
+conversion reports and `_rebuild_check`'s. 253 session logs and data files under `out/` that no tracked
+document names, their numbers already landed in `docs/` — the five that *are* cited
+(`agent_restore.log`, `agent_session_coding.log`, the three `issue5_*` files) were kept. The derived
+caches (`.pytest_cache`, `.ruff_cache`, `.mypy_cache`, `.jscpd-report` and the project's own
+`__pycache__` directories; `.venv-test` and `.codegraph` are not caches and were left). The session
+temp directory's spent scratch, keeping the c-review working data, the seventh-defect probe its record
+says was kept, and the two logs the opencode plugins write live. And `C:\AI\models\_rebuild`, 94 logs
+and CSVs whose results are in the docs.
+
+**A mistake, and it is recorded in the documents it contradicted.** The pass also removed the six
+`.stale` conversion reports. `docs/research/nvfp4-conversion-recipe-review.md` and
+`docs/research/nvfp4-block-scale-4-vs-6.md` both record that those six were *renamed rather than
+deleted* precisely so their provenance would survive, and the deletion guard missed it because it
+checked whether a *filename* is cited, not whether a document discusses a file by description. Four of
+the six described builds — the three `nvfp4full` v1/v2/v3 and the `qwen3_8_27b_nvfp4qat` draft — survive
+nowhere on this machine, and a conversion report is written at conversion time from source digests, so
+inspecting an artifact does not regenerate it. They were untracked and `os.unlink` bypasses the Recycle
+Bin, so they are not recoverable. The figures both documents quote survive in their text, and the other
+two builds still have artifacts under `C:\AI\models\_superseded\`. Both documents now carry a dated
+correction. The lesson is one line: a removal guard has to read what a document *says about* a file,
+not only whether it names it.
+
+**Kept, and each needs a decision that is not mine.** `out/qwen3_8_27b_bf16.v3.ninfer` (18.7 GB) and
+`out/qwen3_8_27b_swift15_groupwise.v3.ninfer` (15.9 GB) are full artifacts named in no tracked file and
+not shipped names, but nothing establishes what they were for, so they stay. `C:\AI\models\_superseded`
+(183 GB) holds superseded artifacts, at least one of which (`qwen3_8_27b_nvfp4qat.v3.ninfer.ourq8`) a
+tracked document cites as backing the Q8-endpoint experiment rows, so it is not a bulk deletion
+candidate. The c-review working directories stay until the ledger reconciliation runs.
+
+**Two findings from the pass itself.** `.audit/models-rebuild.tsv` — the decision log for the artifact
+rebuilds, including the `_nvdiv` rejection — was cited by
+`docs/research/target-precision-and-draft-acceptance.md` as its record while being untracked, so the
+citation could not resolve for anyone else; it is committed now. And `docs/README.md` does not describe
+`docs/research/`, `docs/features/` or `docs/upstream-reports/`, three directories holding over a hundred
+documents that other documents cite.

@@ -111,3 +111,9 @@ What was kept is the provenance: `out/exp_ctl_unsloth.ninfer.conversion.json` an
 each, recording the per-object format and shape of both builds. That is the part that is cheap to keep
 and expensive to reconstruct, and it is the same reason the six `.stale` conversion reports were renamed
 rather than deleted.
+
+**Corrected 2026-10-12.** A repository cleanup removed those six `.stale` reports — a mistake, against
+the reasoning in this section. `docs/research/nvfp4-conversion-recipe-review.md` records what it cost:
+four of the six described builds survive nowhere on this machine, and a conversion report is written at
+conversion time, so it is not regenerable by inspecting an artifact. The two `exp_*` reports this
+section is actually about were kept, as was `out/reference_calibrate_nvfp4full.py`.
