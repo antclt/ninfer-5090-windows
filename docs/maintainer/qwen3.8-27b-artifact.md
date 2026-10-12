@@ -31,8 +31,9 @@ plus the official stock. Superseded builds live in `C:\AI\models\_superseded\` r
 them, so no glob or name lookup at the top level can resolve a lane to the wrong file, which is the
 hazard the arrangement exists to remove.
 
-Seven files remain there, about 88.6 GiB on disk -- 124.0 GiB as stated sizes, because two pairs are
-hardlinks of one payload each. None is a duplicate of a shipped file, and **none is regenerable in
+Eleven files remain there -- ten artifacts and the report of one of them -- about 147.5 GiB on disk,
+182.9 GiB as stated sizes, because two pairs are hardlinks of one payload each. None is a duplicate of
+a shipped file, and **none is regenerable in
 this tree**: the converter modules and calibration inputs belong to `cometkim/ninfer` and are
 deliberately not carried here, per the provenance note below. Deleting one is therefore not a matter
 of re-running a conversion, and the recorded rows are the reason several are still wanted:
@@ -44,6 +45,9 @@ of re-running a conversion, and the recorded rows are the reason several are sti
 | `qwen3_8_27b_nvfp4qat.v3.ninfer.ourq8` | backs the Q8-endpoint experiment rows |
 | `nvfp4full_fetched.ninfer` and `qwen3_8_27b_nvfp4full.v3.ninfer.fetched` | one payload, two links; the fetched download behind the 5.00234 row |
 | `qat_fetched.ninfer` and `qwen3_8_27b_nvfp4qat.v3.ninfer.fetched` | one payload, two links; the fetched QUASAR download |
+| `qwen3_8_27b_nvfp4.v3.ninfer` | the official stock; backs the stock rows in `docs/perplexity-baseline.md`, which marks them un-re-measured and therefore suspect, and is read by `tools/release/v3_profile_matrix.py` and `tools/release/verify_shipping_artifacts.py` |
+| `qwen3_8_27b_nvfp4swift.v3.ninfer` | the Swift 1.0 build, named as such by `tools/release/verify_shipping_artifacts.py`; backs the 4.725703 row and is read by both release tools |
+| `qwen3_8_27b_nvfp4swift15_q8draft.v3.ninfer` | the Q8-draft variant `tools/release/v3_profile_matrix.py` measures as `swift15q8` |
 
 Three further files were removed from here on 2026-09-29: the `out/` staging copies of the full,
 NVIDIA and QUASAR artifacts, each byte-identical to its shipped counterpart by size and by sampled

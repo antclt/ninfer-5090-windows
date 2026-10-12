@@ -94,3 +94,14 @@ Model cards contain official artifact facts and source provenance. The
 [conversion guide](weight-conversion.md) is the entry point for making an artifact. Exact config
 fields, parameter expansion and native supported domains are maintained by the code linked from
 these references.
+
+## Dated records
+
+Three directories hold the working record behind the decisions above. They are not user guides and not
+contracts; they are what a later reader needs in order to check a claim instead of taking it on trust.
+
+| Directory | What it holds |
+|---|---|
+| [`research/`](research/) | dated investigations: measurements, comparisons against other engines, and the evidence for a setting that shipped, each written while its question was open |
+| [`features/`](features/) | design notes for runtime work this port carries, including the weight-only NVFP4 DFlash2 runtime and the MSVC test-portability change |
+| [`upstream-reports/`](upstream-reports/) | what this port reported or considered reporting upstream, and the fork-divergence record |

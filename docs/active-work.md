@@ -3788,16 +3788,37 @@ two builds still have artifacts under `C:\AI\models\_superseded\`. Both document
 correction. The lesson is one line: a removal guard has to read what a document *says about* a file,
 not only whether it names it.
 
-**Kept, and each needs a decision that is not mine.** `out/qwen3_8_27b_bf16.v3.ninfer` (18.7 GB) and
-`out/qwen3_8_27b_swift15_groupwise.v3.ninfer` (15.9 GB) are full artifacts named in no tracked file and
-not shipped names, but nothing establishes what they were for, so they stay. `C:\AI\models\_superseded`
-(183 GB) holds superseded artifacts, at least one of which (`qwen3_8_27b_nvfp4qat.v3.ninfer.ourq8`) a
-tracked document cites as backing the Q8-endpoint experiment rows, so it is not a bulk deletion
-candidate. The c-review working directories stay until the ledger reconciliation runs.
+**Resolved by the deep dive that followed.** The two `out/` artifacts turned out to be groupwise-int
+builds by this port's own tracked recipe — `qwen3_8_27b` in `tools/convert/official_recipes.py` *is* the
+groupwise recipe — from sources already on disk (`hf-src/Qwen3.8-27B` at 51.8 GB and
+`hf-src/Swift-1.5-Qwen3.8-27b` at 55.5 GB). Nothing in the tree, and no lane in
+`tools/release/profiles.py`, uses either, so they were regenerable and had no role, and both were
+removed: 34.6 GB. Their reports went with them, because a report describes the artifact beside it.
 
-**Two findings from the pass itself.** `.audit/models-rebuild.tsv` — the decision log for the artifact
-rebuilds, including the `_nvdiv` rejection — was cited by
+`C:\AI\models\_superseded` is kept in full, and the reason is stronger than the one this file first
+gave: `docs/maintainer/qwen3.8-27b-artifact.md` documents each member's role and states that **none is
+regenerable in this tree** — the converter modules and calibration inputs belong to `cometkim/ninfer`
+and are deliberately not carried — so deleting one is not a matter of re-running a conversion, and the
+recorded rows are what they back. Every member is named by a tool or a document with a stated role: the
+release tools read four of them (`v3_profile_matrix.py` and `verify_shipping_artifacts.py` name the
+official stock, the Swift 1.0 build and the Q8-draft variant), `perplexity-baseline.md` marks its stock
+rows as verified from there, and `tools/convert/calibration.py` names the fetched full download. That
+directory's own table was stale — it said seven files and 88.6 GiB where the directory holds eleven
+entries and 147.5 GiB on disk — so the three members it omitted are now listed with their roles. The
+c-review working directories in the session temp area stay until the ledger reconciliation runs.
+
+**On the documents, the answer is that all of them are needed, and that was checked rather than
+assumed.** The two `docs/features/` notes describe work that is in this tree: the tests carry the
+`const`-plus-`std::sqrt` pattern the MSVC note describes, and `docs/serving.md` documents the
+`--spec dflash2` runtime the other one describes. The research corpus is cited by design, one dated
+investigation pointing at the next. The real defect was the map, not the documents.
+
+**Three findings from the pass and its deep dive.** `.audit/models-rebuild.tsv` — the decision log for
+the artifact rebuilds, including the `_nvdiv` rejection — was cited by
 `docs/research/target-precision-and-draft-acceptance.md` as its record while being untracked, so the
-citation could not resolve for anyone else; it is committed now. And `docs/README.md` does not describe
+citation could not resolve for anyone else; it is committed now. `docs/README.md` did not describe
 `docs/research/`, `docs/features/` or `docs/upstream-reports/`, three directories holding over a hundred
-documents that other documents cite.
+documents that other documents cite; it now has a "Dated records" section for them. And the deep dive
+re-checked the one removal that looked as if it might have cost data — the needle CSVs under
+`_rebuild` — against the document that names them: they live in `profiles/bench/needle-2026-10-09/`, all
+thirteen of them, so the `_rebuild` copies were duplicates and nothing was lost there.
