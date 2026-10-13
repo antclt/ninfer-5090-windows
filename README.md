@@ -8,6 +8,54 @@ Docker. It runs text, image, and video prompts through a local CLI or OpenAI-/An
 HTTP APIs. The runtime is deliberately specialized: one GPU, one resident model, and a
 startup-fixed capacity of one to eight active requests.
 
+## Start here
+
+Everything this repository does is three commands: build the engine, convert a model, run a lane.
+
+**1 - Build the engine.** MSVC and CUDA 13.3; see [Windows](#windows) for the full prerequisite
+list and for the exit-code contract.
+
+```bat
+call "<VisualStudio>\VC\Auxiliary\Build\vcvars64.bat" x64
+cmake -B build -S . -G Ninja -DCMAKE_CUDA_ARCHITECTURES=120a ^
+      -DNINFER_ENABLE_AVX2=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release -j
+copy ffmpeg\bin\*.dll build\apps\
+```
+
+The last line is not optional: without the FFmpeg DLLs beside the executable, the process exits
+with `0xC0000135` and prints nothing.
+
+**2 - Convert a model.** Five recipes over four weight lines; the unsloth line ships twice, because
+one image cannot serve both speculative routes. Sources are fetched at pinned revisions and converted
+locally - nothing is downloaded prebuilt.
+
+```bat
+build_model.py --list      :: every recipe, its pinned sources, and what it is for
+download_model.bat         :: fetch the pinned source checkpoints
+build_model.py quasar      :: build one image
+```
+
+**3 - Run a lane.** Eight launchers, one per measured-optimal profile: four weight lines x
+{MTP, DFlash2}. All eight are vision-capable at the full 262,144-token context, and each carries its
+own measured draft depth and KV format.
+
+| Launcher | Weight line | Route (draft) | KV |
+|---|---|---|---|
+| `start_quasar_v3_dflash2_vision.bat` | QUASAR | DFlash2 (7) | k8v4 |
+| `start_quasar_v3_mtp4_vision.bat` | QUASAR | MTP (4) | fp8 |
+| `start_ninfer_v3_dflash2_vision.bat` | unsloth, no-exception | DFlash2 (9) | fp8 |
+| `start_ninfer_v3_mtp4_vision.bat` | unsloth, BF16 exceptions | MTP (4) | k8v4 |
+| `start_swift_v3_dflash2_vision.bat` | Swift 1.5 | DFlash2 (7) | fp8 |
+| `start_swift_v3_mtp4_vision.bat` | Swift 1.5 | MTP (5) | k8v4 |
+| `start_nvidia_v3_dflash2_vision.bat` | NVIDIA ModelOpt | DFlash2 (9) | fp8 |
+| `start_nvidia_v3_mtp4_vision.bat` | NVIDIA ModelOpt | MTP (4) | k8v4 |
+
+That table is generated from `tools/release/profiles.py`, which is the only place lane settings are
+defined; the measured figures for each are under [Profiles and launchers](#profiles-and-launchers).
+
+## Release history
+
 **v1.2.0 is the current release and the first since v1.1.0.** It adds a fourth and fifth artifact
 (Swift 1.5 and NVIDIA ModelOpt, both built by this port), taking the product to **eight measured
 launchers over five artifacts**, every one vision-capable at the full 262,144-token context with
