@@ -121,20 +121,21 @@ and every profile reaches the full native context.
 | `start_quasar_v3_dflash2_vision.bat` | QUASAR | DFlash2 (7) | yes | 262,144 | **317 tok/s** | 54.8% |
 | `start_quasar_v3_mtp4_vision.bat` | QUASAR | MTP (4) | yes | 262,144 | **224 tok/s** | 60.4% |
 | `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **366 tok/s** | 51.7% |
-| `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 207 tok/s | 55.0% |
+| `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 196 tok/s | 56.1% |
 | `start_swift_v3_dflash2_vision.bat` | Swift 1.5 | DFlash2 (7) | yes | 262,144 | **301 tok/s** | 50.9% |
 | `start_swift_v3_mtp4_vision.bat` | Swift 1.5 | MTP (5) | yes | 262,144 | 228 tok/s | 58.0% |
 | `start_nvidia_v3_dflash2_vision.bat` | NVIDIA | DFlash2 (9) | yes | 262,144 | **333 tok/s** | 44.9% |
 | `start_nvidia_v3_mtp4_vision.bat` | NVIDIA | MTP (4) | yes | 262,144 | 208 tok/s | 52.2% |
 
-**Four lanes ship `--kv-dtype k8v4`** - `start_quasar_v3_dflash2_vision.bat`,
-`start_quasar_v3_mtp4_vision.bat`, `start_ninfer_v3_mtp4_vision.bat` and
-`start_swift_v3_mtp4_vision.bat`; the other four ship `fp8`, because the format's measured effect is
-artifact-dependent and each adoption had to clear the code-weighted bound. `start_swift_v3_dflash2_vision.bat`
-moved from k8v4 to fp8 on 2026-10-12 on a re-measurement inside the matrix's own protocol - fp8's worst
-deciding cell 214.7 against k8v4's 190.7, +11.2%, with the costs disclosed (the 225-character code prompt
-294.7 against 324.8, long Chinese 171.9 against 186.4) - after the first attempt at this question was
-found to be measuring a hand-rolled protocol that ranked configurations at a sampler nobody serves by.
+**Three lanes ship `--kv-dtype k8v4`** - `start_quasar_v3_dflash2_vision.bat`,
+`start_quasar_v3_mtp4_vision.bat` and `start_swift_v3_mtp4_vision.bat`; the other five ship `fp8`,
+because the format's measured effect is artifact-dependent and each adoption had to clear the code-weighted
+bound. Two lanes moved on 2026-10-13, both on an interleaved comparison at three rounds:
+`start_swift_v3_dflash2_vision.bat` from k8v4 to fp8 (fp8's worst deciding cell 222.0 against k8v4's 205.7,
++7.3% against a 0.9% spread) and `start_ninfer_v3_mtp4_vision.bat` from k8v4 to fp8 (149.5 against 139.1,
++7.0% against 0.8%). Each earlier attempt at this question measured a hand-rolled protocol - one prompt,
+temperature 0, no warmup - which ranks configurations at a sampler nobody serves by, and a fresh fingerprint
+against a recorded one, which is a cross-session comparison the interleave exists to replace.
 code-weighted bound ([evidence](docs/research/kv-dtype-evidence.md)). Every figure in the table is its lane's last
 measurement, carrying the identity of what measured it in
 [`lane_figures.json`](tools/release/lane_figures.json), which the pre-commit hook checks.

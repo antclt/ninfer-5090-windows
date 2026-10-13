@@ -4147,11 +4147,17 @@ that the question is answered.
 **And the eight comparisons are open, not settled.** They were run at one round each, so their paired
 spread was never measured: the first re-read computed zero and therefore called a 0.2% gap a decision,
 which is a control that cannot fail. With one round there is nothing to compare a margin against, so all
-eight are unresolved work with a known next step - three rounds, which is running. The one exception is
-`swift dflash2`, whose move to fp8 is corroborated by an independent instrument rather than by the sweep
-alone: the lane fingerprint reads fp8's worst deciding cell at 216.2 against k8v4's 190.7, +13.4%, where
-the sweep read +11.2% - two measurements, agreeing. The other seven stay open until the spread is
-measured, and the tool now refuses a zero threshold rather than turning one into eight decisions.
+eight are unresolved work with a known next step - three rounds, which is running. **Both format moves rest on the interleaved comparison alone, and a claim that one was corroborated is
+withdrawn.** `ninfer mtp4` moved from k8v4 to fp8 on the three-round interleaved sweep (fp8's worst
+deciding cell 149.5 against k8v4's 139.1, +7.0% against the comparison's own 0.8% spread), and the same
+sweep moved `swift dflash2` (+7.3% against 0.9%). An earlier entry here said the swift move was
+"corroborated independently by the lane fingerprint" - 216.2 against 190.7 - and **that was wrong**: a
+fresh fingerprint run compared against a *recorded* one is a cross-session comparison, which is precisely
+the confound `compare_kv_formats.py` was deleted for and `compare_lane_configs.py` interleaves to remove.
+The ninfer mtp4 fingerprint made the error visible by disagreeing in sign: its fresh fp8 run reads
+long-code 142.0 where the record's k8v4 figure is 153.8, -7.7%, against the sweep's +7.0%. Neither figure
+is evidence about the other; the interleaved sweep is the instrument, and the fingerprint's role is to
+record what a lane delivers, not to compare two configurations.
 
 **The three-round sweep has run, and these are the verdicts against each comparison's own spread.**
 

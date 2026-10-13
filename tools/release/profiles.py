@@ -205,8 +205,8 @@ PROFILES: list[dict[str, Any]] = [
               "prefill -- is no longer needed to improve it. Depth re-swept 2026-10-08 against depth 7 on all five domains, one invocation per domain, three rounds each: the worst domain decides, and on it (chinese) depth 9 reads 143.1 against 141.0 and repeats at 137.7 against 135.5, margins of 1.5% and 1.6% against within-run spreads of 0.3-1.2%. Code +22.6%, dialogue +31.5% and repetition +12.1% also favour depth 9; prose is the known cost at -4.2% and is not the deciding domain. Non-speculative control 80.1-84.8 tok/s. Depth re-measured 2026-10-09 through the matrix's own widths protocol with the prompts supplied from a file, the served sampling, three interleaved rounds inside one lane each: depth 9 leads on all three treatments -- the 225-character code prompt 378.4 against 352.6 tok/s (+7.3%, spreads 2.3/1.5%), 36,000 characters of real code 194.3 against 188.8 (+2.9%, 1.4/0.3%) and 36,000 characters of Chinese 252.1 against 227.5 (+10.8%, 0.5/0.4%). The greedy readings that disagreed (+1.9% on one prompt, -15% on another) were single-run comparisons whose spreads cannot resolve anything this size, which is why a paired sweep across lane restarts was withdrawn. The figures beside this note are at the shipped depth 9 and were stale from before it. See docs/research/lane-coverage-2026-10-08.md."),
     dict(file="start_ninfer_v3_mtp4_vision.bat", port=8089, art=NVFP4FULL, device_state_slots=1,
          label="NVFP4-full + MTP4 + Vision", model_id="qwen3.8-27b-nvfp4-v3-mtp4-vision",
-         spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=207.1, acc="55.0%", runtime="8.07 GiB", free="4.45 GiB",
+         spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="fp8",
+         tok=196.0, acc="56.1%", runtime="8.07 GiB", free="4.45 GiB",
          note="MTP lane on the second artifact, and the one lane where the BF16 exception "
               "projections earn their keep: encoding them to NVFP4 to fit the DFlash2 lane's "
               "context costs that lane acceptance points and throughput, measured interleaved "
