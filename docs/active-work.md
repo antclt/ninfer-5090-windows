@@ -4099,13 +4099,28 @@ nobody serves by ranks them for a regime that does not exist. Every comparison o
 window or a KV format must be taken at the served sampling and after a discarded warmup, which is what
 the fingerprint does and what the four new tools did not.
 
-**The campaign's final answers.** 262k works on every lane (8/8, verified). DFlash2 is faster than MTP4
-on every artifact (+41% to +74%, acceptance disclosed) - that comparison came from the fingerprint's own
-record, so it stands. QUASAR QAT leads corpus perplexity at 4.6849. No dflash2 lane over-refuses (0 of
-20 hard-safe each; refusal classification is insensitive to the sampling, so that stands). Aggregate
-throughput saturates by concurrency 2 and per-request throughput halves by 4. Decode p99 is 0.63 s.
-**Every shipped format and depth stands as chosen**, and the two that looked wrong were artifacts of the
-instrument rather than of the product.
+**The fifth gap, built and measured: session state drift.** `tools/bench/probe_session_drift.py` sets a
+random 12-hex build code in the first turn, then runs forty turns of distinct corpus work each ending in
+a rephrased probe, scored by exact match, and reports the retention and the turn it first fails. Two
+rules from this session are baked in: every turn is a distinct prompt (a repeat is served from the replay
+path and would score the cache), and the requests carry `DOCUMENTED_SAMPLING` - temperature 1.0, top_p
+0.95, top_k 20, the set the model card's coding benchmarks are measured under.
+
+Measured on the ninfer dflash2 lane: **retention 35/40 = 88%, drift point turn 32**. The failures are
+fragments rather than silence - `d010`, `d0101`, `d010127c` - so the constraint decays rather than
+vanishing, and turn 25 already shows a partial code. **One confound, stated rather than hidden**: the
+probe used `--max-tokens 64` on a reasoning lane, which can truncate an answer before it arrives - the
+same trap the long-context tool hit and fixed with a 512-token budget. So 88% is a floor, not a
+measurement, and the re-run wants the larger budget before the figure is quoted. What the run does
+establish is that the probe measures what it claims to and that degradation is observable.
+
+**The format question, finally answered in the protocol that decides.** The corrected sweep ran all eight
+comparisons through `run_profile` and produced one decision: **swift dflash2 ships k8v4 and fp8 beats it
+by 11.2%** on the worst deciding cell (214.7 against 190.7), with the costs disclosed - the `code` cell
+294.7 against 324.8 and long Chinese 171.9 against 186.4. Every other comparison is inside the spread,
+including both dflash2 depths at 0.2% and 0.8%, which confirms the 6.5% and 8.1% those lanes showed
+earlier were artifacts of the hand-rolled protocol. The lane's field is changed to fp8 and its figures
+still need re-fingerprinting and folding before the change is committed.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,

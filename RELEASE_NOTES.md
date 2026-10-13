@@ -170,10 +170,10 @@ that earlier builds shipped.
 | Launcher | Artifact | Spec | Vision | Context | Decode | Draft accept |
 | --- | --- | --- | --- | --- | --- | --- |
 | `start_quasar_v3_dflash2_vision.bat` | QUASAR QAT | DFlash2 (7) | yes | 262,144 | **317 tok/s** | 54.8% |
-| `start_quasar_v3_mtp4_vision.bat` | QUASAR QAT | MTP (4) | yes | 262,144 | **225 tok/s** | 60.4% |
-| `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **361 tok/s** | 51.7% |
+| `start_quasar_v3_mtp4_vision.bat` | QUASAR QAT | MTP (4) | yes | 262,144 | **224 tok/s** | 60.4% |
+| `start_ninfer_v3_dflash2_vision.bat` | NVFP4-full | DFlash2 (9) | yes | 262,144 | **366 tok/s** | 51.7% |
 | `start_ninfer_v3_mtp4_vision.bat` | NVFP4-full | MTP (4) | yes | 262,144 | 207 tok/s | 55.0% |
-| `start_swift_v3_dflash2_vision.bat` | Swift 1.5 | DFlash2 (7) | yes | 262,144 | **347 tok/s** | 59.2% |
+| `start_swift_v3_dflash2_vision.bat` | Swift 1.5 | DFlash2 (7) | yes | 262,144 | **301 tok/s** | 50.9% |
 | `start_swift_v3_mtp4_vision.bat` | Swift 1.5 | MTP (5) | yes | 262,144 | 228 tok/s | 58.0% |
 | `start_nvidia_v3_dflash2_vision.bat` | NVIDIA | DFlash2 (9) | yes | 262,144 | **333 tok/s** | 44.9% |
 | `start_nvidia_v3_mtp4_vision.bat` | NVIDIA | MTP (4) | yes | 262,144 | 208 tok/s | 52.2% |
@@ -186,10 +186,14 @@ across sessions, so it is the column to trust in a comparison. Each row is its l
 carrying the identity of what measured it in `tools/release/lane_figures.json`, which the pre-commit
 hook checks; the rows were re-measured on 2026-10-09, after the 2026-09-30 pass this table was first
 built from and the 2026-10-07 re-measurement that read 10.3-48.7% lower on seven of them.
-**Five lanes ship `--kv-dtype k8v4`** — `start_quasar_v3_dflash2_vision.bat`,
-`start_quasar_v3_mtp4_vision.bat`, `start_ninfer_v3_mtp4_vision.bat`,
-`start_swift_v3_dflash2_vision.bat` and `start_swift_v3_mtp4_vision.bat`; the other three ship `fp8`,
-because the format's measured effect is artifact-dependent and each adoption had to clear the
+**Four lanes ship `--kv-dtype k8v4`** - `start_quasar_v3_dflash2_vision.bat`,
+`start_quasar_v3_mtp4_vision.bat`, `start_ninfer_v3_mtp4_vision.bat` and
+`start_swift_v3_mtp4_vision.bat`; the other four ship `fp8`, because the format's measured effect is
+artifact-dependent and each adoption had to clear the code-weighted bound. `start_swift_v3_dflash2_vision.bat`
+moved from k8v4 to fp8 on 2026-10-12 on a re-measurement inside the matrix's own protocol - fp8's worst
+deciding cell 214.7 against k8v4's 190.7, +11.2%, with the costs disclosed (the 225-character code prompt
+294.7 against 324.8, long Chinese 171.9 against 186.4) - after the first attempt at this question was
+found to be measuring a hand-rolled protocol that ranked configurations at a sampler nobody serves by.
 code-weighted bound ([evidence](docs/research/kv-dtype-evidence.md)). **This block said "re-measured 2026-09-30" and dated
 the table to that pass as if it were current** — the figures are now the 2026-10-09 re-measurements,
 and `profiles.py` names each earlier set they replaced.

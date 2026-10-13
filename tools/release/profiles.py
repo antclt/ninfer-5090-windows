@@ -169,7 +169,7 @@ PROFILES: list[dict[str, Any]] = [
     dict(file="start_quasar_v3_mtp4_vision.bat", port=8087, art=QUASAR, device_state_slots=1,
          label="QUASAR QAT + MTP4 + Vision", model_id="qwen3.8-27b-quasar-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=224.7, acc="60.4%", runtime="8.07 GiB", free="5.17 GiB",
+         tok=223.8, acc="60.4%", runtime="8.07 GiB", free="5.17 GiB",
          note="Depth 5 shipped here from 2026-09-28 records that no longer reproduce, and re-swept "
               "2026-09-30 over depths 1-5 on five domains at three interleaved rounds each, this "
               "depth changes to 4. d5 wins two domains and loses three, badly: code 183.0 against "
@@ -188,7 +188,7 @@ PROFILES: list[dict[str, Any]] = [
     dict(file="start_ninfer_v3_dflash2_vision.bat", port=8088, art=NVFP4FULLNOEX, device_state_slots=1,
          label="NVFP4-full + DFlash2 + Vision", model_id="qwen3.8-27b-nvfp4-v3-dflash2-vision",
          spec="dflash2", draft=9, vision=True, lm_head=True, ctx=262144, kv_dtype="fp8",
-         tok=361.4, acc="51.7%", runtime="10.6 GiB", free="2.85 GiB",
+         tok=366.0, acc="51.7%", runtime="10.6 GiB", free="2.85 GiB",
          note="This lane is REFUSED at startup on the BF16-exception image and was, until "
               "2026-09-30. The refusal's own arithmetic: at 262,144 with Vision it needs 11.63 GiB "
               "of reservation plus 1 GiB of automatic headroom against 12.33 GiB available after "
@@ -232,8 +232,8 @@ PROFILES: list[dict[str, Any]] = [
               "winning that column."),
     dict(file="start_swift_v3_dflash2_vision.bat", port=8090, art=SWIFT15, device_state_slots=1,
          label="Swift 1.5 + DFlash2 + Vision", model_id="qwen3.8-27b-swift15-v3-dflash2-vision",
-         spec="dflash2", draft=7, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=346.9, acc="59.2%", runtime="8.83 GiB", free="4.20 GiB",
+         spec="dflash2", draft=7, vision=True, lm_head=True, ctx=262144, kv_dtype="fp8",
+         tok=300.8, acc="50.9%", runtime="8.83 GiB", free="4.20 GiB",
          note="Swift 1.5 replaces Swift 1.0 on both Swift lanes; these figures are measured "
               "2026-09-30 with `profile` mode through this launcher's own flags. Width 7 was measured "
               "against every window 1-15 on the code domain and re-measured on four others: 13 is "
