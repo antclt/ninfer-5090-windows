@@ -99,8 +99,56 @@ def main() -> int:
         winner = a if a_worst > b_worst else b
         print(f"\n  worst deciding cell: {a} {a_worst:.1f} against {b} {b_worst:.1f}"
               f"  ->  {winner} by {margin:.1f}%")
-        print(f"  {'DECISION' if margin > 10.3 else 'NOT A DECISION'} at this card's 10.3% "
-              f"session spread, inside the protocol the shipped table uses")
+
+        # The threshold is the spread of *this* comparison, not the card's session spread. The rule says
+        # so - "a margin smaller than the measurement's own spread is not a decision", contrasted in the
+        # same sentence with "spreads that reach 21% when the protocol compares lane restarts" - and this
+        # tool was hardcoding 10.3%, the session figure, which is the wrong one for an interleaved run:
+        # interleaving is what removes the session drift, and what remains is the spread within each
+        # candidate's own rounds.
+        spreads = {}
+        for value in values:
+            per_cell = []
+            for cell in ("code", "long-code"):
+                rates = [r[cell] for r in runs[value] if cell in r]
+                if len(rates) > 1 and statistics.mean(rates):
+                    per_cell.append((max(rates) - min(rates)) / statistics.mean(rates) * 100.0)
+            spreads[value] = max(per_cell) if per_cell else 0.0
+        paired = max(spreads.values()) if spreads else 0.0
+        print("  paired spread (this comparison's own, from the rounds): "
+              + ", ".join(f"{v} {s:.1f}%" for v, s in spreads.items())
+              + f"  ->  threshold {paired:.1f}%")
+
+        if paired == 0.0:
+            # A threshold of zero is a control that cannot fail: with one round per candidate the
+            # spread is not measured at all, and any margin would read as a decision. The first version
+            # of this re-read did exactly that and called a 0.2% gap a decision. Say unmeasured.
+            print(f"  SPREAD UNMEASURED (one round per candidate): the margin is {margin:.1f}%, and "
+                  f"whether it clears the noise is unknown. OPEN - run more rounds, then this tool can "
+                  f"decide.")
+        elif margin > paired:
+            print(f"  DECISION: {winner} leads by {margin:.1f}% against this comparison's own "
+                  f"{paired:.1f}% spread")
+        elif len(runs[a]) > 1 and len(runs[b]) > 1:
+            # the rule's tie-breaker, verbatim: "when the worst-case gap is itself inside the spread, the
+            # mean decides". Reported as what it is - a mean decision inside the spread - not as a tie.
+            def mean_of(value: str) -> float:
+                per_round = []
+                for record in runs[value]:
+                    rates = [record[c] for c in ("code", "long-code") if c in record]
+                    if rates:
+                        per_round.append(statistics.mean(rates))
+                return statistics.mean(per_round) if per_round else 0.0
+
+            a_mean, b_mean = mean_of(a), mean_of(b)
+            mean_winner = a if a_mean > b_mean else b
+            print(f"  INSIDE THE SPREAD ({margin:.1f}% < {paired:.1f}%), so the mean decides: "
+                  f"{a} {a_mean:.1f} against {b} {b_mean:.1f} -> {mean_winner}")
+            print("  Unresolved as a worst-case decision; more rounds narrows the spread, and the "
+                  "question stays open until one of the two separates.")
+        else:
+            print(f"  INSIDE THE SPREAD ({margin:.1f}% < {paired:.1f}%) and too few rounds for the "
+                  f"mean to decide - open, and more rounds is the method")
     return 0
 
 

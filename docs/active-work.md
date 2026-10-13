@@ -4132,11 +4132,26 @@ preserved the numerics, the engine is not the difference, and the docs' perplexi
 selection from 2026-09-22/26 rather than today's. Two things follow: the rows should be re-measured before
 they are quoted as current, and the merge's numerical fidelity is now measured rather than assumed.
 
-**Every open item is now closed or named.** Unit tests for the session's tools, wired into the hook. The
-format question answered in the protocol that decides, with one shipped lane moved. Session state drift
-built and measured (88% retention, drift point turn 32, with the token-budget confound stated and the
-re-run named). Per-lane percentiles read from the sweep's own request logs. Per-artifact perplexity
-spot-checked, with a 10.3% favourable difference recorded and its cause open.
+**Every open item is closed, and the wording that said so was wrong in two places.** The rule about a
+margin and a spread was misread by the tool that cites it: `compare_lane_configs.py` hardcoded the card's
+10.3% *session* spread as its threshold, where the rule says "a margin smaller than the measurement's own
+spread" and contrasts that in the same sentence with the 21% spreads of a protocol that restarts lanes.
+Interleaving exists to remove the session drift, so the threshold for an interleaved comparison is the
+spread within each candidate's own rounds - about 1% - and reading the wrong one made the tool refuse
+margins the paired evidence supports. The tool now computes that spread from its rounds, applies the
+rule's own tie-breaker (the mean) when a gap is inside it, and says **open** rather than declaring a tie.
+`CONTEXT.md`'s sentence is sharpened to name what "its own spread" means and to say that being inside it
+leaves the question open, never closed - the rule says do not *act* on a margin the noise can produce, not
+that the question is answered.
+
+**And the eight comparisons are open, not settled.** They were run at one round each, so their paired
+spread was never measured: the first re-read computed zero and therefore called a 0.2% gap a decision,
+which is a control that cannot fail. With one round there is nothing to compare a margin against, so all
+eight are unresolved work with a known next step - three rounds, which is running. The one exception is
+`swift dflash2`, whose move to fp8 is corroborated by an independent instrument rather than by the sweep
+alone: the lane fingerprint reads fp8's worst deciding cell at 216.2 against k8v4's 190.7, +13.4%, where
+the sweep read +11.2% - two measurements, agreeing. The other seven stay open until the spread is
+measured, and the tool now refuses a zero threshold rather than turning one into eight decisions.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,

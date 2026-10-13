@@ -77,7 +77,13 @@ when two depths were found to have been chosen from stale figures. Two caveats t
 it is only as good as the domains it is run on, which is why a prompt can now come from a file
 (`v3_profile_matrix.py --domain-from-file`), and a margin smaller than the measurement's own spread is
 not a decision -- the deciding margins have been 0.3 to 1.6 %, against spreads that reach 21 % when the
-protocol compares lane restarts. Evaluated 2026-10-09: the alternative of constraining the worst case to a
+protocol compares lane restarts. **"The measurement's own spread" means the spread of the comparison
+actually taken, and for an interleaved one that is the spread within each candidate's own rounds** -
+about 1 % here - not the card's 10.3 % session-to-session figure, which interleaving exists to remove.
+Read the wrong one and the rule starts refusing margins the paired evidence supports, which is what
+`compare_lane_configs.py` did until 2026-10-13. **And being inside the spread leaves the question open,
+never closed**: the rule says do not *act* on a margin the noise can produce, and the method for settling
+it is more rounds. A case inside its own spread is unresolved work with a known next step. Evaluated 2026-10-09: the alternative of constraining the worst case to a
 floor and then ranking by the mean was refused by measurement -- on Swift 1.5 it would have shipped depth 9,
 which is 28 % slower than depth 7 on long Chinese, acceptance falling from 30.0 % to 16.9 %.
 
