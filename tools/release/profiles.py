@@ -40,7 +40,7 @@ it: at HEAD `can_release_continuation` and the reclaim have zero occurrences, an
 on 2026-10-06 with `tools/release/repro_251.py`, and **the cliff is back when the pools fill**: reuse
 holds for 1 conversation with no host backing, for 2 with a ~2-image host quota, and for all six only
 because 8 GiB of quota is more than six conversations need -- which is capacity, not reclamation
-(`docs/research/prefix-state-eviction.md`, last section). The cause is a policy rather than a missing
+The cause is a policy rather than a missing
 path: probes located every rejection at the value gate that forbids displacing a reused endpoint for an
 admission with no demonstrated reuse, so it is a stream of *distinct* conversations that hits it, not a
 single agent session with many turns. So the cliff is bounded by
@@ -110,8 +110,7 @@ NVFP4FULLNOEX = "qwen3_8_27b_nvfp4full_noex.v3.ninfer"
 # Swift 1.0's image is gone from this table rather than renamed: `SWIFT` was withdrawn in the same
 # wave that moved the lanes, because a constant naming a retired artifact is reachable surface that
 # reads as current. Its file is kept under models/_superseded/ and the matrix harness still addresses
-# it there, since every Swift 1.5 figure in docs/research/swift15-lane-measurement.md is quoted
-# against it as a same-day control.
+# it there, since every Swift 1.5 figure is quoted against it as a same-day control.
 #
 # Two things distinguish this build from Swift 1.0's and both are measured rather than inherited.
 # Its ModelOpt export is structurally identical -- 401 sites, the same 193 NVFP4 MLP and 208 FP8
@@ -202,7 +201,7 @@ PROFILES: list[dict[str, Any]] = [
               "about 1.50 GiB free, so the split into two images remained necessary and the margin on "
               "this class of lane was thin. The guard now returns about 1.35 GiB, and "
               "`--prefill-chunk 4096` -- measured and rejected, it returns the same memory for -2.3% "
-              "prefill -- is no longer needed to improve it. Depth re-swept 2026-10-08 against depth 7 on all five domains, one invocation per domain, three rounds each: the worst domain decides, and on it (chinese) depth 9 reads 143.1 against 141.0 and repeats at 137.7 against 135.5, margins of 1.5% and 1.6% against within-run spreads of 0.3-1.2%. Code +22.6%, dialogue +31.5% and repetition +12.1% also favour depth 9; prose is the known cost at -4.2% and is not the deciding domain. Non-speculative control 80.1-84.8 tok/s. Depth re-measured 2026-10-09 through the matrix's own widths protocol with the prompts supplied from a file, the served sampling, three interleaved rounds inside one lane each: depth 9 leads on all three treatments -- the 225-character code prompt 378.4 against 352.6 tok/s (+7.3%, spreads 2.3/1.5%), 36,000 characters of real code 194.3 against 188.8 (+2.9%, 1.4/0.3%) and 36,000 characters of Chinese 252.1 against 227.5 (+10.8%, 0.5/0.4%). The greedy readings that disagreed (+1.9% on one prompt, -15% on another) were single-run comparisons whose spreads cannot resolve anything this size, which is why a paired sweep across lane restarts was withdrawn. The figures beside this note are at the shipped depth 9 and were stale from before it. See docs/research/lane-coverage-2026-10-08.md."),
+              "prefill -- is no longer needed to improve it. Depth re-swept 2026-10-08 against depth 7 on all five domains, one invocation per domain, three rounds each: the worst domain decides, and on it (chinese) depth 9 reads 143.1 against 141.0 and repeats at 137.7 against 135.5, margins of 1.5% and 1.6% against within-run spreads of 0.3-1.2%. Code +22.6%, dialogue +31.5% and repetition +12.1% also favour depth 9; prose is the known cost at -4.2% and is not the deciding domain. Non-speculative control 80.1-84.8 tok/s. Depth re-measured 2026-10-09 through the matrix's own widths protocol with the prompts supplied from a file, the served sampling, three interleaved rounds inside one lane each: depth 9 leads on all three treatments -- the 225-character code prompt 378.4 against 352.6 tok/s (+7.3%, spreads 2.3/1.5%), 36,000 characters of real code 194.3 against 188.8 (+2.9%, 1.4/0.3%) and 36,000 characters of Chinese 252.1 against 227.5 (+10.8%, 0.5/0.4%). The greedy readings that disagreed (+1.9% on one prompt, -15% on another) were single-run comparisons whose spreads cannot resolve anything this size, which is why a paired sweep across lane restarts was withdrawn. The figures beside this note are at the shipped depth 9 and were stale from before it."),
     dict(file="start_ninfer_v3_mtp4_vision.bat", port=8089, art=NVFP4FULL, device_state_slots=1,
          label="NVFP4-full + MTP4 + Vision", model_id="qwen3.8-27b-nvfp4-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="fp8",
@@ -254,7 +253,7 @@ PROFILES: list[dict[str, Any]] = [
               "documented default domain, so the shipped encoding is settled by measurement rather "
               "than merely retained. It does NOT hold everywhere: on `chinese` the ordering reverses "
               "and Q8 is 11.7% faster with 4.6 points better acceptance. This note's figures are "
-              "`code`; the per-domain split is in docs/research/swift15-lane-measurement.md. KV format "
+              "`code`; the `chinese` cell above is the disclosed reversal. KV format "
               "changed from fp8 to k8v4 on 2026-10-09, interleaved on the three cells with each arm "
               "twice: the deciding cells' worst improves from 196.2 to 244.4 tok/s (long code +24.6%, "
               "acceptance 31.06 -> 42.69) while the published cell gives up 7.9% decode and 6.5 "
@@ -315,8 +314,8 @@ PROFILES: list[dict[str, Any]] = [
               "same lane reads 38.3% and 270 tok/s without it against 28.8% and 226 with it. The served "
               "protocol decides, and the greedy arm is kept in the record because the disagreement is a "
               "property of the accept rule rather than noise: a frequency-ranked shortlist truncates the "
-              "argmax a greedy target asks for far more often than it truncates a sampled one. "
-              "docs/research/proposal-head-per-lane-2026-10-10.md carries both."),
+              "argmax a greedy target asks for far more often than it truncates a sampled one; both "
+              "protocols are recorded above."),
     dict(file="start_nvidia_v3_mtp4_vision.bat", port=8093, art=NVIDIA, device_state_slots=1,
          label="NVIDIA ModelOpt + MTP4 + Vision", model_id="qwen3.8-27b-nvidia-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
@@ -363,14 +362,13 @@ PROFILES: list[dict[str, Any]] = [
 # with overlapping arms. Output is unchanged -- identical acceptance and byte-identical digests on all
 # eight lanes -- and all five KV storage types pass the FP64 oracle. The earlier attribution to
 # `causal_partition_target`'s flat 2*SM budget was wrong: that governs the small-width families, whose
-# buffers are tens of MiB, not the tiled prefill family that dominates. See
-# docs/research/swift15-lane-measurement.md.
+# buffers are tens of MiB, not the tiled prefill family that dominates.
 INVARIANT_FLAGS: list[tuple[str, str | None]] = [
     ("--kv-capacity", "auto"),
     # kv-dtype used to sit here and is a per-profile flag now (varying_flags, rendered from each
     # row's kv_dtype). It moved on 2026-10-09, after the A/B the previous comment here described: a
     # global k8v4 was refused because the effect is artifact-dependent, and one lane measured a gain
-    # from it. docs/research/kv-dtype-evidence.md carries the numbers.
+    # from it.
     ("--prefill-chunk", "8192"),
     ("--max-concurrency", "1"),
     # Upstream b9114396 (2026-10-04) replaced the context cache and collapsed these five bounds into
@@ -411,8 +409,7 @@ def varying_flags(profile: dict[str, Any]) -> list[str]:
     kv-dtype belongs here rather than among the invariant flags because its measured effect is
     artifact-dependent: interleaved on the published cell, the same change is +13.8% decode and
     +9.5 acceptance points on the QUASAR lane and -0.1% / +0.9 on NVIDIA, with acceptance moving
-    deterministically in both directions on other lanes' cells. Evidence:
-    docs/research/kv-dtype-evidence.md.
+    deterministically in both directions on other lanes' cells.
     """
     out: list[str] = []
     if profile["vision"]:
@@ -517,8 +514,7 @@ def ordered_flags(profile: dict[str, Any]) -> list[tuple[str, str | None]]:
     # on every request, at a tool boundary the frontend does declare, and the log shows every cache
     # hit as `private endpoint`, none shared, with a conversation switch costing a 59.6 s cold
     # prefill at 171,953 tokens.
-    # The log is recorded at docs/research/agent-session-field-log-2026-09-22.md, with the startup
-    # configuration it was measured under and every request's cache path.
+    # Recorded with the startup configuration it was measured under and every request's cache path.
     #
     # Resolved 2026-09-22: the boundary the frontend declares is not the boundary this protocol uses.
     # The OpenAI request path clears allow_engine_automatic_shared_prefixes -- the protocol defines
@@ -612,7 +608,7 @@ def launcher_env(profile: dict[str, Any] | None = None) -> dict[str, str]:
     condition: `spin` costs 0.18 to 0.31 of a core and buys no measurable latency -- TTFT 1.3 to 1.9 ms
     apart against 3.0 to 15.5 ms spreads, both idle and with half the machine's logical processors held
     busy by host work, which is the condition NVIDIA names under which a spin-wait should pay.
-    docs/research/prompt-preparation-cost.md carries the measurement and its limits.
+    The spread above is wider than the difference, which is why the default is left untouched.
 
     The profile may be None, for a harness that composes its own command line without a table profile.
     Today the environment is the same for every lane -- it is a property of the wait schedule on this

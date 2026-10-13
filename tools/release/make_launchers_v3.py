@@ -44,8 +44,9 @@ REM  The CUDA wait schedule is pinned to blocking rather than left to the engine
 REM  is upstream's spin (NINFER_CUDA_SYNC, see docs/cli.md). Measured 2026-09-25 over six
 REM  interleaved Serve processes per condition: spin costs 0.18-0.31 of a core and buys no
 REM  measurable latency, TTFT 1.3-1.9 ms apart against 3.0-15.5 ms spreads, idle and with half
-REM  the machine's logical processors held busy by host work. The engine's default is untouched;
-REM  docs/research/prompt-preparation-cost.md carries the measurement and its limits.
+REM  the machine's logical processors held busy by host work. Note that the spread is wider than
+REM  the difference: the 1.3-1.9 ms separation does not separate from the run-to-run noise, which
+REM  is why the engine's default is left untouched.
 REM
 REM  TDR (Timeout Detection and Recovery): the RTX 5090 is a GeForce, so it runs WDDM with a
 REM  2-second TDR budget. No single GPU operation in any measured profile approaches this
