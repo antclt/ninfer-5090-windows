@@ -32,9 +32,8 @@ REPO = Path(__file__).resolve().parents[2]
 # Directories whose contents are records rather than current claims: a research note or an ADR states
 # what was true when it was written, and rewriting those is how a record stops being one. Upstream-facing
 # reports and model cards are dated records of another tree; a vendored skill's references are its own
-# (`.opencode/skills/desloppify` naming `docs/CLAUDE.md` is that project's layout, not this one's).
 RECORD_DIRS = ("docs/research/", "docs/adr/", "docs/maintainer/", "docs/upstream-reports/",
-               "model-cards/", ".opencode/skills/", "docs/features/")
+               "model-cards/", "docs/features/")
 
 SUPERSEDED = re.compile(
     r"\b(superseded|withdrawn|obsolete|no longer (?:exists|used|applies)|has been removed|"
@@ -124,7 +123,6 @@ def main() -> int:
             if (REPO / token).exists():
                 continue
             # resolved against the document's own directory: a skill naming knowledge/x.md means
-            # .opencode/skills/<that skill>/knowledge/x.md, and calling that missing is noise
             if (doc.parent / token).exists():
                 continue
             # the first segment must be a real top-level entry of this repository, or the token is

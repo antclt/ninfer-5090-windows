@@ -12,8 +12,7 @@
 # declared and never named again, no name a tool still treats as current has outlived the tree,
 # no copy-paste has been
 # added past the recorded baseline, no divergence from upstream inside an upstream-owned
-# file has gone unrecorded, every skill in this repository is discoverable and advertised,
-# no subprocess is spawned without an explicit text encoding,
+# file has gone unrecorded, no subprocess is spawned without an explicit text encoding,
 # every shipped lane figure still describes the engine and artifact it was measured on,
 # and the converter tests
 # pass. Each has caught a real drift in this repository --
@@ -112,31 +111,14 @@ gate "activity predicate" "$PY" tools/release/check_activity_predicate.py
 gate "new duplication" "$PY" tools/release/check_duplication.py
 # The upstream remote is a local-only ref: actions/checkout clones origin alone, so CI has no
 # upstream/dev and the gate would fail there on a machine that cannot fetch it. Skip loudly,
-# the way the opencode plugin check skips without node, rather than failing every CI commit.
+# rather than failing every CI commit.
 # The ref must be the one check_port_delta.py compares against, or the skip condition guards a
 # different ref than the gate reads.
 if git rev-parse --verify --quiet upstream/dev >/dev/null; then
     gate "port delta" "$PY" tools/release/check_port_delta.py --check
-gate "skills" "$PY" tools/release/check_skills.py
-gate "subprocess encoding" "$PY" tools/release/check_subprocess_encoding.py
+    gate "subprocess encoding" "$PY" tools/release/check_subprocess_encoding.py
 else
     echo "pre-commit: SKIPPED port delta -- upstream/dev is not a local ref (run: git fetch upstream)"
-fi
-# The two opencode plugins in .opencode/plugins/ import nothing, so this check needs no install; what
-# it asserts is that the @opencode/plugin import stays ABSENT. opencode SKIPS a plugin that fails to
-# load rather than crashing, so that failure is silent: both plugins sat in the tree through one
-# commit, passing their logic tests and never having run, because those tests stubbed the very package
-# that failed to resolve. Node is not a dependency of this product -- these plugins shape an agent's
-# behaviour and nothing about the shipped engine -- so its absence skips loudly here rather than
-# failing every commit for a C++ contributor, while its presence runs the check.
-if command -v node >/dev/null 2>&1; then
-    gate "opencode plugin load" node --experimental-strip-types tools/opencode/test_plugin_loads.mjs
-    # The load check asks whether the plugins would run at all; this one asks whether what they deny
-    # is right. It needs no install and no stub, and without it the deny rules are exercised only by
-    # hand -- which is how a rule that refuses nothing can look like a rule that works.
-    gate "opencode claims-gate logic" node --experimental-strip-types tools/opencode/test_claims_gate.mjs
-else
-    echo "pre-commit: SKIPPED opencode plugin load -- node not on PATH (npm install --prefix .opencode/plugins)"
 fi
 echo "pre-commit: converter tests"
 # The doc-link test is named explicitly: tests/release also holds a ctest script that exits at import,

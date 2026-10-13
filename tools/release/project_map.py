@@ -31,7 +31,7 @@ OUT_MD = Path("docs/maintainer/project-map.md")
 OUT_DOT = Path("docs/maintainer/project-map.dot")
 # Directories that are not product structure and would only add noise to a module graph.
 SKIP_DIRS = {"third_party", "build", "build-test", "out", "ffmpeg", ".codegraph", ".git",
-             "node_modules", "docs", "tools", "tests", "bench", "profiles", ".opencode"}
+             "node_modules", "docs", "tools", "tests", "bench", "profiles"}
 
 
 def module_of(path: str) -> str:

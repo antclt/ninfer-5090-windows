@@ -37,7 +37,6 @@ per-area table below is the `9e163eee` snapshot).
 
 | Area | Files | Kind |
 | --- | --- | --- |
-| `.opencode/skills`, `.opencode/agent` | 82 | ours only — agent tooling, never upstream |
 | `src/ops` | 45 | **shared** — the reconciliation surface |
 | root (`*.bat`, `CMakeLists.txt`, `AGENTS.md`, `README.md`) | 17 | ours only — Windows port surface |
 | `tools/release`, `tools/scripts`, `tools/artifact`, `tools/convert` | 24 | ours only |

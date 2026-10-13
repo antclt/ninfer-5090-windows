@@ -3,7 +3,6 @@ REM Run a small device-test subset under NVIDIA Compute Sanitizer's memcheck.
 REM
 REM Why a subset, and why these tests. MSVC's AddressSanitizer cannot instrument device code, so
 REM test_v3_asan.cmd covers the host side only; this is the device-side complement, and the skill at
-REM .opencode/skills/cuda-debugging covers the wider tool set (racecheck, initcheck, synccheck).
 REM Sanitizer runs are 10-20x slower than a normal one, and a kernel that outlives the Windows TDR
 REM watchdog resets the driver on a card that is also driving the desktop, so this names five tests
 REM that each take under a second unsanitized rather than the whole suite. Widen SUBSET when a

@@ -61,10 +61,6 @@ tools/freq_corpus/fixtures/*
 .DS_Store
 profiles/
 .jscpd-report/
-# A leftover 139 MiB install of the opencode plugin SDK. Nothing needs it: the plugins import
-# nothing and package.json carries no dependencies. Kept ignored so an existing install cannot be
-# committed by accident.
-.opencode/plugins/node_modules/
 .chatgpt/
 
 # Claude Code personal/local settings (may contain API tokens)
