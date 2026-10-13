@@ -4039,10 +4039,30 @@ which are done.**
 (260,030 tokens, mid-context, 8/8); DFlash2 is faster than MTP4 on every artifact (+41% to +74%) with
 lower acceptance disclosed; QUASAR QAT has the best corpus perplexity (4.6849); no dflash2 lane
 over-refuses (0 of 20 hard-safe prompts each); aggregate throughput saturates by concurrency 2 while
-per-request throughput halves by 4; decode p99 is 0.63 s; and two shipped settings are measurably not the
-best - **ninfer dflash2's fp8 (k8v4 beats it by 13.5%)** and **quasar mtp4's depth 4 (5 beats it by
-17.0%)**. Neither is applied here: both are product changes that want more rounds and their figures
-folded into the table, and both are recorded with the runs behind them.
+per-request throughput halves by 4; decode p99 is 0.63 s.
+
+**Two candidate settings were found and then refused, because two protocols disagree in sign.** The
+interleaved comparison decided them at two rounds and reproduced the decisions at four:
+
+* **quasar mtp4 depth 4 -> 5**: paired rounds agreeing to 0.2%, 17.0% better on the deciding cell
+  (187.4 against 155.4) and no non-code cost.
+* **ninfer dflash2 fp8 -> k8v4**: 13.5% at two rounds and 13.6% at four, paired rounds agreeing to
+  about 1%.
+
+Both were applied and both were reverted the same session, because the lane fingerprint - the protocol
+the shipped table and its gate use - read the opposite way: quasar mtp4 at depth 5 read 151.2 on the
+code cell against its own 224.7 at depth 4, a 33% *drop*, and ninfer dflash2 at k8v4 read 293.9 against
+361.4, a 19% drop. Restoring the shipped configurations reproduced the table exactly (223.8 against
+224.7, 366.0 against 361.4, both gates passing), so the fingerprint is stable and the low readings
+belong to the changed configurations rather than to the session. The two protocols therefore disagree
+about the sign of the change, and neither is discarded here: the paired sweep measures one prompt per
+cell and reads the engine's decode rate; the fingerprint fires three prompts per cell, which is a
+different protocol and the one the table's figures come from.
+
+**What that leaves**: the two settings are candidates, not findings. The reconciliation is a concrete
+next step - run the fingerprint's own cell protocol against both configurations in the interleaved
+order the comparison tool uses, so the sign is settled inside the protocol that decides - and until then
+the shipped configurations stand and this entry says why. Nothing is applied on contradictory evidence.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
