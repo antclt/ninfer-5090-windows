@@ -204,6 +204,12 @@ def main() -> int:
                                  f"run's {float(prior_acc) * 100:.1f}")
             print(line)
             recorded["cells"][name] = {"decode_avg": round(tok, 1), "accept_rate": acc,
+                                       "spread": round(spread, 1),
+                                       # the runs the average and the spread came from, so a reader can
+                                       # tell a real difference from this lane's own noise - the record
+                                       # kept only the average until 2026-10-13, which is why a 2% gap
+                                       # could not be told from a 3% artefact without re-measuring
+                                       "decode_tps": record.get("decode_tps") or [],
                                        "sampling": "default", "source": "measured"}
         lanes[launcher] = recorded
 

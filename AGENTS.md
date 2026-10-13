@@ -848,7 +848,11 @@ Sixty-seven rules, each earned by a failure rather than chosen:
   at ServerProcess.start`. A detached tree survives those evictions in the field -- with consoles attached,
   which is how the 5.5-hour soak ran -- while a hosted one does not. Upstream: `anomalyco/opencode` #51828 and its siblings, twelve open PRs, none merged, and
   no user-facing TTL setting in 2.0.26 -- and even a surviving detached job loses its completion
-  notification, so the per-step log file is the only reliable report of a long run. Instruments, the
+  notification, so the per-step log file is the only reliable report of a long run. **The escape is a tool
+  now, not a paragraph**: `tools/scripts/run_detached.py --log <file> -- <command>` launches the child with
+  `DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB` from a process that exits, so it is in no shell's tree.
+  Verified 2026-10-13 by a child that wrote its second line after the launcher had exited, and in use for
+  every long run since. Three sweeps died hosted in one session; none has died detached. Instruments, the
   falsified alternatives and two probe defects found on the way:
   `docs/research/silent-shell-death-2026-10-10.md`.
 - **A document that records a file as kept is a reference to it.** A cleanup pass removed six `.stale`
