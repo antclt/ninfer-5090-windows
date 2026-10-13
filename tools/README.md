@@ -5,7 +5,10 @@ checks. To download and run an existing artifact, start with the [project README
 To build your own weights, use the [weight conversion guide](../docs/weight-conversion.md).
 
 Run commands from the repository root with a Python environment containing the dependencies
-for the selected tool. The maintained environment uses Python 3.11.
+for the selected tool. The maintained environment on this port is the virtualenv at
+`C:\vllm-env` (Python 3.12.13, PyTorch 2.11.0+cu130, NumPy 2.3.5); the commands below are
+written as `python3`, so substitute `%PY%` for `C:\vllm-env\Scripts\python.exe`. See
+[Which Python](../docs/weight-conversion.md#which-python).
 
 Python tools are independent of CMake; there is no `NINFER_BUILD_TOOLS` option.
 

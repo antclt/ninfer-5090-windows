@@ -33,7 +33,8 @@ to model media decoding and remains required when apps are disabled. Curl and sp
 only for product support. A Python 3 interpreter is found when tests are configured. The larger Python
 pytest suites and conversion/evaluation scripts run separately from CMake and CTest.
 
-CUDA 13.3 and Python 3.11 describe the maintained environment, not configuration version gates.
+CUDA 13.3 and the maintained Python 3.12 environment describe the environment, not
+configuration version gates.
 CMake also discovers FFmpeg without imposing library version floors. Actual language/API support
 is exercised by compilation and tests. CPU facilities target Linux x86-64 and use hwloc >= 2.5
 for topology discovery without changing the caller's binding. The internal `ninfer_cpu` target

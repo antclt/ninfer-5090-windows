@@ -7,11 +7,36 @@ logical bindings and frontend resources.
 
 Run the commands below from the repository root.
 
+## Which Python
+
+The commands below are written as `python3`, which is what a POSIX shell with a virtualenv on
+PATH gives you. **On this Windows port neither `python3` nor `python` is the interpreter to use**:
+`python3` resolves to the Microsoft Store stub, and `python` to an unrelated Python 3.14. The
+maintained environment is a virtualenv at `C:\vllm-env` — Python 3.12.13, with PyTorch 2.11.0+cu130
+and NumPy 2.3.5 — and every command here works under it:
+
+```bat
+set "PY=C:\vllm-env\Scripts\python.exe"
+"%PY%" -m tools.convert --model <path> --recipe <recipe> --out <path>.ninfer
+```
+
+Substituting `%PY%` for `python3` is the only change the examples need. If you prefer, put that
+environment on PATH for the session and the commands work unchanged.
+
+One line further down sets `OMP_NUM_THREADS`/`MKL_NUM_THREADS` with POSIX prefix syntax. In `cmd`,
+set them first:
+
+```bat
+set OMP_NUM_THREADS=4
+set MKL_NUM_THREADS=4
+"%PY%" -m tools.convert ...
+```
+
 ## Upgrade an existing v2 artifact
 
 The offline upgrade tool supports the official Qwen3.6/3.8-27B groupwise-int and NVFP4 artifacts,
-and Qwen3.6-35B-A3B groupwise-int. Update your checkout to the current `master` and
-[rebuild NInfer](../README.md#windows), then run with Python 3.11:
+and Qwen3.6-35B-A3B groupwise-int. Update your checkout, [rebuild NInfer](../README.md#windows),
+then run it with the interpreter above:
 
 ```bash
 python3 tools/upgrade_ninfer_v2_to_v3.py \
@@ -26,7 +51,8 @@ downloaded files.
 
 ## Start with an official recipe
 
-Source-weight conversion requires a Python 3.11 environment with PyTorch and NumPy. It uses CUDA
+Source-weight conversion requires the maintained Python environment (see
+[Which Python](#which-python)) with PyTorch and NumPy. It uses CUDA
 by default; `--device cpu` selects CPU conversion. The input paths below are placeholders for your
 local checkpoint directories.
 
