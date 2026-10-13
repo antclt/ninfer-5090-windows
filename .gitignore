@@ -63,6 +63,12 @@ profiles/
 .jscpd-report/
 .chatgpt/
 
+# Agent tooling: project-local, not part of this port. Upstream has no .opencode at all,
+# and 16,000 lines of vendored skills is not a Windows-port concern. Kept on disk and
+# untracked so the skills still load; `git checkout pre-trim-2026-10-13 -- .opencode`
+# restores them into the index if that decision is reversed.
+.opencode/
+
 # Claude Code personal/local settings (may contain API tokens)
 .claude/settings.local.json
 

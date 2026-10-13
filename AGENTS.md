@@ -159,26 +159,24 @@ configs, logs.
 
 ### Skills
 
-`.opencode/skills/` holds 35 skills. They are **passive** — loaded on demand, nothing runs them on
-commit — which is the distinction that matters when weighing them against the gates. Every one is
-C++/CUDA-specific or language-agnostic; the six .NET/Roslyn skills and all six `.opencode/agent/`
-definitions that sat here were removed on 2026-10-13 because this tree contains no .NET project
-(`git ls-files '*.csproj' '*.sln'` is empty), and a picker-upper should not have to work out why
-Roslyn tooling is attached to a CUDA engine. `.opencode/AGENTS.md` records the check.
+Skills are **project-local and untracked**: `.opencode/` is in `.gitignore`, and upstream has no
+`.opencode` at all. Nothing in this repository reads them, and no gate checks them. On a machine
+that has them, `.opencode/skills/` holds 35 C++/CUDA and language-agnostic skills — `cpp-cuda-review`
+is this repo's review skill, with `cuda-debugging`, `ncu-report`, `sanitizers`, `address-sanitizer`,
+`c-review`, `fp-check` and `how` beside it. A clone of this repository has none of them and needs
+none: they shape an agent's method, not the engine. Restore them with
+`git checkout pre-trim-2026-10-13 -- .opencode`.
 
-| Situation | Skill |
+| Situation | Skill, where present |
 |---|---|
-| a C++/CUDA change on its way in | `cpp-cuda-review` — this repo's review skill |
+| a C++/CUDA change on its way in | `cpp-cuda-review` |
 | "how does X work", or an unfamiliar subsystem | `how` |
 | a whole subsystem needing a review whose coverage is checkable | `c-review` |
 | a suspected bug to confirm or discard **before** reporting | `fp-check` |
-| a hard bug, or a belief about the code that might be wrong | `diagnosing-bugs` |
 | a device-side memory, race or sync question | `cuda-debugging`; `sanitizers` and `address-sanitizer` for the host side |
-| a kernel's performance | `ncu-report` — records under `profiles/ncu/` and `profiles/nsys/`, which are gitignored |
+| a kernel's performance | `ncu-report` — records under `profiles/ncu/` and `profiles/nsys/`, also gitignored |
 | before claiming a fix works | `principle-prove-it-works` |
 | `AGENTS.md` or an ADR may have gone stale | `rules-check-drift` |
-| a design with no precedent in this tree | `principle-exhaust-the-design-space` |
-| a multi-phase change needing an auditable trail | `show-me-your-work` |
 
 ### Rules earned by failures
 
