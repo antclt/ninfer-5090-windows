@@ -186,7 +186,8 @@
       "expert_activation_divisors": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
       "g16_fp64_exhaustive_e4m3fn_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
       "preserve_codes_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
-      "qwen4_exp_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol"
+      "qwen4_exp_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "preserve_e4m3fn_codes_bf16_block128x128_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol"
     },
     "tools/convert/qwen3_5.py": {
       "deepstack_visual_indexes": "a Hugging Face config key of the source checkpoint",

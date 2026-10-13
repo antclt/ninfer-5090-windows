@@ -31,14 +31,29 @@ int check(bool condition, const char* message) {
 } // namespace
 
 int main() {
-    int failures      = 0;
-    // The prefill-chunk default is 8192 in two places, and 1024 -> 8192 was a deliberate change whose
-    // figures are published at the new value. Pin the value and the agreement, so a silent edit to
-    // either one fails here instead of in a report that quotes the other.
-    failures += check(ninfer::EngineOptions{}.prefill_chunk == 8192,
-                      "the engine's prefill-chunk default changed");
+    int failures = 0;
+    // An omitted --prefill-chunk leaves the sentinel, which the engine resolves against the execution
+    // plan it builds (1024 for a resident model, 4096 with CPU expert offload). Pin both halves of
+    // that here: the engine default must stay the sentinel, so the offload path keeps its own sizing
+    // instead of inheriting a hardcoded width, and the CLI default must agree with the engine's, or
+    // the CLI silently sends a chunk the engine would not have chosen. The value this port actually
+    // ships is `tools/release/profiles.py`'s, which `check_profile_consistency.py` gates against the
+    // docs; it is deliberately not asserted here.
+    failures += check(ninfer::EngineOptions{}.prefill_chunk == 0,
+                      "the engine's prefill-chunk default is no longer the unresolved sentinel");
     failures += check(ninfer::cli::Options{}.prefill_chunk == ninfer::EngineOptions{}.prefill_chunk,
                       "the CLI's prefill-chunk default drifted from the engine's");
+    failures +=
+        check(parse({"ninfer", "model.ninfer", "--prompt", "hello", "--prefill-chunk", "8192"})
+                  .prefill_chunk == 8192,
+              "explicit prefill chunk was not preserved");
+    for (const auto* value : {"auto", "0", "129"}) {
+        failures += check(rejects([&] {
+                              (void)parse({"ninfer", "model.ninfer", "--prompt", "hello",
+                                           "--prefill-chunk", value});
+                          }),
+                          "invalid prefill chunk was accepted");
+    }
     const auto choice = parse({"ninfer", "model.ninfer", "--prompt", "hello", "--choice", "",
                                "--choice", "a|b", "--choice", "你好"});
     failures += check(choice.choices == std::vector<std::string>{"", "a|b", "你好"},

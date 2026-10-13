@@ -253,6 +253,7 @@ public:
         std::scoped_lock lock(execution_mutex_);
         MemorySummary out = instance_.program->memory_summary();
         publish_kv_capacity(instance_.kv_capacity_resolution, out);
+        out.device_budget_bytes = instance_.device_budget_bytes;
         return out;
     }
 

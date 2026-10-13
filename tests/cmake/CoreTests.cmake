@@ -93,3 +93,23 @@ ninfer_add_test(ninfer_jinja_test
 add_test(NAME ninfer_chat_templates_test
   COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/text/test_chat_templates.py
           $<TARGET_FILE:ninfer_jinja_test>)
+
+ninfer_add_test(ninfer_weight_bank_test SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_weight_bank.cpp"
+  LIBRARIES ninfer_core)
+
+ninfer_add_test(ninfer_expert_cache_test
+  SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_expert_cache.cu"
+          "${CMAKE_CURRENT_LIST_DIR}/../expert_cache_cuda_errors.cpp"
+  LIBRARIES ninfer_core)
+set_tests_properties(ninfer_expert_cache_test PROPERTIES TIMEOUT 60)
+
+# The injected-failure cases need GNU --wrap, which MSVC does not provide. The test source reports
+# that as SKIP rather than passing silently; see expert_cache_cuda_errors.cpp, and
+# tests/artifact/tests.cmake for the same arrangement on the artifact side.
+if(NOT MSVC)
+  foreach(symbol IN ITEMS
+      cudaEventRecord cudaMemcpyAsync cudaMemcpyBatchAsync cudaStreamSynchronize cudaStreamWaitEvent
+      cudaFree cudaFreeHost)
+    target_link_options(ninfer_expert_cache_test PRIVATE "LINKER:--wrap=${symbol}")
+  endforeach()
+endif()

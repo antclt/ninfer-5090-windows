@@ -3,6 +3,8 @@
 #include "core/weight_view.h"
 #include "ninfer/ops/linear_split.h"
 
+#include <bit>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -10,6 +12,46 @@
 
 namespace ninfer::models::qwen3_5::execution {
 namespace {
+
+struct ExpertUse {
+    ops::LinearPolicy policy = ops::LinearPolicy::AllowA4;
+    std::optional<float> divisor;
+    bool missing_divisor  = false;
+    bool unequal_divisors = false;
+
+    void include(const ops::WeightInput& input) {
+        if (!ops::valid_linear_policy(input.policy)) {
+            throw std::invalid_argument("expert has invalid activation policy");
+        }
+        if (input.policy == ops::LinearPolicy::A16Only || policy == ops::LinearPolicy::A16Only) {
+            policy = ops::LinearPolicy::A16Only;
+        } else if (input.policy == ops::LinearPolicy::AllowA8) {
+            policy = ops::LinearPolicy::AllowA8;
+        }
+        if (!input.activation_input_divisor) {
+            missing_divisor = true;
+            return;
+        }
+        const float value = *input.activation_input_divisor;
+        if (!std::isfinite(value) || value <= 0) {
+            throw std::invalid_argument("expert activation divisor must be finite and positive");
+        }
+        if (divisor) {
+            unequal_divisors |=
+                std::bit_cast<std::uint32_t>(*divisor) != std::bit_cast<std::uint32_t>(value);
+        } else {
+            divisor = value;
+        }
+    }
+
+    std::optional<float> calibration(QType format) const {
+        if (format != QType::NVFP4) { return std::nullopt; }
+        if (ops::allows_a4(policy) && (missing_divisor || unequal_divisors)) {
+            throw std::invalid_argument("NVFP4 expert A4 requires a common activation divisor");
+        }
+        return unequal_divisors || missing_divisor ? std::nullopt : divisor;
+    }
+};
 
 template <class Function>
 auto with_context(const std::string& context, Function&& function) {
@@ -64,23 +106,37 @@ public:
 
     FfnParameters ffn(const BlockWeights& w) const {
         if (const auto* d = std::get_if<DenseWeights>(&w.ffn)) { return dense(*d); }
-        const auto& moe = std::get<MoeWeights>(w.ffn);
-        if (std::get<MoeConfig>(model_.config().text.ffn).num_experts_per_tok != 8) {
-            throw std::invalid_argument("SparseMoe implements top-8 routing");
-        }
-        std::vector<ops::WeightInput> gate_up, down;
-        gate_up.reserve(2 * moe.experts.size());
-        down.reserve(moe.experts.size());
-        for (const auto& expert : moe.experts) {
-            gate_up.push_back(model_.input(expert.gate));
-            gate_up.push_back(model_.input(expert.up));
-            down.push_back(model_.input(expert.down));
-        }
-        return with_context(model_.weight(moe.router).name, [&] {
-            return ops::prepare_sparse_moe_weights(
-                model_.input(moe.router), model_.input(moe.shared_score), gate_up, down,
-                model_.input(moe.shared.gate), model_.input(moe.shared.up),
-                model_.input(moe.shared.down));
+        return moe(std::get<MoeWeights>(w.ffn));
+    }
+
+    MoeParameters moe(const MoeWeights& w) const {
+        return with_context(model_.weight(w.router).name, [&] {
+            const auto& source = model_.expert_banks()[w.bank.index];
+            ExpertUse gate_up, down;
+            for (const auto& expert : w.experts) {
+                gate_up.include(model_.input(expert.gate));
+                gate_up.include(model_.input(expert.up));
+                down.include(model_.input(expert.down));
+            }
+            MoeParameters out;
+            const std::array control{model_.input(w.router), model_.input(w.shared_score)};
+            out.control = ops::prepare_linear_weight(control).weight;
+            out.shared  = {ops::prepare_linear_swiglu_weight(model_.input(w.shared.gate),
+                                                             model_.input(w.shared.up)),
+                           linear(w.shared.down)};
+            out.profile = {
+                ops::routed_swiglu_profile(
+                    source.gate_up, source.down,
+                    dimension(std::get<MoeConfig>(model_.config().text.ffn).num_experts_per_tok),
+                    gate_up.policy, down.policy),
+                ops::swiglu_profile(out.shared)};
+            out.bank                = w.bank;
+            out.activation_divisors = {gate_up.calibration(source.gate_up.layout.format),
+                                       down.calibration(source.down.layout.format)};
+            if (source.gate_up.parent->device.type() == DeviceType::CUDA) {
+                out.resident = device_expert_bank(source.gate_up, source.down);
+            }
+            return out;
         });
     }
 
@@ -126,7 +182,8 @@ public:
         return out;
     }
 
-    ops::SparseMoeHints prefetch(const ops::ProjectionWeights& projection, WeightId query) const {
+    ops::MoeExecutionHints prefetch(const ops::ProjectionWeights& projection,
+                                    WeightId query) const {
         const auto* single = std::get_if<LinearParameters>(&projection);
         const auto& weight =
             single ? single->weight : std::get<ops::PairedProjectionWeights>(projection).first;
@@ -293,7 +350,8 @@ private:
 
 } // namespace
 
-Parameters::Parameters(const Model& source) : model(source) {
+Parameters::Parameters(const Model& source, std::shared_ptr<const ModelProfile> profile)
+    : model(source), profile(profile ? std::move(profile) : describe_model(source)) {
     const Prepare prepare(model);
     const auto& w        = model.weights();
     text.token_embedding = native_weight(model.weight(w.text.token_embedding).view);

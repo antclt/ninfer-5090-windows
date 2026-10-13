@@ -73,7 +73,8 @@ PrefillChunkResult prefill_text_chunk(PrefillContext& state, std::span<const Tok
                      TextCallConfig{.sampling = state.sampling,
                                     .state_source_slot = state.state_source_slot,
                                     .state_destination_slot = state.state_destination_slot,
-                                    .mtp_proposal_extent = state.mtp_proposal_extent});
+                                    .mtp_proposal_extent = state.mtp_proposal_extent},
+                     state.execution.moe);
     configure_text_card(card, state.execution);
     card.set_prefill_gpu_timer(state.prefill_gpu_timer);
     card.set_rope_delta(state.rope_delta);
@@ -101,7 +102,8 @@ PrefillChunkResult prefill_multimodal_chunk(PrefillContext& state, const Prepare
                      TextCallConfig{.sampling = state.sampling,
                                     .state_source_slot = state.state_source_slot,
                                     .state_destination_slot = state.state_destination_slot,
-                                    .mtp_proposal_extent = state.mtp_proposal_extent});
+                                    .mtp_proposal_extent = state.mtp_proposal_extent},
+                     state.execution.moe);
     configure_text_card(card, state.execution);
     card.set_prefill_gpu_timer(state.prefill_gpu_timer);
     card.set_rope_delta(state.rope_delta);
@@ -506,7 +508,7 @@ runtime::PrefillStepResult ProgramImpl::advance_prefill(SequenceState& sequence,
         execution::PrefillContext schedule_state{
             {device, parameters, work, state_images->linear(),
              replay_records ? &*replay_records : nullptr, io, prefill_hidden, prefill_chunk,
-             proposal_head},
+             proposal_head, moe.get()},
             mtp_kv_view(sequence),
             decoder->text_kv,
             decoder->mtp_cache(),

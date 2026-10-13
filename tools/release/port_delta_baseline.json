@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-12",
+  "recorded": "2026-10-13",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -68,12 +68,6 @@
       "disposition": "refactor",
       "review": "product",
       "reason": "One name table for one KV format: its local parse_kv_cache was one of four copies of the same five-branch chain, and it calls ninfer::parse_kv_storage() from include/ninfer/kv_storage.h now. Same flags, same values; tests/test_cli_options.cpp covers the parse."
-    },
-    "apps/cli/options.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
     },
     "apps/perplexity/corpus.cpp": {
       "status": "M",
@@ -183,12 +177,6 @@
       "review": "product",
       "reason": "Reports the per-position recall split in both the JSON and the CSV, with proposed_per_position as the denominator for recall@1, recall@16 and path acceptance. The bench table is read by header name and never by column position."
     },
-    "bench/inference/ninfer_bench_support.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
-    },
     "bench/models/qwen3_5/benchmarks.cmake": {
       "status": "M",
       "disposition": "product",
@@ -218,12 +206,6 @@
       "disposition": "windows",
       "review": "product",
       "reason": "Cited in the diff -- port: this port. Open it before changing this path."
-    },
-    "docs/cli.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
     },
     "docs/maintainer/build-system.md": {
       "status": "M",
@@ -537,18 +519,6 @@
       "review": "windows",
       "reason": "Cited in the diff -- win32: _WIN32. Open it before changing this path."
     },
-    "src/artifact/materializer.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "plan_transfer extracts the copy-range plan from the transfer path so the same ordering and merging rule serves every caller. A deduplication of the same class as the others in this list."
-    },
-    "src/artifact/materializer.h": {
-      "status": "M",
-      "disposition": "windows",
-      "review": "windows",
-      "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
-    },
     "src/artifact/reader.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -601,7 +571,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "A validation fix: a native Weight input with RowScale layout now requires a complete FP8 parent, and says so by name, instead of reading a partial plane as though it were whole."
+      "reason": "native_weight allows a 128-row-aligned sub-range of an NVFP4 BlockScaleK16M128x4 parent to be used as a complete matrix, rebasing the codes plane by whole code rows and the scale plane by whole 512-byte scale tiles. The port's shipped NVFP4 artifacts need it: the DFlash2 context K/V rows share the fused query/key/value parent at exact 128-row boundaries. The RowScale complete-parent validation this file used to carry is upstream's now, so it is no longer part of this divergence."
     },
     "src/media/decode/decode.cpp": {
       "status": "M",
@@ -1263,12 +1233,6 @@
       "review": "windows",
       "reason": "Windows necessity: MSVC has no __int128, so core/uint128.h provides the type -- a real 128-bit builtin under GCC and a two-word struct with the needed operators under MSVC. Here it replaces upstream's cast in a comparison whose product overflows 64 bits. Pinned by the port-delta baseline and protected by src/core/uint128.h's own tests."
     },
-    "src/serve/serve_options.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Prefill chunk default raised from 1024 to 8192. Measured on this machine, same artifact and case, one flag apart: chunk 1024 prefills a 64,509-token prompt in 9,379.28 ms and chunk 8192 in 6,649.49 ms (-29.1%), and at 8,192-token depth 662.82 ms against 510.50 ms (-23%). The price is workspace: runtime 10.1 GiB at 1,024 against 10.6 GiB at 8,192 at the 262,144-token window, i.e. +0.5 GiB. Above 8,192 is not worth it and was tested: chunk 16384 buys 0.02% for +1.3 GiB, and chunk 32768 cannot start beside that window at all (the engine refuses with 'minimum Engine runtime reservation requires 15,412,082,945 bytes in addition to'). The field's small-chunk default exists to protect inter-token latency against concurrent decode; this product ships --max-concurrency 1 as an invariant, so that rationale is inert here while the cost is not. The two EnginePurpose::CausalScoring overrides that also set 1024 are deliberately untouched -- they are purpose-specific configurations that pin concurrency, drop speculation and disable vision, not stale copies of this default."
-    },
     "src/text/jinja.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1790,6 +1754,72 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "The same Win32 branching as tools/artifact/file_io.py, for the same reason."
+    },
+    "tools/convert/methods.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "an upstream typing gap, not independently reviewed; evidence is mypy tools/release tools/convert tests, the pre-commit hook's own step, and pytest tests/convert. The two types are the ones the surrounding code already declares rather than new decisions: AuxiliaryKey and AuxiliaryValue are defined at the top of this file and are the field types of PreparedMethod.auxiliaries, and EncodedRows.weight_divisor is declared bytes | None at tools/convert/sources/logical.py:17. No runtime behaviour changes -- an empty dict literal carries no value to alter. Reverting it puts the gate red, which is why the review is 'keep' rather than 'revert to upstream'.",
+      "reason": "Two annotations on empty dict literals in import_encoded: dict[AuxiliaryKey, AuxiliaryValue] and dict[int, bytes | None]. Upstream's version of this function fails the port's mypy gate with var-annotated on both lines."
+    },
+    "bench/inference/ninfer_bench_support.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. The report prints that name, so it cannot be restated locally.",
+      "reason": "Includes the port's own ninfer/kv_storage.h for kv_storage_name and parse_kv_storage. Upstream carries a local kv_cache_name in the .cpp instead and has no such header; the port's table is the engine's own spelling and is what per_domain_kl.py compares."
+    },
+    "bench/ops/moe/cpu.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. The formula is the one bench/cpu/execution_bench.cpp already uses for the same quantity, so the two benches stay comparable.",
+      "reason": "cpu_us() reads GetProcessTimes on Windows instead of clock_gettime(CLOCK_PROCESS_CPUTIME_ID), and the provenance header's compiler= column uses the MSVC toolset version because __VERSION__ is a GCC/Clang macro. Both are the same quantities: process-wide user+kernel CPU time, and which compiler produced the file."
+    },
+    "src/ops/moe/kernels/cpu/avx2.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written.",
+      "reason": "scale() converts an fp16 with F16C's _mm_cvtph_ps instead of _cvtsh_ss, which is AVX512-FP16: MSVC 14.51 does not declare it and /arch has no switch for it (measured: /arch:AVX512FP16 is rejected as an unknown option). Both spell the same IEEE binary16-to-binary32 conversion, and this target already compiles with -mf16c."
+    },
+    "src/ops/moe/kernels/cpu/avx512.h": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written.",
+      "reason": "scale() converts an fp16 with F16C's _mm_cvtph_ps instead of _cvtsh_ss, for the reason recorded in src/ops/moe/kernels/cpu/avx2.cpp. An AVX-512 CPU has F16C, so the conversion is available in these translation units."
+    },
+    "src/ops/moe/routed_swiglu/cpu/q4_q5/shapes/h2048_i512_e256_k8/dispatch.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written.",
+      "reason": "Calls the port's ninfer::ops::common::unreachable() instead of __builtin_unreachable, a GCC/Clang builtin MSVC does not declare (C3861). Both are the same promise to the optimizer from a switch that covered every enumerator."
+    },
+    "src/ops/moe/routed_swiglu/cpu/q4_q6/shapes/h2048_i512_e256_k8/dispatch.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written.",
+      "reason": "Calls the port's ninfer::ops::common::unreachable() instead of __builtin_unreachable, for the reason recorded in the q4_q5 dispatch of the same shape."
+    },
+    "src/ops/moe/routed_swiglu/cpu/sources.cmake": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test, the MoE CPU tests and the runtime CPUID dispatch in dispatch.cpp. Performance on this card is unmeasured.",
+      "reason": "Applies the per-variant ISA split with /arch:AVX2 and /arch:AVX512 under MSVC, and keeps upstream's -m flags for the GCC/Clang build. Measured: cl.exe accepts -mavx2/-mavx512f without a word, where an option it does not know is reported (D9002 for /arch:AVX512FP16), so upstream's flags alone leave the AVX2 and AVX-512 objects on MSVC's default codegen. Safe to compile per variant because select_isa() only reaches a variant after a CPUID check reports its features. NOT MEASURED for performance: this makes upstream's intent take effect, and the throughput effect on this card is unmeasured."
+    },
+    "tests/expert_cache_cuda_errors.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. The injected-failure cases are therefore not exercised on this platform.",
+      "reason": "Guards the __real_/__wrap_ definitions and the injected-failure cases with _MSC_VER, reporting SKIP rather than passing silently. The wrappers need GNU ld --wrap, which MSVC does not provide, and an import-address patch cannot substitute because this build resolves cudart statically. This is the arrangement tests/artifact/materialization_cuda_errors.cpp already uses for the same class of case."
+    },
+    "tests/models/qwen3_5/test_loading_real.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. Nothing parses this line; it is printed for a human reading the test output.",
+      "reason": "peak_rss_kib() reads PeakWorkingSetSize through GetProcessMemoryInfo on Windows and getrusage elsewhere, so the diagnostic line keeps its field and unit on both. sys/resource.h has no MSVC equivalent and is now included only off _WIN32."
+    },
+    "tests/test_expert_cache.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "an upstream missing include, not independently reviewed; evidence is the build in build-test and the expert-cache test. No behaviour change.",
+      "reason": "Adds <algorithm> for std::any_of."
     }
   }
 }

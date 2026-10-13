@@ -113,9 +113,15 @@ Program 将具体状态和物理可行性通过原生合同提供给 runtime。�
 
 ### 2.5 实例生命周期与固定执行
 
-Binder 按架构/config 解析所选功能的逻辑需求，Materializer 建立稳定 backing 并上传原字节。
-ModelInstance 持有 Model、const Parameters、Frontend 与 Program。Planner 查询各层及后端需求，
-结合权重驻留后的 Device 余量解析容量，建立最终布局。
+Binder 按架构/config 解析所选功能的逻辑需求，`LoadPlan` 不决定位置。
+`resolve_load` 建立显式放置与 Host/Device 容量，Materializer 按原编码建立稳定 backing。
+同一物理 parent 在各位置分别去重；CPU/GPU 双端需求可由同一次有界 I/O 分发。
+Engine 在大权重读取前消费无地址的 `ModelProfile`，联合规划固定权重、KV/State、workspace、
+Graph allowance 及 MoE 资源。全量 GPU 放置可行时使用 resident 路径；受预算限制的 MoE
+使用 Host 来源及 Program 所有的 GPU 副本，见[Expert 权重缓存](expert-weight-cache.md)。
+`NINFER_VRAM_BUDGET_MIB` 限定引擎 Device 预算，实际可用显存构成另一上限。
+ModelInstance 持有 Model、const Parameters、Frontend 与 Program；Parameters 持有与最终
+容量计划相同的不可变执行 profile。纯逻辑加载不要求建立执行 profile。
 
 权重、State/KV backing、block-table matrices、workspace 和 CUDA Graph resources 在接受请求前建立。
 运行期改变 ownership、mapping、frontier 与 replica placement。每个 Program 独占可变状态和 Device
@@ -123,8 +129,8 @@ allocation；销毁时先结束 Engine worker 与未决设备工作，再销毁 
 
 模型代码维护有限调用写法、跨 Op 融合和阶段关系。纯分段投影统一调用 LinearSplit；Parameters 保存
 逻辑输出行顺序及单/双 parent 参数。例如 Q4 的 Q/K 与 Q5 的 gate/V 按逻辑行拼接，完整
-FP8/NVFP4 parent 直接提供同一行序。通用权重准备解析存储视图，实际 Op 检查可执行的格式与分段。
-View 保留 parent 几何、planes 和元素范围，共享对象只驻留一次，各使用位置保留独立 Use。
+FP8 parent 和 NVFP4 矩阵视图直接提供同一行序。通用权重准备解析存储视图，实际 Op 检查可执行的格式与分段。
+View 保留 parent 几何、planes 和元素范围，共享对象在同一 Device 只驻留一次，各使用位置保留独立 Use。
 激活许可为 `A16Only={A16}`、`AllowA8={A16,A8}`、`AllowA4={A16,A8,A4}`；融合调用取相关许可交集。
 
 Reader、binder、原生参数准备、容量查询、warmup 和执行各自检查所消费的合同。可执行范围由实际
@@ -142,15 +148,22 @@ Reader、binder、原生参数准备、容量查询、warmup 和执行各自检�
 位置及 host pinned 属性。`MemoryArena` 只管理 span 上的分配游标；Program 分别持有 backing
 和 workspace arena，scope 退出只回退游标，不等待设备工作。容量规划使用无 backing 的描述符。
 
+`CudaHostRegistration` 拥有已有 Host 范围的 CUDA 注册，借用其 allocation。
+`CudaHostView` 分别记录 CPU 范围、CUDA 映射地址和目标 GPU；注册不改变 CPU residency。
+模型的长期传输来源由 Model 同时持有 backing 和 registration；Program 完成使用后先注销，
+再释放 backing。有界批量 H2D 描述符及 pitched 字节复制属于 Core transfer 基础。
+
 `DeviceContext` 拥有 CUDA streams 和设备属性，并创建只读的 `CudaExecutionView`。Program、
 模型上下文及组合 Op 沿调用链传递该视图；Op 入口检查实际操作数和 workspace 属于执行 GPU，
 私有 launcher 再取出 stream。借用外部 stream 时在其所有者边界核对设备，调用点不得从 Tensor
-位置和裸 stream 拼装执行环境。Engine worker 在执行前绑定设备。
+位置和裸 stream 拼装执行环境。额外 stream 使用 `CudaStream` 持有，资源 owner 负责
+完成所有借用 buffer 的异步消费后再释放。Engine worker 在执行前绑定设备。
 
 通用字节传输通过 `copy_bytes` / `copy_bytes_async` 表达。CPU copy 同步完成；CUDA async copy
 要求 CPU 端为 pinned memory，CUDA 端属于执行 GPU。调用者持有 backing，负责 stream/event
 排序及完成后的复用；Tensor 和 span 不携带“已就绪”状态。KV 等有专用布局的传输保留其专用接口。
-这些基础类型允许 CPU 数据参与编排；现有模型执行和 CUDA Ops 仍在 GPU 上运行。
+MoE 混合执行借用 CPU/CUDA 两端视图。共享专家及其余固定权重留在 GPU，Main routed
+experts 可以使用注册的 CPU 来源；其副本、预取、bridge 与完成依赖由 Program 管理。
 
 ### 2.7 CPU 执行基础
 
@@ -172,7 +185,9 @@ MemoryArena 和布局类型管理，进入团队前完成划分。
 
 两种执行器共享启动确认、初始化失败清理和线程回收机制。CPU 团队不调用 CUDA，也不持有
 传输槽、模型状态或权重副本。Engine/Scoring 的控制线程继续拥有各自的工作循环。
-当前 CPU 团队独立可用，尚未接入模型计算或 MoE offload。
+CPU 团队用于 eager MoE 混合执行；每个 Program 持有固定团队和交接缓冲。
+MoE 按实际 token 列数选择混合计算或整层流式 GPU 计算，prefill、Replay、decode、
+control 与 verification 共用这个选择。权重副本不属于请求 StateImage，不随回滚或暂停恢复。
 
 ## 3. 请求生命周期
 

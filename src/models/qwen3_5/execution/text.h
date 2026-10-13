@@ -10,7 +10,7 @@
 #include "core/weight.h"
 #include "ninfer/ops/sampling.h"
 #include "ninfer/ops/softmax_attention.h"
-#include "ninfer/ops/sparse_moe.h"
+#include "ninfer/ops/moe.h"
 #include "models/qwen3_5/state/decoder_state.h"
 #include "models/qwen3_5/frontend/prepared_prompt.h"
 #include "models/qwen3_5/program/round_buffers.h"
@@ -21,6 +21,10 @@
 #include <functional>
 #include <span>
 #include <vector>
+
+namespace ninfer::models::qwen3_5::detail {
+class MoeResources;
+}
 
 namespace ninfer::models::qwen3_5::execution {
 
@@ -83,7 +87,8 @@ public:
                 std::uint32_t text_kv_base,
                 qwen3_5::PagedKVCacheView mtp_kv          = qwen3_5::PagedKVCacheView(),
                 const qwen3_5::PagedKVCache* batch_mtp_kv = nullptr,
-                TextCallConfig call                       = {});
+                TextCallConfig call                       = {},
+                detail::MoeResources* moe                 = nullptr);
     ~TextContext();
 
     TextContext(const TextContext&)            = delete;
@@ -170,9 +175,8 @@ private:
 
     void attn_mix(const BlockParameters& weights, Tensor& x, int index, Phase phase);
     void gdn_mix(const BlockParameters& weights, Tensor& x, int index, Phase phase);
-    void mlp_tail(const BlockParameters& weights, Tensor& x, Phase phase,
-                  const ops::SparseMoeHints& hints);
-    [[nodiscard]] ops::SparseMoeHints next_projection_hints(int layer) const;
+    void post_mixer(const BlockParameters& weights, Tensor& x, int layer);
+    [[nodiscard]] ops::MoeExecutionHints next_projection_hints(int layer) const;
     void run_layers(Tensor& x, Phase phase);
     template <class Tap>
     void run_layers(Tensor& x, Phase phase, Tap& tap);
@@ -216,6 +220,7 @@ private:
     [[nodiscard]] PrefillChunkResult
     prefill_impl(std::span<const int> ids, const TextPrefill* text_prefill,
                  const MultimodalPrefill* multimodal, Tap& tap, bool finalize_at_end);
+    detail::MoeResources* moe_;
     DeviceContext& ctx_;
     CudaExecutionView execution_;
     const Parameters& parameters_;

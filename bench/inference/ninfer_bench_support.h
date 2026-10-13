@@ -3,11 +3,11 @@
 // Host-only support for the product throughput benchmark. The benchmark itself drives only the
 // public ninfer::Engine API; this file owns its CLI, matrix, statistics, and report schema.
 
-// `ninfer/types.h` for the product's own types, and `ninfer/kv_storage.h` for the KV format's name and
-// parser. Both are needed: this header predates the KV name table and used to get the whole public
-// surface through types.h alone.
-#include "ninfer/types.h"
+// types.h for the product's own types, and kv_storage.h for the KV format's name table. This header
+// predates that table and used to reach the whole public surface through types.h alone; the report
+// prints the engine's own spelling, so the name cannot be restated here.
 #include "ninfer/kv_storage.h"
+#include "ninfer/types.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +19,7 @@
 
 namespace ninfer::bench {
 
-inline constexpr int kSchemaVersion                   = 19;
+inline constexpr int kSchemaVersion                   = 23;
 inline constexpr std::string_view kArtifactType       = "ninfer_bench_report";
 inline constexpr std::string_view kDefaultCorpusPath  = "bench/fixtures/bench_corpus.ids";
 inline constexpr int kDecodeSeedTokens                = 1;
@@ -27,7 +27,7 @@ inline constexpr int kDefaultNPrompt                  = 512;
 inline constexpr int kDefaultNGen                     = 128;
 inline constexpr int kDefaultRepetitions              = 5;
 inline constexpr int kDefaultWarmup                   = 1;
-inline constexpr std::uint32_t kDefaultPrefillChunk   = 8192;
+inline constexpr std::uint32_t kDefaultPrefillChunk   = 0;
 inline constexpr std::uint32_t kPrefillChunkAlignment = 128;
 
 enum class TestKind { Prefill, Decode, PrefillDecode };
@@ -95,6 +95,7 @@ struct TestResult {
     std::vector<double> repetition_wall_seconds;
     std::size_t workspace_peak_bytes           = 0;
     std::size_t workspace_allocator_peak_bytes = 0;
+    std::uint64_t expert_upload_bytes          = 0;
 };
 
 struct Stats {
@@ -162,6 +163,7 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
 std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult>& results);
 
 std::string json_escape(std::string_view value);
+std::string kv_cache_name(KvCacheStorage storage);
 std::string proposal_head_name(ProposalHead head);
 std::uint64_t file_size_or_zero(const std::string& path);
 

@@ -5,10 +5,21 @@ ninfer_add_test(ninfer_ngram_graph_planning_test
 ninfer_add_test(ninfer_qwen3_5_loading_real_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_loading_real.cpp"
   LIBRARIES ninfer_model_loading)
+# peak_rss_kib() reads PeakWorkingSetSize, which is psapi on Windows and getrusage elsewhere.
+if(MSVC)
+  target_link_libraries(ninfer_qwen3_5_loading_real_test PRIVATE psapi)
+endif()
 
 ninfer_add_test(ninfer_qwen3_5_loading_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_loading.cpp"
   LIBRARIES ninfer_model_loading)
+
+ninfer_add_op_test(ninfer_qwen3_5_moe_execution_test
+  SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_moe_execution.cpp"
+          "${PROJECT_SOURCE_DIR}/tests/ops/moe/fixture.cpp"
+  LIBRARIES ninfer_model_runtime)
+set_tests_properties(ninfer_qwen3_5_moe_execution_test PROPERTIES
+  LABELS "gpu" RUN_SERIAL TRUE RESOURCE_LOCK cpu_team)
 
 ninfer_add_test(ninfer_qwen3_5_frontend_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_frontend.cpp"
@@ -82,6 +93,11 @@ ninfer_add_test(ninfer_qwen3_5_moe_real_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_engine_moe_real.cpp"
   LIBRARIES ninfer_engine)
 
+add_test(NAME ninfer_qwen3_5_moe_offload_real_test
+  COMMAND ninfer_qwen3_5_moe_real_test --offload)
+set_tests_properties(ninfer_qwen3_5_moe_offload_real_test PROPERTIES
+  ENVIRONMENT "NINFER_VRAM_BUDGET_MIB=16384")
+
 ninfer_add_test(ninfer_qwen3_5_dflash_real_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_engine_dflash_real.cpp"
   LIBRARIES ninfer_engine)
@@ -119,6 +135,7 @@ set(ninfer_qwen3_5_real_tests
   ninfer_qwen3_5_dflash_prefill_real_test
   ninfer_qwen3_5_issue5_race_test
   ninfer_qwen3_5_moe_real_test
+  ninfer_qwen3_5_moe_offload_real_test
   ninfer_qwen3_5_dflash_real_test)
 set_tests_properties(${ninfer_qwen3_5_real_tests} PROPERTIES
   SKIP_RETURN_CODE 77

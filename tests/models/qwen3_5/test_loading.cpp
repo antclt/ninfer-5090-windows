@@ -191,7 +191,6 @@ void logical_data_and_instances() {
     require(plan.parameter(plan.weights().text.token_embedding).binding.parts[0].object ==
                 plan.parameter(plan.weights().text.output_head).binding.parts[0].object,
             "explicit shared embedding/head did not bind the same parent");
-    const auto capacity = plan.materialization().device_capacity_bytes;
     require(!plan.weights().vision && plan.resources().preprocessor_config_json.empty(),
             "unused Vision was required");
     rejects([&] { (void)qwen::plan_load(reader, {.vision = true}); },
@@ -199,6 +198,8 @@ void logical_data_and_instances() {
     rejects([&] { (void)qwen::plan_load(reader, {.speculative = SpeculativeBackend::Mtp}); },
             "absent MTP was accepted");
 
+    const auto resolved                   = qwen::resolve_load(std::move(plan), Device::cuda(0));
+    const auto capacity                   = resolved.materialization().device_capacity_bytes;
     fixture.file.root["metadata"]["name"] = "another-training-run-and-recipe";
     fixture.file.root["components"]["text"]["config"]["num_hidden_layers"] = 2;
     fixture.file.root["components"]["text"]["config"]["layer_types"]       = {"full_attention",
@@ -229,7 +230,9 @@ void logical_data_and_instances() {
     require(expanded.weights().text.layers.size() == 2 &&
                 expanded.config().text.compact_layer_indices == std::vector<std::uint32_t>{0, 1},
             "config did not drive layer geometry and compact indices");
-    require(expanded.materialization().device_capacity_bytes == capacity,
+    require(qwen::resolve_load(std::move(expanded), Device::cuda(0))
+                    .materialization()
+                    .device_capacity_bytes == capacity,
             "cross-layer sharing duplicated parent storage");
 }
 
@@ -237,7 +240,8 @@ void native_uses() {
     const std::array<std::uint64_t, 2> shape{128, 64};
     const auto geometry = weight_geometry(QType::NVFP4, QuantLayout::BlockScaleK16M128x4, shape);
     std::vector<std::byte> bytes(geometry.bytes);
-    const WeightParent parent{geometry, Device::cpu(), bytes.data(), 8.0F};
+    const std::array divisors{8.0F};
+    const WeightParent parent{geometry, Device::cpu(), bytes.data(), divisors};
     const WeightView gate{{64, 64}, {{&parent, 0, 4096}}};
     const WeightView up{{64, 64}, {{&parent, 4096, 8192}}};
     const auto joined = ops::prepare_linear_swiglu_weight({gate, ops::LinearPolicy::AllowA4, 2.0F},
@@ -269,7 +273,7 @@ void native_uses() {
     const auto first  = ops::prepare_linear_weight({full, ops::LinearPolicy::AllowA4, 2.0F});
     require(first.weight.input_scale_divisor == 2.0F && second.weight.input_scale_divisor == 3.0F &&
                 first.policy == ops::LinearPolicy::AllowA4 &&
-                second.policy == ops::LinearPolicy::A16Only && parent.weight_scale_divisor == 8.0F,
+                second.policy == ops::LinearPolicy::A16Only && parent.weight_divisors[0] == 8.0F,
             "preparing one use modified another use or its shared parent");
     rejects<std::invalid_argument>(
         [&] {
@@ -319,12 +323,26 @@ void invalid_model_data() {
     bad([](Json& root) { root["components"]["text"]["config"]["vocab_size"] = 264; });
 }
 
+void cold_matrix_profile() {
+    const auto geometry = weight_geometry(QType::NVFP4, QuantLayout::BatchedBlockScaleK16M128x4,
+                                          std::array<std::uint64_t, 3>{2, 256, 128});
+    const WeightParent parent{geometry};
+    const WeightView matrix{{128, 128}, {{&parent, 256 * 128, 384 * 128}}};
+    const std::array inputs{ops::WeightInput{matrix, ops::LinearPolicy::AllowA4, 2.0F}};
+    const auto profile = ops::describe_linear_weight(inputs);
+    require(profile.qtype == QType::NVFP4 && profile.n == 128 && profile.k == 128 &&
+                profile.layout == QuantLayout::BlockScaleK16M128x4 &&
+                profile.policy == ops::LinearPolicy::AllowA4,
+            "cold matrix profile did not preserve the local NVFP4 matrix layout");
+}
+
 } // namespace
 
 int main() {
     try {
         logical_data_and_instances();
         native_uses();
+        cold_matrix_profile();
         invalid_model_data();
         std::cout << "model config, binding, resources and Use checks passed\n";
         return 0;
