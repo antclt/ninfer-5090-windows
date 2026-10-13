@@ -4059,10 +4059,28 @@ about the sign of the change, and neither is discarded here: the paired sweep me
 cell and reads the engine's decode rate; the fingerprint fires three prompts per cell, which is a
 different protocol and the one the table's figures come from.
 
-**What that leaves**: the two settings are candidates, not findings. The reconciliation is a concrete
-next step - run the fingerprint's own cell protocol against both configurations in the interleaved
-order the comparison tool uses, so the sign is settled inside the protocol that decides - and until then
-the shipped configurations stand and this entry says why. Nothing is applied on contradictory evidence.
+**The reconciliation, found by reading the protocol instead of reasoning about it.** `measure_decode` in
+`tools/release/v3_profile_matrix.py` documents what the fingerprint does that the four new tools do not,
+and the field agrees with it (vLLM's own position is that "does not guarantee reproducible results by
+default, even with the same model, prompt, and parameters"; AWS's guide on benchmarks that do not lie is
+about the same class):
+
+* **A discarded full-length warmup.** "The first full-length decode after a server start is a transient:
+  it returns faster than every later identical request ... Measured on the NVIDIA MTP5 lane it reads
+  261.7 tok/s against 169.8 for requests 2-7." The transient is *faster*, which is why the new tools'
+  single-prompt figures read 384-437 where the table reads 361 on the same lane and cell.
+* **The served sampling, not greedy.** `default` is the model card's thinking set (temperature 1.0 /
+  top_p 0.95 / top_k 20); greedy inflates draft acceptance, and the docstring records that the port has
+  already been bitten by exactly this - "profiles.py's 55.0% and ninfer_bench's 21.1% were this
+  discrepancy". The new tools ran temperature 0.
+* **Three runs averaged, and the engine hash and sampling recorded** beside the figures.
+
+So the four new tools are the ones configured differently from the shipped protocol, not the fingerprint.
+Their comparisons are valid *within* their own protocol - both arms the same, paired, agreeing to ~1% -
+but they do not transfer to the table, and the two candidate settings above were refused on evidence that
+disagreed in sign for a reason now identified rather than mysterious. The fix is not to adjust a
+threshold: it is to stop hand-rolling the protocol and call `measure_decode` with the configuration
+overridden, so the sign is settled inside the protocol that decides.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
