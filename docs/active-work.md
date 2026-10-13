@@ -4114,15 +4114,17 @@ same trap the long-context tool hit and fixed with a 512-token budget. So 88% is
 measurement, and the re-run wants the larger budget before the figure is quoted. What the run does
 establish is that the probe measures what it claims to and that degradation is observable.
 
-**Per-artifact perplexity, spot-checked.** One artifact, the recommended line, `--quick`, fp8, today on
-the merged tree: **overall 4.392988** over 261,167 scored tokens, against the docs' recorded `--quick`
-figures for the same artifact of 4.89741 / 4.94879 / 4.90484 / 4.88817 from four pre-merge builds. That is
-**10.3% lower, so better**, and the tool wrote its own report with the engine hash in the path
-(`profiles/perplexity/qwen3.8-27b/ed709b7d…/fp8-e4m3-r256/infer-ppl-1m-v1/quick/20261013-020649/report.json`).
-**The cause is not established** - a numerics change carried through the merge, or a difference in which
-streams `--quick` selects - so this is a measured difference with a direction and an open explanation.
-What it does establish is that the docs' perplexity rows describe pre-merge builds and should be
-re-measured across the artifacts before any of them is quoted as current.
+**Per-artifact perplexity, spot-checked, and the difference attributed.** One artifact, the recommended
+line, `--quick`, fp8, on the merged tree: **overall 4.392988** over 261,167 scored tokens, against the
+docs' recorded `--quick` figures for the same artifact of 4.89741 / 4.94879 / 4.90484 / 4.88817 from four
+pre-merge builds - 10.3% lower, which read as either a numerics change through the merge or a corpus
+difference. **The A/B settled it and the answer was neither**: the pre-merge release binary
+(`C:\AI\releases\stage-v1.2.0\ninfer-perplexity.exe`, cut 2026-10-11) run on the same artifact, corpus and
+flags reads **4.387628** overall, against the merged binary's 4.392988 - **0.12% apart**, with
+english_reference 6.280237 against 6.304144 and ninfer_code 1.664146 against 1.664487. So the merge
+preserved the numerics, the engine is not the difference, and the docs' perplexity rows describe a corpus
+selection from 2026-09-22/26 rather than today's. Two things follow: the rows should be re-measured before
+they are quoted as current, and the merge's numerical fidelity is now measured rather than assumed.
 
 **Every open item is now closed or named.** Unit tests for the session's tools, wired into the hook. The
 format question answered in the protocol that decides, with one shipped lane moved. Session state drift
