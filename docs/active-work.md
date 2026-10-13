@@ -1,4 +1,4 @@
-# Active work — current as of 2026-10-12
+# Active work - current as of 2026-10-13
 
 **This file is temporary.** It is the single current record of work in progress. Per `AGENTS.md`,
 remove it when the list is empty; do not grow it into a roadmap and do not add a parallel `v2`.
@@ -3995,7 +3995,10 @@ which are done.**
   `tools/bench/compare_lane_configs.py` - every candidate in every round, paired so the card's
   session-to-session drift cancels, on the two deciding cells, reading the engine's own decode rate
   rather than wall clock. The paired rounds agree to about 1% on every lane, which is what interleaving
-  buys. Two lanes are decided, six are inside the 10.3% spread and need more rounds:
+  buys. Two lanes are decided, six are inside the 10.3% spread and need more rounds - **that threshold is
+  wrong and a later section corrects it**: 10.3% is the card's session figure, which interleaving exists to
+  remove, and against the comparison's own paired spread six of the eight are decisions and the two depths
+  are open:
 
   | lane | ships | worst deciding cell | verdict |
   |---|---|---|---|
@@ -4178,12 +4181,53 @@ with repetition is measuring a difference smaller than the instrument, so depth 
 indistinguishable on these lanes and the shipped 9 stands. The rule's method (more rounds) has been run
 and the answer is that there is nothing to separate.
 
-**Two shipped formats are contradicted by solid decisions and are not yet applied**: nvidia mtp4 ships
-fp8 and k8v4 wins by 6.5% against a 2.4% spread; quasar mtp4 ships k8v4 and fp8 wins by 2.6% against
-0.7%. Each needs the wave the other two moves took - field, launcher, fingerprint, fold, and the docs'
-k8v4 lane count, which would go from three to two as one moves each way. **swift mtp4 is unresolved**: its
+**Both were applied on 2026-10-13**: nvidia mtp4 moved fp8 -> k8v4 (k8v4 by 6.5% against a 2.4% spread)
+and quasar mtp4 moved k8v4 -> fp8 (fp8 by 2.6% against 0.7%), each with the wave the other two moves
+took - `tools/release/fold_lane_figures.py` then `fold_doc_figures.py` fold the table and the two documents
+from the record, dry by default, with the two owning gates as the verification.
+
+**And the comparison tool was deciding on the wrong cell.** It took the worst of `{code, long-code}` until
+2026-10-13, which folds a *short* cell into the verdict - and CONTEXT.md says in one line why that is wrong:
+"select on served-length prompts. The short domains give margins of 0.3 to 1.6 %, which invert". The short
+cell does invert here: swift dflash2's favours k8v4 by 11.0% while its served-length cell favours fp8 by
+7.3%, and nvidia mtp4's favours fp8 by 11.0% while its served-length cell favours k8v4 by 6.5%. All four
+verdicts are unchanged under the corrected reading, because the served-length cell was the binding one in
+each; the tool now decides on it, prints the short and non-code cells as disclosed costs with their signs,
+and measures its threshold spread on the deciding cell. The disclosures the rule requires are recorded in
+`README.md` and `RELEASE_NOTES.md` beside the moves. The docs' k8v4 count stays three - quasar mtp4 leaves as nvidia mtp4 joins, so the membership moved
+and the number did not - and `launcher_env.bat`'s `QUASAR_ARGS` had to be regenerated with them: it feeds
+test_prompt.bat and test_vision.bat, and the gate compares it against `cli_args` of the first mtp4 lane, so
+it still said k8v4 after the field changed and the profile gate caught it. **swift mtp4 is unresolved**: its
 comparison did not finish, so its 3-round reading (k8v4 by 0.7% against 0.6%) stands as open rather than
 as a decision.
+
+**And the fingerprint's figures are a run condition in part - which the cooled re-measure separated from a
+format effect.** A grouped refresh measured all eight lanes on 2026-10-13, every one below the table, with a
+step after lane 4: quasar/ninfer -2 to -10%, swift/nvidia -11 to -16%. A probe attributed part of it:
+`swift dflash2` read 261.6 as lane 5 of the grouped run and **295.5 and 293.8 solo**, against the table's
+300.8 - a solo measurement reproducible to ~1%, a grouped run's late lanes not. An eight-lane refresh with
+90 s between lanes still read its last three 8 to 17% low, so the first reading was taken to be a droop that
+grows with elapsed load. **The cooled re-measure falsified that for the worst lane**: `nvidia mtp4`,
+measured solo from a 39 C card at idle clocks (`nvidia-smi`: 39, 1267 MHz, 82 W before; 57, 2895 MHz, 283 W
+after), read code 173.3 and long code 145.7 - against the table's 207.9, and against the interleaved
+comparison's own k8v4 arm of 172.5 and 145.7, which is 0.5% and exact. So that lane's -17% is its format
+change seen across sessions, not a droop, and the cooled run still finishing is the instrument that shows
+which of the two each lane's gap is. `lane_fingerprint.py` records the run level per lane
+(`run_level_pct`), because the record accumulates one write per lane and a payload-level field would
+describe only the last, and prints it above the drift list. **What is not attributed is the residual gap on
+the lanes whose format did not change** - session state, clocks and VRAM were not separated for them - so
+the drift report stays an instruction to re-measure rather than a verdict.
+
+**The band is now stated rather than implied, and the state is recorded rather than required.** The day's
+five runs of `swift dflash2` read 261.6, 290.8, 293.8, 295.5 and 319.3 tok/s - 22% from lowest to highest -
+and `ninfer mtp4` spanned 186.6 to 212.8, so a row is a sample and the documents now say so, with the run
+level it was taken at and the card state where the run recorded one. `lane_fingerprint.py` gained
+`gpu_state` (temperature, clocks, power, utilization, pstate, before and after) for exactly that reason:
+recording the state is honest, while requiring one would imply a canonical state that a reader's machine
+cannot have - which is why the row spacing is a 60 s settle, justified as a fairness between rows and not
+as a state requirement. Two of the format moves also carry an acceptance cost that the fold made visible:
+nvidia mtp4's code cell reads 47.7% where the previous fp8 measurement read 52.2%, recorded in the lane's
+note.
 
 | comparison | margin | paired spread | verdict |
 |---|---|---|---|
@@ -4196,15 +4240,12 @@ as a decision.
 | ninfer dflash2 depth | 9 by 0.1% | 1.5% | **inside the spread - mean favours 7 (261.6 against 261.4) - OPEN** |
 | nvidia dflash2 depth | 9 by 0.0% | 1.1% | **inside the spread - mean favours 7 (244.5 against 244.4) - OPEN** |
 
-**What follows, stated as work rather than as a conclusion.** One shipped format is contradicted by a
-solid decision - **ninfer mtp4 ships k8v4 and fp8 wins by 7.0% against a 0.8% spread** - and changing it
-needs the same wave as the swift move: the field, the launcher, the fingerprint, the fold, and the docs'
-lane count. Three more are decisions by the rule but thin enough to want more rounds before a shipped
-setting moves on them: nvidia mtp4 (6.4% against a 5.8% spread), quasar mtp4 (1.3% against 1.2%) and
-swift mtp4 (0.7% against 0.6%). Both dflash2 depths are **open**: their margins are inside their own
-spreads and the mean favours 7 on both while both lanes ship 9, so they are unresolved questions with a
-named method - more rounds until one candidate separates - and not ties, not closures, and not settled by
-a threshold that was never measured.
+**What follows, stated as work rather than as a conclusion.** Superseded by the six-round section above:
+ninfer mtp4, nvidia mtp4 and quasar mtp4 have all been applied, the two dflash2 depths closed as
+indistinguishable, and only swift mtp4 remains open because its comparison did not finish. Both dflash2
+depths read as **open** on the three-round evidence and the six-round run settled them the other way -
+their spreads grew with repetition rather than shrinking, so there was nothing to separate and the shipped
+9 stands.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
