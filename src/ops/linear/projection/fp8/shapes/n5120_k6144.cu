@@ -44,7 +44,7 @@ void launch_a16(const Tensor& x, const Weight& weight, Tensor& out, cudaStream_t
 
 void launch_a8(const Tensor& x, const Weight& weight, Tensor& out, Fp8A8Workspace scratch,
                cudaStream_t stream) {
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Ninth and last of the nine. Fp8N5120K6144
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Ninth and last of the nine. Fp8N5120K6144
     // owned by linear_add, whose oracle (ninfer_linear_add_fp8_test) is green on the ungated K-templated
     // ladder with these same tiles. Its partials thresholds were already correct and unconditional:
     // MidBulk at >192 and Bulk at >768 match the ladder's 193-768 and 769+ selection bands exactly.

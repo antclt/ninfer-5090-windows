@@ -47,7 +47,7 @@ constexpr std::int32_t kBandWideBulkMax = 512;
 
 void launch_a8(const Tensor& x, const Weight& weight, Tensor& out, Fp8A8Workspace scratch,
                cudaStream_t stream) {
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Fourth of the nine. Fp8N16384K5120 is the
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Fourth of the nine. Fp8N16384K5120 is the
     // gdn_input_proj shape, so the three gdn tests are this shape's oracle and were already green on
     // the ungated gdn ladder -- every tile here (64x128 Stages=2, 192x128, split 128x128 Stages=2, split
     // 128x256) is the same tile that route exercises at 65-192, 193-384, 385-512 and 513+.

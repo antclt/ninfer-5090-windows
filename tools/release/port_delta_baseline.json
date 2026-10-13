@@ -355,7 +355,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "The Op contract updated for the ungated FP8 bands (docs/active-work.md item 12): A16Only and AllowA8 now hold at every positive T rather than only through T=16, with the linear-then-silu_mul decomposition materializing the gate/up projection above the fused small-T family."
+      "reason": "The Op contract updated for the ungated FP8 bands (measured: docs/maintainer/fp8-ungated-bands.md): A16Only and AllowA8 now hold at every positive T rather than only through T=16, with the linear-then-silu_mul decomposition materializing the gate/up projection above the fused small-T family."
     },
     "include/ninfer/types.h": {
       "status": "M",
@@ -817,7 +817,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "cpp-cuda-review + check_fp8_band_ladders (10 files, 0 divergences, self-test catches 3). The band ladders name their bounds once so the ladder and the capacity function cannot disagree; M32N32Deep carries its measured figure and configuration.",
-      "reason": "Port feature: the port's band ladder, with its bounds named once so the ladder and the capacity function cannot disagree (docs/active-work.md item 12; the AGENTS.md rule earned by `tokens > 512 && tokens <= 384`). Upstream split the port's K-templated file into this and n5120_k6144.cu, which is why each is a separate entry now."
+      "reason": "Port feature: the port's band ladder, with its bounds named once so the ladder and the capacity function cannot disagree (docs/maintainer/fp8-ungated-bands.md; the AGENTS.md rule earned by `tokens > 512 && tokens <= 384`). Upstream split the port's K-templated file into this and n5120_k6144.cu, which is why each is a separate entry now."
     },
     "src/ops/linear/add/fp8/shapes/n5120_k6144.cu": {
       "status": "M",
@@ -847,7 +847,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "Part of the FP8 ungating work (docs/active-work.md item 12): split-K geometry and the identity row policy threaded through the MMA launch, so the ungated token bands have a schedule that can carry partials. Same family as the nine UNGATED files."
+      "reason": "Part of the FP8 ungating work (measured: docs/maintainer/fp8-ungated-bands.md): split-K geometry and the identity row policy threaded through the MMA launch, so the ungated token bands have a schedule that can carry partials. Same family as the nine UNGATED files."
     },
     "src/ops/linear/kernels/fp8/fp8_a8_tma_mma.cuh": {
       "status": "M",
@@ -889,7 +889,7 @@
       "status": "M",
       "disposition": "windows",
       "review": "windows",
-      "reason": "Part of the FP8 ungating work (docs/active-work.md item 12): split-K geometry and the identity row policy threaded through the MMA launch, so the ungated token bands have a schedule that can carry partials. Same family as the nine UNGATED files."
+      "reason": "Part of the FP8 ungating work (measured: docs/maintainer/fp8-ungated-bands.md): split-K geometry and the identity row policy threaded through the MMA launch, so the ungated token bands have a schedule that can carry partials. Same family as the nine UNGATED files."
     },
     "src/ops/linear/projection/fp8/shapes/n14336_k5120.cu": {
       "status": "M",
@@ -1699,7 +1699,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "The _fixed helper gained a `required` flag so the draft config must state is_causal. Recorded in docs/active-work.md: DFlash v1's published config omits the key, our converter's check only raised when it was present, and the runtime never reads it -- so a converted v1 drafter silently got a uniformly non-causal block. The runtime applies one causality to the whole draft stack, so a config that omits the key leaves the converter assuming a uniformity it cannot verify, and a config this layer cannot represent is refused rather than converted. Both directions are pinned."
+      "reason": "The _fixed helper gained a `required` flag so the draft config must state is_causal. Recorded 2026-10-08: DFlash v1's published config omits the key, our converter's check only raised when it was present, and the runtime never reads it -- so a converted v1 drafter silently got a uniformly non-causal block. The runtime applies one causality to the whole draft stack, so a config that omits the key leaves the converter assuming a uniformity it cannot verify, and a config this layer cannot represent is refused rather than converted. Both directions are pinned."
     },
     "tools/convert/qwen4_exp.py": {
       "status": "M",

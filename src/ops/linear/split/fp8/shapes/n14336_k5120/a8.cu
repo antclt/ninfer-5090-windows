@@ -42,14 +42,14 @@ void launch_a8(const Tensor& x, const Weight& weight, std::span<const Tensor> ou
             launch_fp8_a8_mma<S>(operands, output, LinearIdentityEpilogue{}, stream,
                                  Fp8IdentityRows{}, workspace.partials);
     };
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Second of the nine, ungated on the same three
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Second of the nine, ungated on the same three
     // grounds as linear_swiglu -- the cudaErrorIllegalInstruction that justified the gate was a
     // descriptor ABI defect, alignas(128) on a by-value kernel parameter, now alignas(64) -- and this
     // route's coverage is the best of the nine:
     //   - all four tiles are oracle-checked on both arms: 64x128 Stages=2, 64x256, 96x256, and the
     //     128x256 split Bulk. TMA leads the median on each (1.107, 1.270, 1.288, and 1.270 on the
     //     linear_add Bulk measurement of the same tile). Workload, metric and harness:
-    //     docs/active-work.md item 12, the median tile table.
+    //     docs/maintainer/fp8-ungated-bands.md.
     //   - run_fp8_target() already drives tokens 1..128 and then {129, 191, 192, 193, 256, 257, 287,
     //     288, 289, 383, 384, 385, 512, 513, 1024, 1025}, which reaches EVERY rung including Bulk and
     //     the 289 boundary where the partials buffer starts.

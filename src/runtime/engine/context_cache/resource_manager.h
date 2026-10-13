@@ -909,7 +909,7 @@ private:
         // retry this, so a deferred release would never be completed and the Native checkpoint would
         // leak instead. Reporting it and continuing keeps the process alive and the other requests
         // answerable; the unreleased checkpoint is the cost, and it is recorded in
-        // docs/active-work.md with the interleaving that would confirm the condition is reachable.
+        // an interleaved run that would confirm the condition is reachable.
         if (program.valid_checkpoint(handle) && !program.release_checkpoint(handle)) { return; }
     }
 

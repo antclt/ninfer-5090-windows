@@ -10,7 +10,7 @@ and every gate that reads it still passes, because the damage is confined to the
 
 Two files in this repository carried it for a fortnight before this gate existed:
 docs/maintainer/qwen3.8-27b-artifact.md from 13f5f219 (2026-09-24, one generation, seven lines) and
-docs/active-work.md from 6d9ae366 (three generations, 181 lines). Both were introduced by scripted
+a tracked document from 6d9ae366 (three generations, 181 lines). Both were introduced by scripted
 edits of the kind the project already records as a trap for BOMs; this is the same trap one step
 further along, and a check is the only thing that catches it.
 

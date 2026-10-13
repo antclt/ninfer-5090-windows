@@ -2,7 +2,7 @@
 
 Each case below is a bug that actually happened while building the tool, or the negative that would have
 caught it. The lane-driving parts are not tested here - they need a card and a lane, and their
-verification is the runs recorded in docs/active-work.md - but everything that can be decided from data
+verification is the recorded runs - but everything that can be decided from data
 alone is decided here, because these tools produced four confident wrong answers in one session and
 nothing in the hook would have noticed.
 """

@@ -43,7 +43,7 @@ constexpr std::int32_t kBandBulkSelectsAt = 192;
 
 void launch_a8(const Tensor& x, const Weight& weight, Tensor& out, Fp8A8Workspace scratch,
                cudaStream_t stream) {
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Eighth of nine. Fp8N34816K5120 belongs to
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Eighth of nine. Fp8N34816K5120 belongs to
     // linear_swiglu, whose oracle is already green on the ungated ladder with these same tiles
     // (64x128 Stages=2, 64x256, and the 128x256 split Bulk).
     //

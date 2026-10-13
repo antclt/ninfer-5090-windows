@@ -272,7 +272,7 @@ PROFILES: list[dict[str, Any]] = [
          spec="mtp", draft=5, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
          tok=216.1, acc="58.0%", runtime="8.07 GiB", free="5.16 GiB",
          note="Depth 4 re-measured 2026-09-30 against depths 1-5 on four domains. MTP is hard-capped "
-              "at 5 by kMaximumMtpDraftTokens, so docs/active-work.md item 8's proposed window of 10 "
+              "at 5 by kMaximumMtpDraftTokens, so the window of 10 proposed on 2026-09-30 "
               "cannot be run on this tree at all. Depth 5 is faster on code and slower on prose, "
               "dialogue and repetition, so depth 4 stands. This lane is unaffected by the draft "
               "encoding above, which the measurement confirms: the Q8 and NVFP4 builds read 215.7 "

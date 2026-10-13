@@ -8,7 +8,7 @@ The class this exists for, every instance found by hand on 2026-10-11, and each 
     name the context-cache rewrite retired, so "WARM TTFT: NOT measurable" was a verdict no run could
     escape -- the tool reported a fact about the engine that was a fact about its own criterion.
   * Four rows of `AGENTS.md` named the same retired vocabulary as if it were current.
-  * Two item texts in `docs/active-work.md` described the retired state as the live one.
+  * Two dated work-item texts described the retired state as the live one.
 
 A criterion that names a symbol the tree no longer defines does not fail; it answers a different
 question. Nothing caught any of these for weeks, which is why this is a ratchet and not a report: a

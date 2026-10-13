@@ -11,7 +11,7 @@ Everything comes from the files that own it, so the report cannot drift from the
 
     ctest --test-dir build-test -N > ctest.txt
     python tools/release/make_test_report.py --ctest-list ctest.txt --out build/test-report.html
-    msedge --headless=new --print-to-pdf=docs/test-report.pdf --no-pdf-header-footer file:///<abs>
+    msedge --headless=new --print-to-pdf=build/test-report.pdf --no-pdf-header-footer file:///<abs>
 """
 from __future__ import annotations
 
@@ -220,7 +220,7 @@ measurement priority named the gaps they fill.</p>
     print(f"wrote {args.out} ({len(doc)} bytes)")
     print(f"  {len(tests)} C++ tests, {len(py_tests)} Python test files, {len(gate_list())} gates, "
           f"{len(steps)} hook steps")
-    print(f"\n  to print: msedge --headless=new --print-to-pdf=docs/test-report.pdf "
+    print(f"\n  to print: msedge --headless=new --print-to-pdf=build/test-report.pdf "
           f"--no-pdf-header-footer file:///{args.out.resolve().as_posix()}")
     return 0
 

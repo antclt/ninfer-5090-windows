@@ -78,8 +78,8 @@ def test_one_generation_of_corruption_is_detected() -> None:
 
 
 def test_three_generations_of_corruption_are_detected() -> None:
-    """docs/active-work.md was three generations deep, which is why the repair iterates."""
-    # This is docs/active-work.md as it stood: seven reversals were needed, and the first repair
+    """A tracked document was three generations deep, which is why the repair iterates."""
+    # A document in this state: seven reversals were needed, and the first repair
     # attempt stalled at 181 lines because a string-level inverse cannot encode a line containing a
     # character outside cp1252.
     assert count_markers(_corrupt(f"a {EM_DASH} b\n", 3)) > 0
@@ -222,8 +222,8 @@ def test_the_sequences_are_the_ones_the_documents_actually_carried() -> None:
     """Spelled out from the repaired files, so a change to the table cannot agree with itself."""
     # Spelled out from the two repaired files rather than from the encoder's own table, so a change
     # to the table alone cannot make this test agree with itself.
-    assert "\u00e2\u20ac" in MOJIBAKE_SEQUENCES  # docs/active-work.md
-    assert "\u00c3\u0192" in MOJIBAKE_SEQUENCES  # docs/active-work.md, three generations
+    assert "\u00e2\u20ac" in MOJIBAKE_SEQUENCES
+    assert "\u00c3\u0192" in MOJIBAKE_SEQUENCES  # three generations
 
 
 def test_to_text_prefers_valid_utf8_over_a_lone_byte() -> None:

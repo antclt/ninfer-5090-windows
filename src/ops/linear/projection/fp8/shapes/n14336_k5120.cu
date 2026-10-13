@@ -39,12 +39,12 @@ constexpr std::int32_t kBandBulkSelectsAt = 288;
 
 void launch_a8(const Tensor& x, const Weight& weight, Tensor& out, Fp8A8Workspace scratch,
                cudaStream_t stream) {
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Fifth of the nine.
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Fifth of the nine.
     //
     // Fp8N14336K5120 belongs to attn_input_proj, whose oracle is already green on the ungated ladder
     // with these same tiles: 64x128 Stages=2 at 65-128, 64x256 at 129-192, 96x256 at 193-288 and the
     // 128x256 split Bulk at 289+. TMA medians on them: 1.107, 1.270, 1.288, 1.270.
-    // Workload, metric and harness: docs/active-work.md item 12, the median tile table.
+    // Workload, metric and harness: docs/maintainer/fp8-ungated-bands.md.
     //
     // This shape genuinely splits, which is why it needs the partials buffer: 14336/256 = 56 row
     // tiles, so the plan sees tail = 56 <= kSplitWaveCtas/2 = 85 and splits the underfilled wave.

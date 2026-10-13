@@ -53,7 +53,7 @@ constexpr std::int32_t kBandWideReturnMax = 768;
 
 void launch_a8(const Tensor& x, const Weight& weight, Tensor& out, Fp8A8Workspace scratch,
                cudaStream_t stream) {
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Fp8N5120K17408, like Fp8N5120K6144, is
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Fp8N5120K17408, like Fp8N5120K6144, is
     // owned by linear_add, whose oracle (ninfer_linear_add_fp8_test) is green on the ungated K-templated
     // ladder with these same tiles. Its partials thresholds were already correct and unconditional:
     // MidBulk at >192 and Bulk at >768 match the ladder's 193-768 and 769+ selection bands exactly.

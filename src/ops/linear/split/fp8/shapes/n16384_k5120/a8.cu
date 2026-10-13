@@ -44,7 +44,7 @@ void launch_a8(const Tensor& x, const Weight& weight, std::span<const Tensor> ou
             launch_fp8_a8_mma<S>(operands, output, LinearIdentityEpilogue{}, stream,
                              Fp8IdentityRows{}, workspace.partials);
     };
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). Third of the nine, and the one that closes the
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). Third of the nine, and the one that closes the
     // oracle gap on the split 128x128 Stages=2 tile.
     //
     // That tile previously had NO oracle coverage anywhere, which blocked this route and
@@ -57,7 +57,7 @@ void launch_a8(const Tensor& x, const Weight& weight, std::span<const Tensor> ou
     // 128x128 Stages=2 (1.047), and the 128x256 split Bulk (1.270). TMA leads every median. Note the
     // 128x128 tile is the one where MMA wins two bands (448 and 512) -- 1.047 median is the thinnest
     // margin of the five, so it is recorded here rather than left to be discovered.
-    // Workload, metric and harness: docs/active-work.md item 12, the median tile table.
+    // Workload, metric and harness: docs/maintainer/fp8-ungated-bands.md.
     if (x.ne[1] <= 32) return launch.template operator()<Fp8A8T32R32K128>();
     if (x.ne[1] <= 64) return launch.template operator()<Fp8A8T64R128K256>();
     if (x.ne[1] <= kBandT64x128Max) return launch.template operator()<Tma64x128>();

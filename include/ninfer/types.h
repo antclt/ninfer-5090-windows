@@ -873,7 +873,7 @@ struct SpeculativeStats {
     // that proposed position i at all. `proposed_per_position` is the denominator for all three,
     // so the three are published as a set rather than one at a time.
     //
-    // Port fields: added for docs/active-work.md item 5, which needed per-position recall to tell
+    // Port fields: added 2026-10-01 for the recall@1/@16 split, which needed per-position recall to tell
     // "the drafter is wrong" from "the target changed its mind". Upstream b9114396 rewrote this
     // struct and did not carry them; generation_service.cpp populates them and
     // src/serve/request_log.cpp publishes them.

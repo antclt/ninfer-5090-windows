@@ -45,13 +45,13 @@ void launch_fp8_swiglu_a8(const Tensor& x, const Weight& weight, Tensor& out,
             launch_fp8_a8_mma<S>(operands, output, SwiGluTokenMajorMmaEpilogue{}, stream,
                                  SwiGluTokenMajorMmaRows<S>{}, scratch.partials);
     };
-    // UNGATED 2026-10-02 (docs/active-work.md item 12). This was PORT-DISPATCH-gated on Windows because
+    // UNGATED 2026-10-02 (measured: docs/maintainer/fp8-ungated-bands.md). This was PORT-DISPATCH-gated on Windows because
     // upstream's TMA route faulted here with cudaErrorIllegalInstruction. That fault was a descriptor
     // ABI defect -- alignas(128) on a by-value kernel parameter, which MSVC cannot lay out -- and it is
     // fixed at alignas(64), which is the width cuda.h asks for. The harness that demonstrated this end
     // to end is withdrawn with the gates it flipped: it toggled nine PORT-DISPATCH gates, and there are
     // none left, so it could only ever exit non-zero while presenting as a live check. The measurement it
-    // took is recorded in docs/active-work.md item 12. PyGPUkit #107 reports the same misalignment
+    // took is recorded in docs/maintainer/fp8-ungated-bands.md. PyGPUkit #107 reports the same misalignment
     // defect on this same GPU and OS.
     //
     // Ungating is per ROUTE and on three pieces of evidence, not on the transport being faster:
@@ -63,7 +63,7 @@ void launch_fp8_swiglu_a8(const Tensor& x, const Weight& weight, Tensor& out,
     //     with a null buffer.
     //
     // Workload, metric and harness for the medians above, and the single authority for every figure
-    // quoted in this file: the median tile table at docs/active-work.md item 12. They appear here
+    // quoted in this file: the median tile table in docs/maintainer/fp8-ungated-bands.md. They appear here
     // without configuration because the harness that took them was withdrawn with the gates it
     // flipped, so that table is the only place that carries what they mean.
     if (x.ne[1] <= 16) return launch.template operator()<Fp8A8T16R64K128>();

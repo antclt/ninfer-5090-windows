@@ -101,7 +101,7 @@ MTP_DEPTHS = [2, 3, 4, 5]
 # Every draft window each backend will accept, from the startup validation rather than from this
 # file's own convenience: startup.cpp raises "MTP draft window must be in [1,5]" against
 # kMaximumMtpDraftTokens = 5, and "masked draft window must be in [1,15]" for DFlash/DFlash2. An
-# earlier revision of docs/active-work.md item 8 proposed raising the MTP window to 10 on the
+# a 2026-09-30 revision proposed raising the MTP window to 10 on the
 # strength of a fork that did it; this engine refuses to start at 6, so that item's sweep cannot be
 # run on this tree at all and the MTP axis is 1..5.
 WIDTH_LIMITS = {"mtp": 5, "dflash2": 15, "none": 0}
@@ -120,7 +120,7 @@ WIDTH_LIMITS = {"mtp": 5, "dflash2": 15, "none": 0}
 # The consequence is not confined to this file: tools/release/profiles.py carried ctx=262144 for
 # `start_swift_v3_dflash2_vision` and `start_ninfer_v3_dflash2_vision`, and `profile` mode measured
 # the first of them REFUSED through the real launcher. A ceiling table is only as good as the day it
-# was taken, which is the rule docs/active-work.md item 1 already records for the merge.
+# was taken, which is the rule recorded for the 2026-09-28 merge.
 #
 # Only the rows measured on 2026-09-30 are updated. The MTP rows for quasar, nvfp4full and nvidia
 # were not re-probed and still carry the 2026-09-17 values; they are marked rather than silently

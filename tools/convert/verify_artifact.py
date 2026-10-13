@@ -43,7 +43,7 @@ has nothing to do with their encoding: the source factory short-reads at
 ``248320 x 5120 = 1,270,998,400`` elements ("short source read"), and ``proposal/head`` needs an
 explicit logical source that no recipe supplies. Both are reported as **unchecked**, not as failures,
 because a reference that cannot be read is a limit of the lookup rather than evidence about the
-payload. So the endpoints -- 2.52 GiB, and the subject of ``docs/active-work.md`` item 3 -- remain
+payload. So the endpoints -- 2.52 GiB, and the subject of the 2026-10-01 work item -- remain
 unproven by this tool.
 
 Exit code 0 if every check passes, 1 otherwise. Run with ``--only`` to verify a single class, which

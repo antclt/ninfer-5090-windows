@@ -14,7 +14,7 @@ run the CLI or HTTP server.
 | [Perplexity](perplexity.md) | fixed-corpus and custom-text causal perplexity, comparison rules, progress, and reports |
 | [opencode settings](opencode-settings.md) | the four shipped model entries, compaction, and the concurrency answer for OpenCode Desktop |
 | [v2 to v3 flag diff](v2-v3-flag-diff.md) | what changed between the retired v2 launchers and the shipped v3 ones, flag by flag |
-| [Active work](active-work.md) | temporary: work in progress and the questions already closed, removed when the list empties |
+| [FP8 ungated bands](maintainer/fp8-ungated-bands.md) | the matched-tile measurement, its control, and the two structural limits behind the ungated FP8 A8 TMA bands |
 | [CLI examples](../examples/cli/) | committed text, multimodal, thinking, long-decode, and long-context inputs |
 
 The executable `--help` output is the exact source for command-line option spelling and defaults.
@@ -87,6 +87,7 @@ other references own narrower contracts:
 | [ReplaySSM GDN](maintainer/replayssm-gdn.md) | raw transition records and faithful commitment of the verified state prefix |
 | [Op development](maintainer/op-development.md) | semantic boundaries, source ownership, numerical qualification and performance evidence |
 | [Operational logging](maintainer/logging.md) | log ownership, presentation, severity and data policy |
+| [FP8 ungated bands](maintainer/fp8-ungated-bands.md) | the matched-tile measurement, its control, and the structural limits behind the ungated A8 TMA bands |
 | [Linear tuning and measurement](maintainer/linear-tuning.md) | logical metrics, timing, tuning ranges, dispatch tradeoffs and performance reports |
 
 Model cards contain official artifact facts and source provenance. The

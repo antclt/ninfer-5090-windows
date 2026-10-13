@@ -48,7 +48,7 @@ struct GenerationMetrics {
     std::vector<std::uint64_t> speculative_accepted_per_position;
     // Drafter recall per draft position, indexed like `speculative_accepted_per_position`. Carried
     // onto the serving path because the bench already reports them and a number that exists only in
-    // one harness cannot answer a question about the other -- `docs/active-work.md` item 5 recorded
+    // one harness cannot answer a question about the other -- the 2026-10-01 recall split recorded
     // that gap as the reason its own findings could not be compared across paths.
     std::uint32_t prefix_cache_hit_tokens     = 0;
     ninfer::PrefixReusePath prefix_reuse_path = ninfer::PrefixReusePath::Root;
