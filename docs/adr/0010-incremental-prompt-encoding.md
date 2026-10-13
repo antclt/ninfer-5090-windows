@@ -6,8 +6,7 @@ Status: accepted (2026-09-23)
 
 Host prompt preparation is `render + tokenize`, and on a warm prefix cache it is the whole of
 time-to-first-token: measured 119 ms for a 229-message, 130,869-token conversation, of which
-tokenize is 41 ms. `docs/research/prompt-preparation-cost.md` records that measurement and the
-process-level defect that used to dwarf it.
+tokenize is 41 ms -- dwarfed by the process-level defect described below.
 
 Tokenization is linear in the prompt and the prompt is re-sent in full every turn, so its cost grows
 with the conversation: about 0.3 ms per thousand tokens, so roughly 80 ms at the 262,144-token
@@ -116,7 +115,7 @@ that are not ordered and disjoint, and a span crossing the seam would have to be
   shipped server and the split is now `prepared 4.02 ms, render 3.69 ms, tokenize 94 us` on a warm
   229-message request — so neither of the two terms this record was written about is the largest one
   any more, and the largest term (a variable engine queue wait, outside preparation) is not this
-  record's to fix. `docs/research/prompt-preparation-cost.md` carries the readings and the correction:
+  record's to fix. The readings and the correction:
   an earlier version of that section called the wait constant, and a later verification run that
   produced a lower TTFT disproved it.
 

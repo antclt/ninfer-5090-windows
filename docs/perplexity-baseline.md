@@ -19,8 +19,7 @@ numerics change is present too, and it is **unattributed**. Both effects point t
 is the artifacts: their weights are unchanged -- every object of the five images rebuilt on 2026-10-07 is
 byte-identical to its predecessor, and only the embedded chat template differs, with the 16-byte artifact
 id random per build (`tools/artifact/writer.py:141`). The serving lanes moved in
-the same window and are recorded separately in
-[the lane regression record](research/lane-regression-2026-10-07.md); whether the two share a cause is open.
+the same window; whether the two share a cause is open.
 
 **What this measurement cannot see.** `ninfer-perplexity` has no `--spec` or draft option at all --
 `apps/perplexity/main.cpp` contains no reference to either -- so it scores the target model only.

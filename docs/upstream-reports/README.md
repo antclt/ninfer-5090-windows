@@ -36,7 +36,6 @@ once the grant scales).
 The fix scales the grant up to a 250 ms ceiling (`materialization_budget.h`, `kMaximumGrantNs`),
 with the economic term still governing below the ceiling and the boundary allowance capping both.
 It was committed as `2fcffaa9`, reverted as `7ae7bb40` with no recorded reason, and re-landed here.
-See `docs/research/prefix-state-eviction.md`.
 
 ## Not a bug: the fused DFlash2 binding
 

@@ -7,8 +7,8 @@
 > collapsed into one shared `--host-context-mib` quota. The Conclusion's finding that host KV size
 > and state slots "turned out to be inert once the cache bounds are set" is therefore **inverted**
 > under the replacement — that quota is what bounds retention now, measured at ~52 interleaved
-> conversations for the shipped 8 GiB against a port workload of about eight
-> (`docs/research/prefix-state-eviction.md`). Read this page as the record of a comparison, not as
+> conversations for the shipped 8 GiB against a port workload of about eight.
+> Read this page as the record of a comparison, not as
 > the current flag set; `tools/release/profiles.py` is the authority for what ships.
 
 v2 was tuned over a long period, so its `.bat` files are a record of accumulated knowledge.

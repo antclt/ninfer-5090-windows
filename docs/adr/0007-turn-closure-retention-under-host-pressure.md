@@ -117,9 +117,8 @@ Each part measured rather than argued:
 
 The shared path has the same shape and was measured separately: a live 51-request agent log shows
 every cache hit as `private endpoint` and none shared, with a conversation switch costing a 59.6 s
-cold prefill at 171,953 tokens. The log is recorded in
-[`docs/research/agent-session-field-log-2026-09-22.md`](../research/agent-session-field-log-2026-09-22.md),
-which is also this ADR's field evidence -- of its 49 cache hits, every one is an endpoint.
+cold prefill at 171,953 tokens. That log is also this ADR's field evidence -- of its 49 cache
+hits, every one is an endpoint.
 
 **Superseded for the shared case by [ADR-0009](0009-shared-prefix-served-where-declared.md).** The
 degradation measured there is real, but it is not why a shared prefix serves no reuse: on the OpenAI
@@ -139,8 +138,7 @@ A required checkpoint is one no live request is asking for yet, so the question 
 an anticipated reuse. SGLang's `priority` plus `retention_seconds` (the name `retention_priority` is
 TensorRT-LLM's) is a decaying bias, after its hard-pinning PR was reverted because "priority controls
 eviction order, not exemption"; T-LRU's protected class is defined by the *next turn's* uncached token
-count rather than by current demand. Both are sourced from primary references in
-[`docs/research/anticipated-reuse-pricing.md`](../research/anticipated-reuse-pricing.md), which also
+count rather than by current demand. Both are sourced from primary references, which also
 covers vLLM, TensorRT-LLM, LMCache, Mooncake, Dynamo, the classical replacement policies, and
 Marconi's hybrid-state taxonomy.
 
@@ -188,7 +186,7 @@ The evidence that layer 3 is a defect rather than a trade-off:
   budgets into one quota, and the launchers now pass `--host-context-mib 8192`; the argument is
   unchanged and its capacity is now measured rather than sized by construction — 52 interleaved
   conversations reuse and 56 do not, which is that quota in state images (~55 x 147 MiB), against a
-  port workload of about eight (`docs/research/prefix-state-eviction.md`).
+  port workload of about eight.
 - **The cheap option taxes a headline capability.** Losing the MTP state loses speculative decoding
   for that turn, and speculation is what the shipped launchers are named for.
 

@@ -97,8 +97,7 @@ The request is also already at two renders, so the probe cannot be merged away.
   (`test_rewrite_checkpoint_trace`); the bench's rendered-byte count is the byte-identity check; the
   release gate covers the rest.
 - What remains of the render's proof work is the next-turn probe, ~24 ms, and the vendored
-  interpreter's own per-render cost, ~24 ms, which
-  [`docs/research/prompt-preparation-cost.md`](../research/prompt-preparation-cost.md) records as the
+  interpreter's own per-render cost, ~24 ms, which is the
   engine's architecture rather than this port's.
 
 ## Why this needs recording

@@ -204,8 +204,7 @@ Applied:
 The two Swift rows are the 2026-09-30 model ids; the lanes were `swift-v3-*` before Swift 1.5
 replaced Swift 1.0 on them. `nvfp4-v3-dflash2-vision` is back at 262,144 after being lowered to
 240,000 the same day: the lane was refused at startup at 262,144 until the artifact behind it was
-rebuilt with its BF16 exception projections encoded to NVFP4 — see
-[swift15-lane-measurement.md](research/swift15-lane-measurement.md).
+rebuilt with its BF16 exception projections encoded to NVFP4.
 
 - **`buffer: 8000`** rather than the 20,000 default. The buffer is the margin the compaction
   call itself needs — its summary prompt plus output allowance must fit — so it should not
@@ -292,7 +291,7 @@ ceiling at the same time, because each active lane needs its own state: `--max-c
 of one queueing behind the other.
 
 What *is* measured now, as of 2026-10-06, with `tools/release/repro_251.py` (which starts its own lane
-and takes `--interleave`; the runs are in `docs/research/prefix-state-eviction.md`'s last section):
+and takes `--interleave`):
 
 - **Sequential**, each conversation asked twice back to back at the shipped
   `--host-context-mib 8192 --device-state-slots 1`: 60 distinct conversations, all ~96%.

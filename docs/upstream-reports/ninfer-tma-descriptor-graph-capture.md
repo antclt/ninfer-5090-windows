@@ -76,4 +76,4 @@ Unrelated to the above, `tests/test_resource_manager.cpp`'s
 not timing-dependent: the optional materialization search's initial grant was pinned flat at 5 ms,
 which the incumbent's `/20` term never bound, and it now scales up to a 250 ms ceiling
 (`src/runtime/engine/context_cache/materialization_budget.h`, `kMaximumGrantNs`) so the search
-reaches the preserving reuse closure. See `docs/research/prefix-state-eviction.md`.
+reaches the preserving reuse closure.

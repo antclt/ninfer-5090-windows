@@ -156,7 +156,7 @@ Chinese, ninfer mtp4 6.0% of long Chinese, and quasar mtp4 gains 3.1% of long Ch
 at this question measured a hand-rolled protocol - one prompt, temperature 0, no warmup - which ranks
 configurations at a sampler nobody serves by, and a fresh fingerprint against a recorded one, which is a
 cross-session comparison the interleave exists to replace.
-code-weighted bound ([evidence](docs/research/kv-dtype-evidence.md)). Every figure in the table is its lane's last
+code-weighted bound. Every figure in the table is its lane's last
 measurement, carrying the identity of what measured it in
 [`lane_figures.json`](tools/release/lane_figures.json), which the pre-commit hook checks.
 
@@ -165,7 +165,7 @@ same profiles on the same protocol, disagreed sharply**: the re-measurement read
 seven of them, with the run-to-run spread widened from within +/-1% to up to +/-30% and the
 speculative **round cost** -- normalised for acceptance, so the generated content cannot explain it --
 up 22-60%. The numbers, their runs, the ruled-out causes and the candidate set are in
-[the lane regression record](docs/research/lane-regression-2026-10-07.md); the change is unattributed
+the lane regression record; the change is unattributed
 and open.
 
 Context ceilings are measured, not assumed. The engine refuses a profile whose minimum Engine

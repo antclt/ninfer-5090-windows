@@ -57,7 +57,7 @@ out to be temporary: the reclaim landed on 2026-09-19, every profile ships
 **Correction (2026-10-06): the reclaim that sentence rests on is gone.** It was a change to the
 context cache upstream `b9114396` replaced, and the merge took upstream's version, so the cliff is
 back when the pools fill -- measured, and the replacement refuses by policy rather than through a
-missing path (`docs/research/prefix-state-eviction.md`). What keeps `--device-state-slots 1` safe now
+missing path. What keeps `--device-state-slots 1` safe now
 is the host quota it ships beside: 12 conversations of ~20,000 tokens reuse at 99.8%, and interleaved
 conversations hold to 52 and fail at 56, against a port workload of 8. The flag set still matches;
 the reason it is safe is not the one this amendment gave.

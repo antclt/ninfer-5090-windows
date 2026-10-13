@@ -29,7 +29,7 @@ is created with the interpreter this repository uses for tooling and lives at `e
 `run_qwen3_8_27b_*.sh` runners this page used to document are no longer carried: each was POSIX-only
 and each needed an artifact this port does not ship — the two `nvfp4` ones the retired line, the
 groupwise one the `groupwise-int` peer, which exists nowhere here. Their campaigns are recorded below
-and in `docs/research/task-accuracy-protocol.md`, with their protocol in `eval/configs/`.
+and their protocol is in `eval/configs/`.
 `run_qwen3_8_27b_quasar_gpqa_budgets.ps1` is the Windows runner for the shipped lane's GPQA budget
 campaign.
 

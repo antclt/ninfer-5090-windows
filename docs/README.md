@@ -101,7 +101,6 @@ contracts; they are what a later reader needs in order to check a claim instead 
 
 | Directory | What it holds |
 |---|---|
-| [`research/`](research/) | dated investigations: measurements, comparisons against other engines, and the evidence for a setting that shipped, each written while its question was open |
 | [`features/`](features/) | design notes for runtime work this port carries, including the weight-only NVFP4 DFlash2 runtime and the MSVC test-portability change |
 | [`upstream-reports/`](upstream-reports/) | what this port reported or considered reporting upstream, and the fork-divergence record |
 

@@ -69,8 +69,6 @@ route needs a `dflash` component; this product ships `dflash2`) and `ninfer_qwen
 (no 35B-A3B MoE checkpoint exists for this product). Both are **baselined** in
 `tools/release/test_baseline.json` rather than skipped, so the gate stays truthful about them.
 
-Deferred items living outside this file: `docs/research/server-open-items.md` and
-`docs/research/issue5-deferred-findings.md`.
 
 Everything else below is closed, answered or negative, and is kept because the reasoning is the
 durable part. The header date was `2026-09-28` until 2026-10-01, when it was corrected: the file's
@@ -200,7 +198,6 @@ Two things make the alternative uninteresting rather than merely unmeasured:
 
 **Reopen only if concurrency or native context changes**, since that is the only condition under which
 the 1.26 GiB acquires a consumer.
-Full evidence: `docs/research/quantization-coverage-evidence.md`.
 
 ### 4. The vision tower is quantized in all four artifacts and BF16 in all three sources — **RESOLVED 2026-10-01: keep it, on a measurement**
 **A precision note first, because it changes what is being decided.** The tower is *not* NVFP4. It is
@@ -287,7 +284,7 @@ its own — not a reason to revert now.
 
 **Done when:** satisfied for the weight-encoding question. A vision task benchmark remains the only
 outstanding evidence, and is recorded above as its own piece of work rather than as a condition on
-this item. Full evidence: `docs/research/quantization-coverage-evidence.md`.
+this item.
 
 ### 5. Recall@1 / Recall@16 / path-acceptance split — **BUILT 2026-10-01, and it refuted this item's premise**
 **The instrument is in the tree** (`611604e0`): `SpeculativeStats` gains `proposed_per_position`,
@@ -439,8 +436,8 @@ bench *runs* at different `--warmup`, which is a configuration comparison — se
 The only thing that would justify a KV size reduction on this product is context, and context is
 already at the ceiling. Upstream caps Qwen3.8-27B at `kNativeContext` = 262,144 and states outright
 that a smaller KV "does not change max context" (issue #123, verified against the tracker while
-closing this). What a 1.78 GiB saving at native context (fp8 8.06 → 6.28 GiB, −22.1%, measured in-tree
-and recorded in `docs/research/kv-dtype-evidence.md`) actually buys is **concurrency headroom** — and
+closing this). What a 1.78 GiB saving at native context (fp8 8.06 → 6.28 GiB, −22.1%, measured in-tree)
+actually buys is **concurrency headroom** — and
 concurrency 1 is a product decision for these lanes, so that value is declined by construction.
 
 Two further findings make the comparison moot rather than merely unattractive:
@@ -465,8 +462,6 @@ TurboQuant produces degenerate token loops** — which is this product's shippin
 a working format behind a flag, not a ported component whose consumer will never exist — so it is not a
 withdrawal candidate, and nothing in this row should be read as a reason to remove it.
 
-Full evidence, including what was searched and not found and one published table excluded as
-non-discriminating, in `docs/research/kv-dtype-evidence.md`.
 
 **Why it was once open, and why that reason no longer held:** every profile shipped `--kv-dtype fp8` and
 k8v4 sat behind one flag. The item's own premise — "**no published evidence exists for k8v4**" — was
@@ -488,7 +483,7 @@ fingerprint — and the answer is artifact-dependent rather than global:
 So the shared setting was withdrawn and `kv-dtype` became a per-profile field, with five lanes adopting it
 and three keeping `fp8` -- each on its own interleaved measurement, with every non-code regression disclosed
 in the row and a stated bound on how large a disclosure may be -- and every depth stands, each changed
-lane's depth re-read under the format it ships. Evidence: `docs/research/kv-dtype-evidence.md`; records in
+lane's depth re-read under the format it ships. Records in
 `matrix_v3.jsonl` and `tools/release/lane_figures.json`.
 
 ### 8. MTP draft window 5 to 10 — **NOT RUNNABLE ON THIS TREE, closed 2026-09-30**
@@ -499,7 +494,7 @@ requested at all — the item's comparison is not a measurement this tree can ma
 is the only way to run the item**, and nothing here argues for it.
 
 What *is* measurable was measured the same day on both Swift lanes: depths 1-5, interleaved, two
-rounds, on five domains (`docs/research/swift15-lane-measurement.md`). Depth 4 is fastest on prose,
+rounds, on five domains. Depth 4 is fastest on prose,
 dialogue and repetition and depth 5 fastest on code; depth 4 is the choice that maximises the worst
 domain, which is what both lanes already ship. Depth 5 is **not** uniformly worse — it is 54 % faster
 than Swift 1.0's depth 5 on code, because Swift 1.0's MTP head degrades sharply past depth 4 while
@@ -513,8 +508,7 @@ position, reported with acceptance, tokens per round and the per-position accept
 
 The finding that matters is that **the code domain alone reverses the width decision**, which is
 what this harness's own `DOMAINS` comment predicted: d13 is 33 % faster than the shipped d7 on code
-and slower on chinese, prose and dialogue. d7 wins three domains of five. Full table and the
-per-position profiles are in `docs/research/swift15-lane-measurement.md`.
+and slower on chinese, prose and dialogue. d7 wins three domains of five.
 
 ### 9. ngram: the verify-tree integration — **CLOSED 2026-10-01 by product decision**
 **Closed on the maintainer's own evidence, not on an argument from this file.** The copy-drafting
@@ -538,8 +532,7 @@ figure previously read 52-67% here and 52-69% in the closed-items table, and nei
 recorded lane). The +55%
 reference was measured on a lane accepting 27%.
 
-**The research is already done and is better than anything I would add here.** Read
-`docs/research/ngram-copy-selection-signals.md` before starting: it establishes, from the
+**The research is already done and is better than anything I would add here.** Read before starting: it establishes, from the
 implementations, that TensorRT-LLM's `SADraftEnhancer` is the *only* shipped copy-vs-neural selector
 across llama.cpp, vLLM, SGLang and TensorRT-LLM, that vLLM's combination is still unmerged, and that
 `use_sa_spec` is wired into exactly MTP, EAGLE 3 and PARD -- so **DFlash2 has no shipped precedent for
@@ -636,8 +629,6 @@ artifact's perplexity is measured and good. It is an observation, not a defect, 
 critical path to this item's answer. If it is ever worth a look, the question is whether the FP8 sites'
 divisors were calibrated on a corpus representative of production traffic.
 
-Evidence, including the four competing calibrator policies and the survey behind them:
-`docs/research/activation-scale-method-evidence.md`.
 
 Retained because it is the producer's own statement of the residual risk, not an inference:
 ModelOpt's `NVFP4ActHeadroomCalibrator` exists because plain max calibration of the activation global
@@ -647,7 +638,6 @@ the 99.99th percentile and clips the rare blocks deliberately instead. **That is
 what max calibration can do, on a model where they chose not to enable their own fix.** It is the
 strongest form the argument takes, and it is still an argument about NVIDIA's choice, not a defect
 attributable to this port.
-Full evidence, including the ~90-checkpoint survey: `docs/research/quantization-coverage-evidence.md`.
 
 ### 11. The sparse accept path had no distributional test, and every sparse case used `top_k=1` - **DONE 2026-09-28**
 **Found while auditing a claim of mine that turned out to be false. The premise below was also false.**
@@ -704,7 +694,7 @@ configuration nobody was checking.
 > * **Two fixes were falsified first**, one variable at a time: the `fence.proxy.acquire.tensormap`
 >   per map, and a process-lifetime staging buffer. Both left the loop red. The proxy fence is
 >   deliberately **not** re-added.
-> * **The 2d-versus-3d theory is withdrawn.** `docs/research/windows-ports-tma-survey.md` surveyed 293
+> * **The 2d-versus-3d theory is withdrawn.** A survey of 293
 >   forks: three Windows ports build and run this exact route on sm_120a and all three keep the
 >   rank-2 descriptor and `cp.async.bulk.tensor.2d`.
 >
@@ -719,8 +709,7 @@ configuration nobody was checking.
 >
 > **The ~10x figure is not reproduced by anything published, and the obvious confound does not explain
 > it.** An earlier bench put the TMA-selected token bands at ~100-125 GB/s against ~1110-1316 GB/s for
-> the MMA bands. Three findings dissolve that as a reason to keep the gate
-> (`docs/research/sm120-tma-fp8-throughput-evidence.md`):
+> the MMA bands. Three findings dissolve that as a reason to keep the gate:
 >
 > * **No apples-to-apples comparison exists to lose to.** CUTLASS ships **no non-TMA sm_120 mainloop
 >   at all** — all eight SM120 collectives are `*_tma.hpp`, all seven builders are TMA-only, and
@@ -731,8 +720,9 @@ configuration nobody was checking.
 >   previous revision of this block cited a third-party exercise as "TMA 4-9% ahead of `cp.async` on
 >   an RTX 5090". Verification refuted it: the exercise is `02_matmul_sm120`, it measures **BF16 and
 >   INT8 only with no FP8 anywhere**, its INT8 pair differs in `BLOCK_K` so that margin is not
->   attributable to TMA, and the "6.9% run-to-run swing" appears in none of its files
->   (`docs/research/verify-cutlass-sm120-claims.md`). The BF16 pair *is* genuinely controlled — same
+>   attributable to TMA, and the "6.9% run-to-run swing" appears in none of its files.
+>
+> The BF16 pair *is* genuinely controlled — same
 >   tile, stages, warps and MMA — so it is weak evidence about BF16 and none about FP8.
 >   **So "TMA is slower here" is unsupported by this tree's bench, and "TMA is faster" is now
 >   unsupported by anything published.** Both directions are open.
@@ -1202,7 +1192,7 @@ configuration nobody was checking.
 > nearby and not faulting; a kernel containing no tensor map and no TMA instruction reproduces the same
 > fault; and with the operands corrected, TMA runs in every legal arm — rank 2 and 3, swizzle 128B and
 > NONE, by value and by pointer. So none of the four causes that reproducer claimed to eliminate was
-> ever under test. `docs/research/why-no-others-hit-sm120-tma-evidence.md` has the measurement.
+> ever under test.
 >
 > **This does not touch the fix.** The fix was validated by a different loop that drives the project's
 > own kernel — flip the gates, build `ninfer_linear_fp8_a8_test`, run it — and that one reproduced
@@ -1321,7 +1311,7 @@ unaffected. Resolutions, to reuse rather than re-derive:
    before issuing a TMA instruction. With the operands corrected, TMA runs in every legal arm: rank 2
    and rank 3, swizzle 128B and NONE, by value and by pointer. See the resolution block.
 
-   **What the platform evidence says, from primary sources** (`docs/research/sm120-tma-illegal-instruction-evidence.md`):
+   **What the platform evidence says, from primary sources**:
    sm_120 **does** support TMA — `cp.async.bulk.tensor` requires sm_90 or higher and the TMA unit is
    listed for CC 9.0 through 12.x — so this is *not* "TMA is unavailable on consumer Blackwell". sm_120
    supports **neither** `wgmma` (sm_90a only) nor `tcgen05` (sm_100a/101a only), and this tree uses
@@ -1867,7 +1857,6 @@ being folded into the text half.
 behaviour and cite the mechanism. For the speed half — identify the cause; the token-count-driven
 kernel selection in #80 is the leading candidate and is checkable against `spec_rounds` /
 `spec_acceptance_rate` already reported by `ninfer_bench`.
-Full evidence: `docs/research/first-request-transient-and-msvc-tma-evidence.md`.
 
 **Why it is worth an item despite looking small.** It is user-visible and it is deterministic: the same
 seed gives different text on the first turn and stable text afterwards. A client that treats turn one as
@@ -2107,7 +2096,7 @@ full.
   rewrite itself: **#366**, the maintainer's announcement of `b9114396`, lists #177, #179, #229 and
   #251 among the reports it responds to and asks reporters to re-test their cases.
   **That re-test was run on 2026-10-06 and the cliff is back** (`repro_251.py`, unchanged, against the
-  new cache; `docs/research/prefix-state-eviction.md`'s last section): with `--device-state-slots 1`
+  new cache): with `--device-state-slots 1`
   and no host backing reuse holds for **1** conversation and then stops permanently; with a ~2-image
   host quota it holds for **2** and then stops; with the shipped 8192 MiB quota it holds for all six,
   which is capacity and not reclamation -- the old finding, reproduced on the new code. So the
@@ -2119,8 +2108,7 @@ full.
   -- a reused endpoint may not be displaced by an admission that has demonstrated no reuse. So the
   replacement evicts by policy and the port's `d05ee90a` evicted by LRU; the cliff is that policy's
   consequence for a stream of distinct conversations, and what is left is a decision (size the pools
-  for this port's workload, or ask for the LRU behaviour back), not a diagnosis. Both are written up
-  in `docs/research/prefix-state-eviction.md`.
+  for this port's workload, or ask for the LRU behaviour back), not a diagnosis.
   **Decided by measurement, 2026-10-06: option 1 holds and option 2 is not needed.** The shipped
   acceptance shape (12 conversations x ~20,000 tokens on the QUASAR DFlash2 lane,
   `--device-state-slots 1 --host-context-mib 8192 --kv-capacity auto`) reuses at **99.8% for all
@@ -2141,8 +2129,7 @@ full.
   both continuations took `checkpoint` with `preferred_reused_tokens` 69,791 (99.9% cached),
   `fallback_reason: none`, `revoked_checkpoints: 0`. So the wall-clock budget that pinned the old
   search is gone with its mechanism, and the value budget the replacement keeps did not refuse a
-  reuse action in this shape. The same run answers #339's client shape (item 1 of
-  `docs/research/server-open-items.md`): nothing failed, nothing latched.
+  reuse action in this shape. The same run answers #339's client shape (item 1): nothing failed, nothing latched.
 * `src/runtime/engine/model_instance.cpp` -- superseded. The port forced `cache.policy = Default` when
   the cache is disabled and defaulted `max_shared_prefixes` from
   `kMaximumPreparedPromptCacheCandidatesPerRequest`; upstream's new `ContextCacheOptions` has neither
@@ -2361,7 +2348,7 @@ now compares `upstream/dev`, so the skip condition guarded a different ref than 
 
 **Docs:** `CONTEXT.md`'s three-budget model, `docs/maintainer/artifact-conventions.md`'s
 `INVARIANT_FLAGS` list, and `docs/opencode-settings.md`'s explanation of why a lane retains state.
-The historical records (`docs/adr/0007`, `docs/research/*`, `docs/v2-v3-flag-diff.md`) keep the old
+The historical records (`docs/adr/0007`, `docs/v2-v3-flag-diff.md`) keep the old
 names, because they are measurements taken on the model that had them.
 
 **Done when:** no live reference to a superseded flag remains, and the repaired tool starts a lane.
@@ -2608,8 +2595,7 @@ keeping their default stops, and every assertion in them still holds — `all` i
 then ran the full suite: **150/152, the only two failures the recorded ones**, and the ratchet is green
 at 255 paths with no unreviewed entry.
 
-**Filed locally, not upstream, 2026-10-06:** the guard-versus-scenarios finding is written up in
-[upstream-constrained-tools-guard.md](research/upstream-constrained-tools-guard.md) — the guard at
+**Filed locally, not upstream, 2026-10-06:** the guard-versus-scenarios finding: the guard at
 `src/models/qwen3_5/frontend/frontend.cpp:919`, the six scenarios it rejects, the control that passes
 because it never disabled the default stops, the reproduction, and the searches showing that nothing
 upstream reports it and that no upstream commit has touched either file since `41e50d0d`. It is kept
@@ -2941,8 +2927,8 @@ Each of these was investigated and settled. They look like open work and are not
 | **Take the full 16-commit upstream merge** | The 7 fp8 TMA commits needed an `alignas(64)` descriptor, which landed in `a5077adf`; they compile and run on MSVC now. The nine dispatch gates that hid them are the only thing still holding the route back. Three one-line `alignas` reapplications, already validated here. |
 | **The NVFP4 block scale should be searched, not taken from the block max** | Measured on the weights that are actually re-encoded, and it loses: 4.925917 against 4.915181 paired in one window, while weight reconstruction error fell 40-66 %. It cannot be said about `NVFP4MSECalibrator` at all: that calibrator's 193 sites are the MLP and `lm_head`, which this recipe imports unencoded, while the re-encoded attention sites are FP8 `MaxCalibrator` in the source. See item 2 and `docs/perplexity-baseline.md`. Lower weight error is not better output quality. |
 | **Lower quantization error implies better perplexity** | The same measurement, stated as the general form. A searched scale that clips a block's largest value reduces squared error on that block and costs output quality, because the large value is carrying signal. Qualify a converter change on perplexity, never on reconstruction error. |
-| **The E2M1 block scale should be 4, not 6** | Measured 2026-09-29 on the unsloth lane, both arms freshly converted, the control reproducing the shipped `nvfp4full` artifact to every per-domain digit. Overall 4.998419 → 5.016626, **+0.36 % worse**, so NVIDIA's 6 stands and the encoder is unchanged. The per-domain spread is the durable part: `english_reference` −2.82 % against `chinese_reference` +3.56 %, opposite signs that largely cancel. `ninfer_code` moved least at +0.27 %. See [nvfp4-block-scale-4-vs-6.md](research/nvfp4-block-scale-4-vs-6.md). Distinct from the scale-*search* row above: that one varied the divisor per block, this one varied the format's own maximum. |
-| **A DFlash2 lane that is refused at startup is a defect, not a slow lane** | Found and fixed 2026-09-30. `profile` mode measured `start_swift_v3_dflash2_vision` and `start_ninfer_v3_dflash2_vision` **REFUSED** through their own launchers, at the 262,144 both tables carried. Runtime grew from 10.6/10.7 GiB on 2026-09-24 to 11.5/11.6 GiB on 2026-09-30 and those two lanes had under a GiB of margin. **All eight lanes now serve the native 262,144**, each fixed at the artifact rather than at the context: the Swift lane by encoding its DFlash2 draft to NVFP4, the NVFP4-full DFlash2 lane by encoding its nine BF16 exception parents to NVFP4. The second is route-specific — that encoding is worth +11.6 acceptance points to DFlash2 and −21.4 to the MTP head on the same weights, so the line is split across two images and the MTP lane keeps the BF16 exceptions. The refusal's own arithmetic is 308 MiB short; see `docs/research/swift15-lane-measurement.md`. |
+| **The E2M1 block scale should be 4, not 6** | Measured 2026-09-29 on the unsloth lane, both arms freshly converted, the control reproducing the shipped `nvfp4full` artifact to every per-domain digit. Overall 4.998419 → 5.016626, **+0.36 % worse**, so NVIDIA's 6 stands and the encoder is unchanged. The per-domain spread is the durable part: `english_reference` −2.82 % against `chinese_reference` +3.56 %, opposite signs that largely cancel. `ninfer_code` moved least at +0.27 %. Distinct from the scale-*search* row above: that one varied the divisor per block, this one varied the format's own maximum. |
+| **A DFlash2 lane that is refused at startup is a defect, not a slow lane** | Found and fixed 2026-09-30. `profile` mode measured `start_swift_v3_dflash2_vision` and `start_ninfer_v3_dflash2_vision` **REFUSED** through their own launchers, at the 262,144 both tables carried. Runtime grew from 10.6/10.7 GiB on 2026-09-24 to 11.5/11.6 GiB on 2026-09-30 and those two lanes had under a GiB of margin. **All eight lanes now serve the native 262,144**, each fixed at the artifact rather than at the context: the Swift lane by encoding its DFlash2 draft to NVFP4, the NVFP4-full DFlash2 lane by encoding its nine BF16 exception parents to NVFP4. The second is route-specific — that encoding is worth +11.6 acceptance points to DFlash2 and −21.4 to the MTP head on the same weights, so the line is split across two images and the MTP lane keeps the BF16 exceptions. The refusal's own arithmetic is 308 MiB short; see. |
 | **Runtime growth can be repaired at the artifact rather than by giving up context** | Same session, the general form. Both broken lanes were short by well under a gigabyte, and in both cases a smaller artifact cleared it — 0.77 GiB for the Swift draft, 0.7 GiB for the NVFP4-full exceptions. The reservation growth itself is upstream's: `e621c7d6` ("derive launch plans from device sm count") is on `upstream/dev` and raises the split count with the SM count, trading memory for parallelism by design. Reversing it would trade throughput back on every lane at once, which is a larger decision than repairing the two lanes that were actually refused. **Both halves of that row were later measured and one is wrong** — see the next row; no revert is needed and none was made. |
 | **The runtime growth should be reverted, since it bought nothing** | Half right, and the half that was wrong is now measured. Nothing was claimed about this before it was measured: the growth was first attributed to `e621c7d6` from its commit message, and the component breakdown then showed it is not that commit's graph allowance at all but the unified workspace, +0.892 GiB, whose *peak* grew by the same amount. What it bought is **prefill, not decode** — a 2.3% prefill loss at `--prefill-chunk 4096` (13,077 → 12,770 tok/s at depth 19.2k, three interleaved rounds per arm, clusters disjoint) with decode identical at 232 tok/s. So a short-context decode comparison cannot see it, which is why the first reading of this was "it cost nothing". `--prefill-chunk` was then tried as the fix -- it is the width the reservation is maximised over, so 4096 recovers 1.116 GiB for -2.3% prefill -- and **rejected**: 262,144 is already served at 8192 on all eight lanes, so it bought margin nothing was short of, at a measured throughput cost. The lever worth changing was the split rule, and it was not the one first named. FlashAttention's `num_splits_heuristic` returns 1 split once query tiles fill 80% of the SMs, precisely to avoid over-splitting's HBM traffic; `mxfp8_tiled_partition` here already minimised waves but had **no term for the traffic it causes**, so it walked to its cap of 8 at every step — holding 1.62 GiB of FP32 partials for work that was never short of occupancy (1536 tiles against a threshold of 136). **Fixed and landed** (2026-09-30): 1.3 GiB of free VRAM per lane, +3.4% prefill at depth ~45k with disjoint interleaved arms and −0.3% at ~131k, byte-identical digests on all eight lanes, all five KV storage types against the FP64 oracle. The first attribution, to `causal_partition_target`'s flat 2*SM budget, was wrong and is withdrawn: that governs small-width families whose partials are tens of MiB. Two lessons ride with it — a single un-interleaved sample said the guard cost 3.6-12.4% prefill when it costs nothing, and both arms had to live in one binary because rebuilding per arm cannot be interleaved on this card. |
 | **Upstream #217's concurrency ceiling should be ported — a ~70% throughput win upstream accepted** | **Settled 2026-09-30: it is a product decision not to, and the arithmetic agrees.** `--max-concurrency` is 1 on every lane by decision: these are single-request latency configurations, and a second in-flight sequence divides one device between two requests rather than speeding up either. Two independent findings agree. The gain is bounded and then reverses — vLLM on this class of card goes 101 tok/s at c=1 to 2,907 at c=50, saturates, and *regresses* at c=128; raising `max_num_seqs` 64→128 was measured to hurt both latency and throughput through scheduling contention. And at the native context it is arithmetically unavailable: vLLM V1 reserves KV per in-flight slot in proportion to `max_model_len`, one 262,144-token slot costs 8.681 GiB of sequence arena against ~10.5 GiB available after weights, workspace and graphs, so C=2 is short by ~6.9 GiB and would cap context near 158k. `kMaximumConcurrency` stays 8. A concurrency-2 startup was not attempted — the decision settles it, and measuring an unshipped configuration is measuring something already decided. |
@@ -3055,9 +3041,7 @@ Written because a release went out with one of these disclosed and the question 
 open, and why ship with any of it. Each item names its home; none of them is a defect in a shipped
 configuration unless it says so.
 
-**A research pass over every item below is recorded in
-[open-items-research-2026-10-11.md](research/open-items-research-2026-10-11.md).** Item 1's fix is now
-landed: a fused wide-T A16 arm (`nvfp4_linear_swiglu_matrix.cu`) plus the deletion of the materializing
+**Item 1's fix is now landed: a fused wide-T A16 arm (`nvfp4_linear_swiglu_matrix.cu`) plus the deletion of the materializing
 fallback. Item 2's signature has a *deliberate* producer — the perturbation seam, which
 the suite recipe itself runs and which the mutation gate asserts turns the suite red — and its falsifier
 is the failure message. Item 3's formula and corpus
@@ -3118,7 +3102,7 @@ scoped evidence.
 
 **Deferred, each named in its own home**
 
-5. **The cache-hitting race condition** - `docs/research/server-open-items.md` section 1.
+5. **The cache-hitting race condition**
    **CLOSED 2026-10-11: the reported mechanism is not in this tree.** `checked_resource_difference` and
    its subtraction-underflow guard were removed by the upstream context-cache rewrite; the symbol and
    its message survive only in `tests/models/qwen3_5/test_engine_issue5_race.cpp:274`, whose comment
@@ -3348,7 +3332,7 @@ behind it. `af6c7b00` skips a path the working tree does not have.
 
 ## 2026-10-12 - the DFlash2 draft window, re-raised and closed against the record
 
-The session that took the prefill and decode baseline (`docs/research/measured-baseline-2026-10-12.md`)
+The session that took the prefill and decode baseline
 measured a bench-corpus gain of +14.3% from widening the DFlash2 draft window from the shipped 9 to 11, and
 the commit that filed that document (`00402ece`) is titled "find the draft window set too short". **That
 title is wrong, and this entry is the correction** -- history is not rewritten, the living record carries
@@ -3777,8 +3761,7 @@ says was kept, and the two logs the opencode plugins write live. And `C:\AI\mode
 and CSVs whose results are in the docs.
 
 **A mistake, and it is recorded in the documents it contradicted.** The pass also removed the six
-`.stale` conversion reports. `docs/research/nvfp4-conversion-recipe-review.md` and
-`docs/research/nvfp4-block-scale-4-vs-6.md` both record that those six were *renamed rather than
+`.stale` conversion reports; two documents record those six as *renamed rather than
 deleted* precisely so their provenance would survive, and the deletion guard missed it because it
 checked whether a *filename* is cited, not whether a document discusses a file by description. Four of
 the six described builds — the three `nvfp4full` v1/v2/v3 and the `qwen3_8_27b_nvfp4qat` draft — survive
@@ -3818,11 +3801,8 @@ assumed.** The two `docs/features/` notes describe work that is in this tree: th
 investigation pointing at the next. The real defect was the map, not the documents.
 
 **Three findings from the pass and its deep dive.** `.audit/models-rebuild.tsv` — the decision log for
-the artifact rebuilds, including the `_nvdiv` rejection — was cited by
-`docs/research/target-precision-and-draft-acceptance.md` as its record while being untracked, so the
-citation could not resolve for anyone else; it is committed now. `docs/README.md` did not describe
-`docs/research/`, `docs/features/` or `docs/upstream-reports/`, three directories holding over a hundred
-documents that other documents cite; it now has a "Dated records" section for them. And the deep dive
+the artifact rebuilds, including the `_nvdiv` rejection — was untracked, so the
+citation could not resolve for anyone else; it is committed now. And the deep dive
 re-checked the one removal that looked as if it might have cost data — the needle CSVs under
 `_rebuild` — against the document that names them: they live in `profiles/bench/needle-2026-10-09/`, all
 thirteen of them, so the `_rebuild` copies were duplicates and nothing was lost there.
@@ -3835,8 +3815,7 @@ machine's `eval/.venv` is a Windows environment with `Scripts\` and no `bin\`, s
 here. The lines they measured are retired (`nvfp4`) or unheld (`groupwise-int`), the port ships neither,
 so the three harnesses are **removed** and `eval/README.md` now gives the generic coordinator commands
 instead. Their campaigns stay as records: the configs in `eval/configs/` — the budgets one is still read
-by the Windows runner `run_qwen3_8_27b_quasar_gpqa_budgets.ps1`, the reasoning one is cited by
-`docs/research/task-accuracy-protocol.md`, and the groupwise one is the published table's protocol — plus
+by the Windows runner `run_qwen3_8_27b_quasar_gpqa_budgets.ps1`, the reasoning one is quoted in this file, and the groupwise one in
 the published tables in `eval/README.md`. This file first said *four* scripts; the fourth is the Windows
 runner, and it points at the shipped QAT artifact.
 
@@ -3872,8 +3851,7 @@ stale entry is gone. What remains true is the method: compare engines, not recor
 
 The `code` cell's acceptance differs between the two engines on **every** lane, and it is the cell the
 shipped configuration is chosen by - `CONTEXT.md:98`'s code-weighted bound ("the worst case improves by
-at least as much as the worst disclosed non-code cell gives up"), cited by
-`docs/research/kv-dtype-evidence.md` and by the lane notes in `tools/release/profiles.py`. Measured per
+at least as much as the worst disclosed non-code cell gives up"), cited by the lane notes in `tools/release/profiles.py`. Measured per
 lane on 2026-10-12 (the pre-merge release binary against the record's merged figures): acceptance is
 lower on five lanes and higher on three, from -8.9 points (quasar dflash2: 58.0 to 49.1, tok/s 397.6 to
 342.6) to +7.4 (swift dflash2: 51.8 to 59.2, tok/s 308.2 to 346.9); tok/s is lower on four lanes and
@@ -3886,9 +3864,7 @@ the code cells as tabulated, and the non-code worst case (nvidia dflash2's long-
 305.3 to 162.5, while the pre-merge binary reads 104.3 on that cell now and the merged one 187.9). So
 the settings that rule justifies need re-deriving on the merged engine. Nothing here says a shipped
 setting is wrong; it says its justification rests on inputs that no longer hold. This entry first
-called that question unasked, which was imprecise: the per-lane code cell is a studied quantity
-(`docs/research/proposal-head-per-lane-2026-10-10.md` is a per-lane table of it, and
-`docs/research/lane-coverage-2026-10-08.md:289` reads one lane's cell against the published figure), and
+called that question unasked, which was imprecise: the per-lane code cell is a studied quantity, and
 what had not been asked is whether the *merged engine's* shifts leave the rule's conclusions standing.
 
 **The code-weighted bound, re-derived on the merged engine (2026-10-12).** The rule chose the per-lane
@@ -3922,8 +3898,7 @@ there is the published curve and the scoring, not the ability to measure.
 
 Present and in use: token speed and speculative acceptance (`tools/bench/lane_fingerprint.py`,
 `tools/bench/realtext_acceptance.py`), accuracy and perplexity at the shipped quantization, prefill rate
-as its own number (`tools/bench/report_serve_phases.py`), bytes per token per KV format
-(`docs/research/kv-dtype-evidence.md`), run-to-run spread (the fingerprint's own column), cache hit *and*
+as its own number (`tools/bench/report_serve_phases.py`), bytes per token per KV format, run-to-run spread (the fingerprint's own column), cache hit *and*
 reuse path (`tools/bench/check_shared_prefix_reuse.py`), determinism across paths
 (`tools/bench/probe_cross_path_determinism.py`), soak and cancellation
 (`tools/bench/probe_cancellation.py`), and op-level percentiles in the bench CSVs.

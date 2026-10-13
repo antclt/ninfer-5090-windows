@@ -1261,9 +1261,7 @@ instrument is validated before any comparison means anything: if the control doe
 `--noise-threads N` runs N background threads allocating and freeing for the duration, which is how
 a process-wide heap that serializes every allocation is measured rather than assumed. Use these when
 the question is what a *serving* process spends, rather than what the template costs: a bench
-measures its own process, and a serving process is not the same one. The recorded reading for the
-Qwen3.8 template, and the process-level difference it exposed, are in
-[`../docs/research/prompt-preparation-cost.md`](../docs/research/prompt-preparation-cost.md).
+measures its own process, and a serving process is not the same one.
 
 ## Token-decision Op benchmarks
 

@@ -99,9 +99,7 @@ least three of them. The earlier uniform d5 was wrong on QUASAR.
 
 The decision above lists QUASAR, the NVFP4-full image and the retired image. Swift and NVIDIA were added
 afterwards and had no record anywhere in the tree, while all eight profiles passed `--lm-head-draft` --
-the convention this ADR exists to forbid.
-
-`docs/research/proposal-head-per-lane-2026-10-10.md` carries the measurement: real text, greedy, two
+the convention this ADR exists to forbid. The measurement: real text, greedy, two
 rounds per arm, the lane's own flags composed through `profiles.launcher_args`, the flag removed rather
 than substituted. Seven lanes confirm the shipped setting on this ADR's own criterion; on five of them the
 full head accepts *more* and still decodes slower, which is exactly the case the Consequences section
@@ -122,6 +120,5 @@ against 257.2/257.9 and 35.9 % without it, so clearing it would have been a 25-2
 comparison was between two full fingerprints two hours apart — the "measure A and then B and you have
 measured the window" failure this repo records — and it is the reason the decision is taken from
 interleaved runs. The head-side lever is closed by the engine regardless (`linear_topk` resolves the
-shortlist path at Q4 only, `src/ops/linear_topk/linear_topk.cpp:35-49`). Both arms are in
-`docs/research/proposal-head-per-lane-2026-10-10.md`, and the per-profile record this ADR asks for now
-covers all eight lanes.
+shortlist path at Q4 only, `src/ops/linear_topk/linear_topk.cpp:35-49`). Both arms are in this
+record, and the per-profile record this ADR asks for now covers all eight lanes.

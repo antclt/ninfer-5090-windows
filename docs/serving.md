@@ -1173,8 +1173,8 @@ sent RST two seconds in stopped after 32,768 tokens — four `--prefill-chunk` c
 at that moment waited 0.81 s, against 26.42 s behind a *live* request of the same size in the same run
 (idle floor 0.08 s). A disconnect during generation is released the same way. Cancellation is skipped
 only while a *context transaction* is open, which on this port is a checkpoint capture rather than a
-prefill; that window's bound is not measured. `docs/research/server-open-items.md` §8 carries the
-disposition of the upstream report (Neroued/ninfer#184) this answers.
+prefill; that window's bound is not measured. The upstream report this answers is
+Neroued/ninfer#184.
 
 `--max-pending-requests` bounds the requests waiting behind the active set. The total generation
 request lifetime capacity is `max_concurrency + max_pending_requests`, including requests still in

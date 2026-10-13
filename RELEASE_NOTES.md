@@ -103,8 +103,7 @@ are new.
 Five artifacts across eight launchers. The unsloth line ships twice on purpose: the DFlash2 lane runs
 the **no-exception** image and its MTP lane the BF16-exception one, because re-encoding those nine
 exception parents to NVFP4 is what returns the native context to the DFlash2 lane and is worth +11.6
-acceptance points there, while the same re-encoding costs the MTP head 21.4 (DFlash2 d7 / MTP d5,
-`docs/research/swift15-lane-measurement.md`), so one image cannot serve both routes.
+acceptance points there, while the same re-encoding costs the MTP head 21.4 (DFlash2 d7 / MTP d5) so one image cannot serve both routes.
 
 `download_model.py` fetches the **source** checkpoints every artifact above is built from, at pinned
 revisions, and `build_model.py` converts them with the converter the archive ships under `tools/`. No
@@ -211,7 +210,7 @@ Chinese, ninfer mtp4 6.0% of long Chinese, and quasar mtp4 gains 3.1% of long Ch
 at this question measured a hand-rolled protocol - one prompt, temperature 0, no warmup - which ranks
 configurations at a sampler nobody serves by, and a fresh fingerprint against a recorded one, which is a
 cross-session comparison the interleave exists to replace.
-code-weighted bound ([evidence](docs/research/kv-dtype-evidence.md)). **This block said "re-measured 2026-09-30" and dated
+code-weighted bound (evidence). **This block said "re-measured 2026-09-30" and dated
 the table to that pass as if it were current** — the figures are now the 2026-10-09 re-measurements,
 and `profiles.py` names each earlier set they replaced.
 

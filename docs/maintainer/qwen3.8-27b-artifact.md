@@ -1630,7 +1630,7 @@ The unsloth line ships twice because one image cannot serve both routes (§18). 
 it carries **no BF16 exception parents**, so every text projection is NVFP4, which is what returns the
 native 262,144 to `start_ninfer_v3_dflash2_vision` at the `fp8` KV the launchers use. The MTP lane keeps
 the exception build of §18. The trade is measured: dropping the exceptions is worth **+11.6 acceptance
-points to DFlash2** and costs the **MTP head 21.4** (d7/d5, `docs/research/swift15-lane-measurement.md`),
+points to DFlash2** and costs the **MTP head 21.4**,
 for +0.087 % overall perplexity.
 
 ### 20.1 Identity and contents
