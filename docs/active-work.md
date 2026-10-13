@@ -4153,6 +4153,29 @@ alone: the lane fingerprint reads fp8's worst deciding cell at 216.2 against k8v
 the sweep read +11.2% - two measurements, agreeing. The other seven stay open until the spread is
 measured, and the tool now refuses a zero threshold rather than turning one into eight decisions.
 
+**The three-round sweep has run, and these are the verdicts against each comparison's own spread.**
+
+| comparison | margin | paired spread | verdict |
+|---|---|---|---|
+| ninfer mtp4 kv | fp8 by **7.0%** | 0.8% | **DECISION for fp8** - solid, and the shipped k8v4 is contradicted |
+| swift dflash2 kv | fp8 by **7.3%** | 0.9% | **DECISION for fp8** - applied |
+| quasar dflash2 kv | k8v4 by **2.0%** | 0.7% | **DECISION for k8v4** - the shipped format is right |
+| nvidia mtp4 kv | k8v4 by 6.4% | 5.8% | decision, marginal: that lane's own spread is the largest here |
+| quasar mtp4 kv | fp8 by 1.3% | 1.2% | decision, razor-thin |
+| swift mtp4 kv | k8v4 by 0.7% | 0.6% | decision, razor-thin |
+| ninfer dflash2 depth | 9 by 0.1% | 1.5% | **inside the spread - mean favours 7 (261.6 against 261.4) - OPEN** |
+| nvidia dflash2 depth | 9 by 0.0% | 1.1% | **inside the spread - mean favours 7 (244.5 against 244.4) - OPEN** |
+
+**What follows, stated as work rather than as a conclusion.** One shipped format is contradicted by a
+solid decision - **ninfer mtp4 ships k8v4 and fp8 wins by 7.0% against a 0.8% spread** - and changing it
+needs the same wave as the swift move: the field, the launcher, the fingerprint, the fold, and the docs'
+lane count. Three more are decisions by the rule but thin enough to want more rounds before a shipped
+setting moves on them: nvidia mtp4 (6.4% against a 5.8% spread), quasar mtp4 (1.3% against 1.2%) and
+swift mtp4 (0.7% against 0.6%). Both dflash2 depths are **open**: their margins are inside their own
+spreads and the mean favours 7 on both while both lanes ship 9, so they are unresolved questions with a
+named method - more rounds until one candidate separates - and not ties, not closures, and not settled by
+a threshold that was never measured.
+
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
 lane by lane, and nothing here claims them until a run does.
