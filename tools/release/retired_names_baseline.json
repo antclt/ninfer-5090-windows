@@ -13,6 +13,9 @@
       "shared_reuse_candidates": "a measurement recorded under the selection counters that existed then, and marked as such in the comment",
       "shared_reuse_key_mismatch": "a measurement recorded under the selection counters that existed then, and marked as such in the comment"
     },
+    "tools/bench/lane_fingerprint.py": {
+      "run_level_pct": "the tool's own record key: the per-lane run level it writes into lane_figures.json, recorded because a drift check against the table cannot see that a whole run moved together"
+    },
     "tools/bench/make_divisor_variants.py": {
       "nvfp4_act_headroom": "the variant tag this tool writes into artifact filenames"
     },

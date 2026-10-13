@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,6 +97,24 @@ def acceptance_rate(record: dict) -> float | None:
     return float(value)
 
 
+def gpu_state() -> str:
+    """One sample of the card's state, recorded with the figures it qualifies.
+
+    Recorded, not required. A figure measured at one temperature is a sample of a range, and a reader's
+    own machine, ambient and power delivery will place theirs somewhere else - so pinning a state would
+    imply a canonical one that does not exist, and the fingerprint has no temperature gate. What the
+    record can do is say what state this figure came from, which is what this is for.
+    """
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu,clocks.sm,clocks.mem,power.draw,"
+             "utilization.gpu,pstate", "--format=csv,noheader"],
+            capture_output=True, text=True, encoding="utf-8", timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+    return result.stdout.strip() or "unavailable"
+
+
 def load_figures() -> dict:
     if not FIGURES.is_file():
         return {"what": "Lane fingerprints, per lane and cell, with the identity of what measured them.",
@@ -149,6 +168,9 @@ def main() -> int:
 
     drift: list[str] = []
     refused: list[str] = []
+    # (tok, table figure) per lane on the table's own cell, for the run-level statement below: a drift
+    # check compares against a past number and cannot see that a whole run moved together.
+    run_level: list[tuple[float, float]] = []
     for profile in selected:
         launcher = profile["file"]
         print(f"\n=== {launcher}")
@@ -157,6 +179,7 @@ def main() -> int:
             "artifact": {"path": artifact.name, "bytes": artifact.stat().st_size,
                          "mtime": artifact.stat().st_mtime},
             "cells": {},
+            "gpu_state": {"before": gpu_state()},
         }
         prior_cells = (lanes.get(launcher) or {}).get("cells", {})
         for name, chars, prompts in cells:
@@ -184,6 +207,14 @@ def main() -> int:
             if name == TABLE_CELL:
                 published = float(profile.get("tok") or 0.0)
                 table_acc = float(str(profile.get("acc", "0")).rstrip("%"))
+                if published:
+                    run_level.append((tok, published))
+                    # Per lane, not only per run: the record accumulates one write per lane, so a
+                    # payload-level field would describe only the last one. This is the measurement's
+                    # own provenance - what the table said when this figure was taken - and it is why
+                    # the field exists: a figure and the table can differ because the lane changed
+                    # (a format moved) or because the run was long, and this says which by how much.
+                    recorded["run_level_pct"] = round((tok / published - 1.0) * 100.0, 1)
                 if published and abs(tok / published - 1.0) * 100.0 > args.tolerance_tok:
                     line += f"  DRIFT: table says {published:.1f} tok/s"
                     drift.append(f"{launcher} / {name}: {tok:.1f} against the table's {published:.1f}")
@@ -211,8 +242,23 @@ def main() -> int:
                                        # could not be told from a 3% artefact without re-measuring
                                        "decode_tps": record.get("decode_tps") or [],
                                        "sampling": "default", "source": "measured"}
+        recorded["gpu_state"]["after"] = gpu_state()
         lanes[launcher] = recorded
 
+    # The run's own level, before any per-lane drift is read. A grouped run measures lanes in
+    # sequence, and the 2026-10-13 refresh showed what that costs: all eight read below the table,
+    # with a step between lanes 4 and 5 (-2 to -10%, then -11 to -16%). That is a condition of the
+    # run, not a per-lane result, and a drift check against a past number cannot see it -- so it is
+    # computed here, recorded with the figures it qualifies, and printed above the drift list.
+    if run_level:
+        ratios = sorted(tok / published for tok, published in run_level)
+        median_ratio = ratios[len(ratios) // 2]
+        payload["run_level"] = {
+            "lanes": len(ratios),
+            "median_vs_table_pct": round((median_ratio - 1.0) * 100.0, 1),
+            "min_pct": round((ratios[0] - 1.0) * 100.0, 1),
+            "max_pct": round((ratios[-1] - 1.0) * 100.0, 1),
+        }
     payload["engine"] = {"file": str(args.serve), "sha256": _sha(args.serve),
                          "bytes": args.serve.stat().st_size,
                          "built_utc": datetime.fromtimestamp(args.serve.stat().st_mtime, timezone.utc)
@@ -228,6 +274,14 @@ def main() -> int:
         for line in refused:
             print(f"        {line}")
         return 2
+    if payload.get("run_level"):
+        level = payload["run_level"]
+        print(f"    run level: median {level['median_vs_table_pct']:+.1f}% against the table over "
+              f"{level['lanes']} lane(s), range {level['min_pct']:+.1f}% to {level['max_pct']:+.1f}%")
+        if abs(level["median_vs_table_pct"]) > args.tolerance_tok:
+            print("    a whole-run shift is a condition of the run - order, warmup, session - not a "
+                  "per-lane result: fold only after re-measuring the lane solo, or state the "
+                  "condition wherever the figures are quoted")
     if drift:
         # Reported, not fatal, and that is a measured decision rather than a preference. The card's
         # session-to-session spread is the size of the tolerance: one lane read 216.6 (the committed

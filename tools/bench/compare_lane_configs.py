@@ -81,15 +81,20 @@ def main() -> int:
             else:
                 print(f"  round {round_index}  {args.axis}={value:6s}  no reading")
 
-    print(f"\n  {'value':8s} {'code':>9} {'long-code':>10} {'long-chinese':>13} {'worst deciding':>15}")
+    # The rule (CONTEXT.md) decides on the served-length prompt: "select on served-length prompts. The
+    # short domains give margins of 0.3 to 1.6 %, which invert". This tool took the worst of
+    # {code, long-code} until 2026-10-13, which folds a short cell into the verdict - and the short cell
+    # does invert here: swift dflash2's favours k8v4 by 11% while its served-length cell favours fp8 by
+    # 7.9%. The short and non-code cells are printed below the verdict as disclosed costs instead.
+    served_label = "long-code" if "long-code" in cells else "code"
+    print(f"\n  {'value':8s} {'code':>9} {'long-code':>10} {'long-chinese':>13} {'served':>15}")
     worst: dict[str, float] = {}
     for value in values:
         if not runs[value]:
             print(f"  {value:8s}  no rounds completed")
             continue
         med = {c: statistics.median([r[c] for r in runs[value] if c in r]) for c in cells}
-        deciding = [med[c] for c in ("code", "long-code") if c in med]
-        worst[value] = min(deciding) if deciding else 0.0
+        worst[value] = med.get(served_label, 0.0)
         print(f"  {value:8s} {med.get('code', 0):>9.1f} {med.get('long-code', 0):>10.1f} "
               f"{med.get('long-chinese', 0):>13.1f} {worst[value]:>15.1f}")
 
@@ -97,8 +102,21 @@ def main() -> int:
         (a, a_worst), (b, b_worst) = worst.items()
         margin = abs(a_worst - b_worst) / max(a_worst, b_worst) * 100.0
         winner = a if a_worst > b_worst else b
-        print(f"\n  worst deciding cell: {a} {a_worst:.1f} against {b} {b_worst:.1f}"
+        print(f"\n  deciding cell ({served_label}): {a} {a_worst:.1f} against {b} {b_worst:.1f}"
               f"  ->  {winner} by {margin:.1f}%")
+        for cell in cells:
+            if cell == served_label:
+                continue
+            rates_a = [r[cell] for r in runs[a] if cell in r]
+            rates_b = [r[cell] for r in runs[b] if cell in r]
+            if not (rates_a and rates_b):
+                continue
+            med_a, med_b = statistics.median(rates_a), statistics.median(rates_b)
+            delta = abs(med_a - med_b) / max(med_a, med_b) * 100.0
+            leader = a if med_a > med_b else b
+            kind = "short" if cell == "code" else "non-code"
+            print(f"  disclosed ({kind} {cell}): {a} {med_a:.1f} against {b} {med_b:.1f}"
+                  f"  ->  {leader} leads by {delta:.1f}%")
 
         # The threshold is the spread of *this* comparison, not the card's session spread. The rule says
         # so - "a margin smaller than the measurement's own spread is not a decision", contrasted in the
@@ -108,12 +126,9 @@ def main() -> int:
         # candidate's own rounds.
         spreads = {}
         for value in values:
-            per_cell = []
-            for cell in ("code", "long-code"):
-                rates = [r[cell] for r in runs[value] if cell in r]
-                if len(rates) > 1 and statistics.mean(rates):
-                    per_cell.append((max(rates) - min(rates)) / statistics.mean(rates) * 100.0)
-            spreads[value] = max(per_cell) if per_cell else 0.0
+            rates = [r[served_label] for r in runs[value] if served_label in r]
+            spreads[value] = ((max(rates) - min(rates)) / statistics.mean(rates) * 100.0
+                              if len(rates) > 1 and statistics.mean(rates) else 0.0)
         paired = max(spreads.values()) if spreads else 0.0
         print("  paired spread (this comparison's own, from the rounds): "
               + ", ".join(f"{v} {s:.1f}%" for v, s in spreads.items())
