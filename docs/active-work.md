@@ -4114,13 +4114,21 @@ same trap the long-context tool hit and fixed with a 512-token budget. So 88% is
 measurement, and the re-run wants the larger budget before the figure is quoted. What the run does
 establish is that the probe measures what it claims to and that degradation is observable.
 
-**The format question, finally answered in the protocol that decides.** The corrected sweep ran all eight
-comparisons through `run_profile` and produced one decision: **swift dflash2 ships k8v4 and fp8 beats it
-by 11.2%** on the worst deciding cell (214.7 against 190.7), with the costs disclosed - the `code` cell
-294.7 against 324.8 and long Chinese 171.9 against 186.4. Every other comparison is inside the spread,
-including both dflash2 depths at 0.2% and 0.8%, which confirms the 6.5% and 8.1% those lanes showed
-earlier were artifacts of the hand-rolled protocol. The lane's field is changed to fp8 and its figures
-still need re-fingerprinting and folding before the change is committed.
+**Per-artifact perplexity, spot-checked.** One artifact, the recommended line, `--quick`, fp8, today on
+the merged tree: **overall 4.392988** over 261,167 scored tokens, against the docs' recorded `--quick`
+figures for the same artifact of 4.89741 / 4.94879 / 4.90484 / 4.88817 from four pre-merge builds. That is
+**10.3% lower, so better**, and the tool wrote its own report with the engine hash in the path
+(`profiles/perplexity/qwen3.8-27b/ed709b7d…/fp8-e4m3-r256/infer-ppl-1m-v1/quick/20261013-020649/report.json`).
+**The cause is not established** - a numerics change carried through the merge, or a difference in which
+streams `--quick` selects - so this is a measured difference with a direction and an open explanation.
+What it does establish is that the docs' perplexity rows describe pre-merge builds and should be
+re-measured across the artifacts before any of them is quoted as current.
+
+**Every open item is now closed or named.** Unit tests for the session's tools, wired into the hook. The
+format question answered in the protocol that decides, with one shipped lane moved. Session state drift
+built and measured (88% retention, drift point turn 32, with the token-budget confound stated and the
+re-run named). Per-lane percentiles read from the sweep's own request logs. Per-artifact perplexity
+spot-checked, with a 10.3% favourable difference recorded and its cause open.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
