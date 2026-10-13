@@ -159,10 +159,12 @@ configs, logs.
 
 ### Skills
 
-`.opencode/skills/` holds 41 skills. They are **passive** — loaded on demand, nothing runs them on
-commit — which is the distinction that matters when weighing them against the gates. The project-local
-`code-review`, `health-check`, `security-scan`, `testing`, `verify` and `arch-check` are .NET/Roslyn
-imports that have never applied to this engine; `cpp-cuda-review` is the one that does.
+`.opencode/skills/` holds 35 skills. They are **passive** — loaded on demand, nothing runs them on
+commit — which is the distinction that matters when weighing them against the gates. Every one is
+C++/CUDA-specific or language-agnostic; the six .NET/Roslyn skills and all six `.opencode/agent/`
+definitions that sat here were removed on 2026-10-13 because this tree contains no .NET project
+(`git ls-files '*.csproj' '*.sln'` is empty), and a picker-upper should not have to work out why
+Roslyn tooling is attached to a CUDA engine. `.opencode/AGENTS.md` records the check.
 
 | Situation | Skill |
 |---|---|

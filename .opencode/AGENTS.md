@@ -38,13 +38,27 @@ detail it did not surface. See the same rule in the repository `AGENTS.md`.
 | `sanitizers` | vendored from `mohitmishra786/low-level-dev-skills` | ASan / UBSan / TSan / MSan / LSan chooser, flags, report reading. Noted: MSVC has ASan only, so UBSan/TSan/MSan are advisory here, and the host-side subset is `tools/scripts/test_v3_asan.cmd` — which is also where the mandatory CUDA `-Xcompiler=/fsanitize=address` and the absent LeakSanitizer are explained. Noted: that script calls `vcvars64`, so running `ctest --test-dir build-asan` from a plain shell instead needs the toolchain's `clang_rt.asan_dynamic-x86_64.dll` on `PATH`, or every test exits `0xc0000135`. |
 | `address-sanitizer` | vendored from `trailofbits/skills` (`testing-handbook-skills`, MIT) | ASan deep-dive: builds, `ASAN_OPTIONS`, report reading, LeakSanitizer. Noted: clang/gcc reference form; MSVC uses `/fsanitize=address`. |
 
-## Shared set — do not remove
+## The .NET / Roslyn set — removed 2026-10-13
 
-`arch-check`, `code-review`, `convention-learner`, `desloppify`, `health-check`, `security-scan`,
-`testing`, `verify` are .NET / Roslyn / Glider skills **used by another project**. They stay in this
-tree even though NInfer is C++/CUDA. Do not delete or "correct" them here. For NInfer review use
-`cpp-cuda-review`; the shared `code-review` is already scoped to ".NET projects" in its own
-description.
+`arch-check`, `code-review`, `health-check`, `security-scan`, `testing` and `verify` were deleted,
+together with all six `.opencode/agent/` definitions. An earlier revision of this file carried a
+"Shared set — do not remove" note saying they were used by another project. That was the problem:
+a new model or user opening this tree was offered Roslyn and xUnit tooling for a language the
+repository does not contain, and the first question became *why is there Roslyn here* instead of
+*how do I build this*.
+
+The case was checked rather than assumed, and the check is reproducible:
+
+    git ls-files | grep -cE '\.(csproj|sln|vbproj|fsproj)$'    # 0
+    git grep -l -i roslyn -- src include apps tests bench       # 0 files
+    git grep -l -iE 'xunit|Testcontainers|\[Fact\]|dotnet ' -- src include apps   # 0 files
+
+Each removed skill named its own scope in its description ("for .NET projects", "Roslyn MCP",
+"xUnit v3", "WebApplicationFactory", "JWT, OIDC, Identity"). Each removed agent named `.NET`
+in its first sentence. If a .NET project is ever added to this repository, restore them from
+`pre-trim-2026-10-13` rather than re-vendoring them.
+
+`convention-learner` and `desloppify` were kept: both are language-agnostic.
 
 ## Not installed (dated rejections)
 
