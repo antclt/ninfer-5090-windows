@@ -152,7 +152,7 @@ PROFILE_ARGS: dict[str, tuple[str, ...]] = {
     # ratio rather than tuned one at a time. 40% of their values: kv-capacity 294912 -> 117964,
     # host KV 24576 MiB -> 9830 MiB, max-context 262144 -> 104857, which still leaves every session
     # room to grow past 8,000 tokens. Their unscaled and verbatim lines need 20.3 GB of runtime and
-    # are recorded in docs/research/resource-underflow-issue-5.md rather than shipped as profiles
+    # are recorded rather than shipped as profiles
     # that cannot start here.
     "cache-reporter-concurrency3-scaled": _args(
         "--max-context", 104857,

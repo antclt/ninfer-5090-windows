@@ -2,7 +2,7 @@
 """Per-domain KL against a reference distribution, over top-k scoring records.
 
 Perplexity reduces the [vocab, columns] logits to one number per position, so it cannot see a
-distribution that moved. `docs/research/per-domain-kl-instrument.md` specifies the replacement: the
+distribution that moved. The instrument specifies the replacement: the
 `topk_logprobs` Op reduces a tile to k per column, a scoring mode writes those k indices and
 log-probabilities per position to disk, and this module compares a candidate's record against a
 reference's, per domain. The two design decisions worth re-reading before changing anything here
@@ -11,7 +11,7 @@ bytes per position against 483 GiB over this corpus) and that a reference token 
 candidate's own top-k has to be floored rather than dropped, because dropping it silently reports
 a divergence that is really an artefact of the truncation.
 
-**The reference is not BF16, and cannot be.** `docs/research/per-domain-kl-instrument.md` was
+**The reference is not BF16, and cannot be.** It was
 designed around per-domain KL against a BF16 reference. Qwen3.8-27B is 27.781 B parameters, so its
 BF16 weights are 51.75 GiB, measured from the safetensors headers rather than estimated; the RTX
 5090 has 31.85 GiB. A BF16 reference cannot be resident, and CPU-offloaded weight streaming is not

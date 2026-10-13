@@ -853,7 +853,7 @@
       "status": "M",
       "disposition": "windows",
       "review": "windows",
-      "reason": "Cited in the diff -- doc: docs/research/doc-drift-tooling-prior-art.md. Open it before changing this path."
+      "reason": "Cited in the diff. This path carries static_asserts binding the comment above them to the compiler; read the comment block before changing it."
     },
     "src/ops/linear/kernels/fp8/fp8_schedule.cuh": {
       "status": "M",

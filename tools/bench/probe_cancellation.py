@@ -174,7 +174,7 @@ def completed(record: dict) -> bool:
     """A finished request computed its whole prompt; a cancelled one stopped mid-prefill.
 
     `computed_prefill_tokens` equals `prompt_tokens` exactly on every completed request this engine
-    serves (docs/research/lane-coverage-2026-10-08.md records the check at 77, 325 and 2,575 tokens),
+    serves (the check reads 77, 325 and 2,575 tokens),
     and a cancelled request keeps the partial count -- 32,768 of 158,447 in the run that produced this
     docstring. So the invariant is the discriminator, and it does not depend on a status field.
     """

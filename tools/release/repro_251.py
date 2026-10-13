@@ -5,7 +5,7 @@
 unpinned private continuation, so a clean run reported "not reproduced"; upstream's `b9114396` then
 replaced that cache, the merge took upstream's version, and the cliff is back -- measured here, and
 located at the replacement's value gate rather than at a missing eviction path
-(`docs/research/prefix-state-eviction.md`, last two sections). A reproduction is therefore the
+(the prefix-state eviction write-up, last two sections). A reproduction is therefore the
 expected result again, not a regression.
 
 #251 reports, from a Windows sm_89 port with a Qwen3.8-27B artifact and DFlash2, that prefix reuse
@@ -249,7 +249,7 @@ def main() -> int:
               "cannot tell them apart on its own: the cache is off, or the pools cannot hold the "
               "live set -- which is what the interleaved shape produces past ~52 conversations at "
               "the shipped 8 GiB quota, where every request reports preferred_reused_tokens 0 "
-              "(docs/research/prefix-state-eviction.md). Rerun with fewer conversations or a larger "
+              "Rerun with fewer conversations or a larger "
               "--host-context-mib to find out which.")
         return 1
     print(f"\n  not reproduced: every later turn reused ({len(later)} request(s), "

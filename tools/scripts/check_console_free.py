@@ -2,7 +2,7 @@
 
 Why this exists: on 2026-10-10 a controlled experiment showed that closing a console kills every attached
 process at once, silently, with no WER report and no event-log entry, and that `DETACHED_PROCESS` does not
-remove the console a venv trampoline allocates (`docs/research/silent-shell-death-2026-10-10.md`).
+remove the console a venv trampoline allocates.
 `GetConsoleWindow()` is the in-process test; from outside, a `conhost.exe` whose parent is inside the tree
 is the observable proxy -- it matched the in-process test in both arms of that experiment.
 

@@ -12,8 +12,7 @@
   adding 12.8 GB of VirtualAlloc/VirtualFree traffic and 5.1-6.8 s of CPU on an allocation-heavy
   benchmark. On this port's render bench it is a win in both conditions - 1.17x uncontended and
   1.27x with sixteen threads contending - and on the serving process it changed nothing at all
-  (`render 2.3s` on both arms), which is why it is a bench option and not an app one. See
-  docs/research/prompt-preparation-cost.md.
+  (`render 2.3s` on both arms), which is why it is a bench option and not an app one.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"
           xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">

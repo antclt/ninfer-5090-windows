@@ -3,7 +3,7 @@
 This session lost three sweeps to the same silent death: the service evicts and re-boots a location about
 hourly, every shell that location hosts dies with it, and a shell's finalizer tears down its own process
 tree - no flush, no traceback, no completion notice. The session's own research
-(`docs/research/silent-shell-death-2026-10-10.md`) established the escape and this is it as a tool:
+(the silent-shell-death investigation) established the escape and this is it as a tool:
 `DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB`, launched by a process that then exits, so the child is in
 no shell's tree and survives.
 

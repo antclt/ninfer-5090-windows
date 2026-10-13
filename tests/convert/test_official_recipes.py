@@ -27,7 +27,7 @@ both a `shape` and lazily-read packed codes, and only `qwen3_5.build_model` inst
 effort than the assertion is worth, and the fact it would pin is already established on the real
 artifacts instead: `verify_artifact.py --values` reports 192 `imported_words` and 363-366
 `encoded_values` on the nvidia lane, which is the import-vs-encode split read off four real
-18 GiB artifacts rather than a synthetic model. See docs/research/artifact-build-verification-audit.md.
+18 GiB artifacts rather than a synthetic model.
 """
 from __future__ import annotations
 

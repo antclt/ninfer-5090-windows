@@ -32,7 +32,7 @@ REPO = Path(__file__).resolve().parents[2]
 # Directories whose contents are records rather than current claims: a research note or an ADR states
 # what was true when it was written, and rewriting those is how a record stops being one. Upstream-facing
 # reports and model cards are dated records of another tree; a vendored skill's references are its own
-RECORD_DIRS = ("docs/research/", "docs/adr/", "docs/maintainer/", "docs/upstream-reports/",
+RECORD_DIRS = ("docs/adr/", "docs/maintainer/", "docs/upstream-reports/",
                "model-cards/", ".opencode/skills/", "docs/features/")
 
 SUPERSEDED = re.compile(

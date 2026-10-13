@@ -113,13 +113,6 @@ def main() -> int:
     for document in documents:
         if not document.is_file():
             continue
-        # `docs/research/` holds notes on OTHER projects -- ModelOpt, TensorRT-LLM, vLLM,
-        # llama.cpp -- so its citations name files this repository has never contained and cannot
-        # be expected to. Checking them would report every line as broken, which is the crying-wolf
-        # failure this gate exists to avoid. A citation there is a reference to someone else's
-        # source, not a promise about this tree.
-        if "docs/research/" in document.relative_to(REPO).as_posix():
-            continue
         try:
             text = document.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -166,11 +159,11 @@ def main() -> int:
                         f"that name is {longest[1]} at {longest[0]} lines"
                     )
 
-    print(f"  documents      : {len(documents)} (docs/research/ skipped: external sources)")
+    print(f"  documents      : {len(documents)}")
     print(f"  citations      : {citations}")
     if notices:
         # Not blocking, and deliberately so. "No tracked file has that name" is genuinely
-        # ambiguous: `docs/research/` cites ModelOpt, TensorRT-LLM and CUDA by design, and this
+        # ambiguous: a document may cite ModelOpt, TensorRT-LLM or CUDA by design, and this
         # repository cannot tell an external reference from a deleted one. A gate that blocks on
         # that distinction blocks on a guess, and a gate that guesses is muted within a week.
         distinct = sorted({n.split("`")[1] for n in notices})

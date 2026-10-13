@@ -7,7 +7,7 @@ This codebase creates its compute and load streams with `cudaStreamNonBlocking`
 relationship with the legacy one. So a defaulted stream in production code is a write whose
 ordering against the kernels that read it is unspecified.
 
-That is a real defect class, documented in docs/research/kv-publish-stream-ordering.md and reported
+That is a real defect class, reported
 upstream five times (#208, #210, #320, #329, #333). It is not being fixed here on speculation,
 because there is no cheap test that shows a fix helped -- the fault is sporadic and hours-long, and
 compute-sanitizer was measured as too slow to catch it. What this gate does instead is stop the
@@ -126,7 +126,7 @@ def main() -> int:
             was = pinned.get(name, 0)
             print(f"  + {name}: {was} -> {current[name]}")
         print("  A defaulted stream publishes on the legacy stream, which is unordered against the")
-        print("  non-blocking compute streams. See docs/research/kv-publish-stream-ordering.md.")
+        print("  non-blocking compute streams.")
 
     if shrank or vanished:
         print("RATCHET: the known deficit shrank, which means a fix landed.")

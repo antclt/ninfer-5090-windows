@@ -449,7 +449,7 @@ def qwen3_8_27b_nvfp4_unsloth(model, recipe, sources):
     The fork's own profile for this source quantized the FP8 side to NVFP4 and kept nine BF16
     exception parents from the Qwen3.6-27B pattern. That pattern is carried here and measured on
     these weights: dropping it is worth +11.6 acceptance points to the DFlash2 route and costs the
-    MTP head 21.4 (d7/d5, `docs/research/swift15-lane-measurement.md`), which is why the line ships
+    MTP head 21.4 (d7/d5), which is why the line ships
     as two images and `qwen3_8_27b_nvfp4_unsloth_noex` is the DFlash2 one. On Swift the same pattern
     measured *worse* than encoding everything -- 4.7701/4.93254 against 4.68429/4.92432 -- which is
     why the Swift recipes do not use it.
@@ -941,14 +941,13 @@ def qwen3_8_27b_nvfp4_unsloth_attn8(model, recipe, sources):
     * against the nvidia variant, a different checkpoint and finetune, -0.16%;
     * DFlash2 acceptance 0.2083 against `full`'s 0.1524 (+36.7% relative) and decode +1.8%, with the
       baseline's own spread at 0.4% -- from `ninfer_bench`'s fixture corpus, which the domain matrix
-      restated at +15-16% and the real-text instrument reverses entirely; see
-      `docs/research/attention-topology-2026-10-07.md`, "The real-text instrument reads the opposite sign";
+      restated at +15-16% while the real-text instrument reverses entirely;
     * prefill 10,064 against 11,617 tok/s (-13.4%, and it reproduces the nvidia pair's -14.2%);
     * 23.58 GB against 19.72 (+3.86), and 28.5% of the implied KV context -- 410,012 to 293,102 tokens at
       33,024 bytes per KV token, which is arithmetic on a text-only lane rather than a served capacity.
 
     The context cost is why this is not the default choice despite winning on quality: it still covers the
-    model's 262,144 ceiling, but with little room. See `docs/research/attention-topology-2026-10-07.md`.
+    model's 262,144 ceiling, but with little room.
     """
     if "num_experts" in model.config:
         raise ValueError("this official recipe requires Qwen3.5 Dense mathematics")
@@ -1004,8 +1003,7 @@ def qwen3_8_27b_nvfp4_nvidia_attn8(model, recipe, sources):
     * perplexity 4.648907 against 4.686759 (-0.81%), all 16 streams and all four domains better;
     * DFlash2 acceptance 0.1957 against 0.1106 (+77% relative) and decode +24.4%, from a flat round cost --
       both from `ninfer_bench`'s fixture corpus, which the domain matrix restated at +15-16% and the
-      real-text instrument reverses entirely; see
-      `docs/research/attention-topology-2026-10-07.md`, "The real-text instrument reads the opposite sign";
+      real-text instrument reverses entirely;
     * prefill -1.18%, inside the baseline's own 3.9% spread, so no cost is demonstrated;
     * 19.68 GB against 18.95 (+0.73), and 5.14% of the implied KV context;
     * the task-adjacent endpoint over 60 AIME questions -4.11% answer NLL (bootstrap 95% CI excluding
@@ -1014,7 +1012,7 @@ def qwen3_8_27b_nvfp4_nvidia_attn8(model, recipe, sources):
     The two halves are nearly additive -- GDN alone carries 52% of the full split's perplexity gain and
     attention alone 57% -- but attention buys its share for a third of the size, and adding GDN's FP8
     *lowers* acceptance relative to this build, which is why this variant exists rather than the full
-    split. See `docs/research/attention-topology-2026-10-07.md`.
+    split.
     """
     if "num_experts" in model.config:
         raise ValueError("this official recipe requires Qwen3.5 Dense mathematics")

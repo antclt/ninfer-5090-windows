@@ -31,7 +31,7 @@ struct alignas(64) Fp8TmaDescriptors {
 // The comment above states an invariant; this makes the compiler enforce it. Documentation drift is
 // not detectable in general -- 28.9% of the top 1000 GitHub projects are stale right now, and ~55% of
 // an outdated reference is still present a month later -- so where a documented claim CAN be bound to
-// the compiler, binding it beats writing it down. See docs/research/doc-drift-tooling-prior-art.md.
+// the compiler, binding it beats writing it down.
 static_assert(alignof(Fp8TmaDescriptors) == 64,
               "the comment above says alignas(64); if this fails the comment is wrong, not the compiler");
 static_assert(sizeof(Fp8TmaDescriptors) == 2 * sizeof(CUtensorMap),

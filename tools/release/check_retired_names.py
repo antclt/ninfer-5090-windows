@@ -20,9 +20,8 @@ Scope, stated because a scoped search that finds nothing is not a tree-wide fact
   * tokens of at least three underscore-separated segments -- `shared_stable_prefix`, not `root`. That
     is the shape every instance above had; a retired one- or two-segment name is NOT checked.
   * read from `tools/**/*.py` and `AGENTS.md`, which is where an engine anchor lives -- a criterion a
-    tool compares against, or a rule a session follows. `docs/research/` is deliberately not scanned: it
-    cites other projects by construction, and a gate that cannot tell an external reference from a dead
-    one is guessing. `docs/serving.md` is not scanned either, because its anchors are metric and field
+    tool compares against, or a rule a session follows. `docs/serving.md` is not scanned, because its
+    anchors are metric and field
     names that `check_request_logs.py` and the schema tests already validate against the code.
   * a token the same file also spells as a flag (`--stats-interval-ms`) is that file's own name and is
     skipped.

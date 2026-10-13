@@ -196,8 +196,8 @@ def main() -> int:
                 failures.append(
                     f"full_range is {only:g}, but E2M1's maximum times E4M3FN's is "
                     f"{E2M1_MAX * E4M3_MAX:g}. All three carriers agree, so this is deliberate "
-                    "rather than a drift; the 6-over-4 question is settled in "
-                    "docs/research/nvfp4-block-scale-4-vs-6.md and is not to be reopened here."
+                    "rather than a drift; the 6-over-4 question is settled and is not "
+                    "to be reopened here."
                 )
             else:
                 notes.append(

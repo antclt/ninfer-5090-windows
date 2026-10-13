@@ -1,6 +1,6 @@
 """Probe the fixed ~46 ms base in the `prefill` phase, on a served lane.
 
-The open item (docs/research/lane-coverage-2026-10-08.md) recorded a ~45 ms floor on near-zero-work
+An open item recorded a ~45 ms floor on near-zero-work
 requests and ruled out KV page allocation and per-conversation restores. This is the instrument that
 reproduces it and separates it from its neighbours: it starts a lane with its request log on, fires
 requests whose prompts differ (an identical repeat takes a replay and never decodes), and
