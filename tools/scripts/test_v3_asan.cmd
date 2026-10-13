@@ -9,7 +9,7 @@ REM -Xcompiler=/fsanitize=address on CMAKE_CUDA_FLAGS instruments nvcc's host pa
 REM mismatch disappears. Do not drop that flag.
 REM
 REM Scope: the host-only tests below. Device kernels are covered by compute-sanitizer instead
-REM; ASan does not instrument device code.
+REM (see .opencode/skills/cuda-debugging); ASan does not instrument device code.
 REM
 REM Leak reporting is off because MSVC's AddressSanitizer does not implement LeakSanitizer on
 REM Windows: setting detect_leaks=1 makes every instrumented binary abort with

@@ -33,7 +33,7 @@ REPO = Path(__file__).resolve().parents[2]
 # what was true when it was written, and rewriting those is how a record stops being one. Upstream-facing
 # reports and model cards are dated records of another tree; a vendored skill's references are its own
 RECORD_DIRS = ("docs/research/", "docs/adr/", "docs/maintainer/", "docs/upstream-reports/",
-               "model-cards/", "docs/features/")
+               "model-cards/", ".opencode/skills/", "docs/features/")
 
 SUPERSEDED = re.compile(
     r"\b(superseded|withdrawn|obsolete|no longer (?:exists|used|applies)|has been removed|"

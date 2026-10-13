@@ -157,6 +157,27 @@ Read the hook as the authority on what it runs; a count of its gates in prose go
 `codegraph_explore` before `grep` or `Read`. Manual search is for what it does not index — docs,
 configs, logs.
 
+### Skills
+
+`.opencode/skills/` holds 41 skills. They are **passive** — loaded on demand, nothing runs them on
+commit — which is the distinction that matters when weighing them against the gates. The project-local
+`code-review`, `health-check`, `security-scan`, `testing`, `verify` and `arch-check` are .NET/Roslyn
+imports that have never applied to this engine; `cpp-cuda-review` is the one that does.
+
+| Situation | Skill |
+|---|---|
+| a C++/CUDA change on its way in | `cpp-cuda-review` — this repo's review skill |
+| "how does X work", or an unfamiliar subsystem | `how` |
+| a whole subsystem needing a review whose coverage is checkable | `c-review` |
+| a suspected bug to confirm or discard **before** reporting | `fp-check` |
+| a hard bug, or a belief about the code that might be wrong | `diagnosing-bugs` |
+| a device-side memory, race or sync question | `cuda-debugging`; `sanitizers` and `address-sanitizer` for the host side |
+| a kernel's performance | `ncu-report` — records under `profiles/ncu/` and `profiles/nsys/`, which are gitignored |
+| before claiming a fix works | `principle-prove-it-works` |
+| `AGENTS.md` or an ADR may have gone stale | `rules-check-drift` |
+| a design with no precedent in this tree | `principle-exhaust-the-design-space` |
+| a multi-phase change needing an auditable trail | `show-me-your-work` |
+
 ### Rules earned by failures
 
 Each is a rule, not a story. The parenthetical is the failure that produced it.
