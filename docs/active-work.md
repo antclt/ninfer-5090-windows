@@ -4159,7 +4159,31 @@ long-code 142.0 where the record's k8v4 figure is 153.8, -7.7%, against the swee
 is evidence about the other; the interleaved sweep is the instrument, and the fingerprint's role is to
 record what a lane delivers, not to compare two configurations.
 
-**The three-round sweep has run, and these are the verdicts against each comparison's own spread.**
+**The six-round sweep: two decisions firmed up, and the depths resolved as indistinguishable.** The
+sweep's shell died mid-run - the service evicts a location about hourly and every shell it hosts dies with
+it, the hazard this session recorded - but its log survived and four of five comparisons completed:
+
+| comparison | 3 rounds | 6 rounds | outcome |
+|---|---|---|---|
+| nvidia mtp4 kv | k8v4 by 6.4% against a 5.8% spread | **k8v4 by 6.5% against 2.4%** | **solid: the shipped fp8 is contradicted** |
+| quasar mtp4 kv | fp8 by 1.3% against 1.2% | **fp8 by 2.6% against 0.7%** | **solid: the shipped k8v4 is contradicted** |
+| ninfer dflash2 depth | 9 by 0.1% against 1.5% | 9 by 0.1% against **7.3%** | spread *grew*; mean flipped to 9 |
+| nvidia dflash2 depth | 9 by 0.0% against 1.1% | 9 by 0.1% against **3.1%** | mean favours 7 |
+| swift mtp4 kv | k8v4 by 0.7% against 0.6% | did not finish | unchanged |
+
+**Both dflash2 depths close as no difference to act on, which is not the same as a tie.** Their spreads
+grew with more rounds rather than shrinking - 1.5% to 7.3% and 1.1% to 3.1%, against the 0.7-2.4% every
+format comparison settled at - and the mean flipped between runs. A comparison whose noise does not fall
+with repetition is measuring a difference smaller than the instrument, so depth 7 and depth 9 are
+indistinguishable on these lanes and the shipped 9 stands. The rule's method (more rounds) has been run
+and the answer is that there is nothing to separate.
+
+**Two shipped formats are contradicted by solid decisions and are not yet applied**: nvidia mtp4 ships
+fp8 and k8v4 wins by 6.5% against a 2.4% spread; quasar mtp4 ships k8v4 and fp8 wins by 2.6% against
+0.7%. Each needs the wave the other two moves took - field, launcher, fingerprint, fold, and the docs'
+k8v4 lane count, which would go from three to two as one moves each way. **swift mtp4 is unresolved**: its
+comparison did not finish, so its 3-round reading (k8v4 by 0.7% against 0.6%) stands as open rather than
+as a decision.
 
 | comparison | margin | paired spread | verdict |
 |---|---|---|---|
