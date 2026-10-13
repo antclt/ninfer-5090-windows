@@ -4110,9 +4110,15 @@ Measured on the ninfer dflash2 lane: **retention 35/40 = 88%, drift point turn 3
 fragments rather than silence - `d010`, `d0101`, `d010127c` - so the constraint decays rather than
 vanishing, and turn 25 already shows a partial code. **One confound, stated rather than hidden**: the
 probe used `--max-tokens 64` on a reasoning lane, which can truncate an answer before it arrives - the
-same trap the long-context tool hit and fixed with a 512-token budget. So 88% is a floor, not a
-measurement, and the re-run wants the larger budget before the figure is quoted. What the run does
-establish is that the probe measures what it claims to and that degradation is observable.
+same trap the long-context tool hit and fixed with a 512-token budget.
+
+**Re-run at 512 tokens: retention 40/40 = 100%, no drift point.** Every sampled turn holds the code
+verbatim, so the 88% figure was the token budget and not the model: the constraint survives forty turns
+of unrelated work, which is the answer to the fifth gap and the opposite of what the first run suggested.
+The confound was named before the re-run, and naming it is what made the two runs a measurement rather
+than a disagreement. What the run does not cover is length: forty turns of 1,500 characters is about
+15,000 tokens, a modest session against a 262,144-token window, and `--turns` is the knob for a longer
+one.
 
 **Per-artifact perplexity, spot-checked, and the difference attributed.** One artifact, the recommended
 line, `--quick`, fp8, on the merged tree: **overall 4.392988** over 261,167 scored tokens, against the
