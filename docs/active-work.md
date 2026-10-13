@@ -4197,9 +4197,13 @@ and measures its threshold spread on the deciding cell. The disclosures the rule
 `README.md` and `RELEASE_NOTES.md` beside the moves. The docs' k8v4 count stays three - quasar mtp4 leaves as nvidia mtp4 joins, so the membership moved
 and the number did not - and `launcher_env.bat`'s `QUASAR_ARGS` had to be regenerated with them: it feeds
 test_prompt.bat and test_vision.bat, and the gate compares it against `cli_args` of the first mtp4 lane, so
-it still said k8v4 after the field changed and the profile gate caught it. **swift mtp4 is unresolved**: its
-comparison did not finish, so its 3-round reading (k8v4 by 0.7% against 0.6%) stands as open rather than
-as a decision.
+it still said k8v4 after the field changed and the profile gate caught it. **swift mtp4 is decided, and it was open only on the wrong basis.** Its six-round comparison died with its
+shell, but its 3-round per-cell data settles it on the served-length cell: k8v4 139.2 against fp8 138.2,
+k8v4 by 0.7% against a spread of at most 0.6%, with every other cell agreeing in direction - the short code
+cell k8v4 by 3.6% and long Chinese k8v4 by 15.3% - so there is no inversion and the shipped k8v4 stands. A
+one-round check with the corrected tool agreed on every cell (k8v4 132.5 against 130.7 on long code, 215.1
+against 205.7 on short code, 151.8 against 128.4 on long Chinese), and the tool refused to call it a
+decision at one round - "SPREAD UNMEASURED ... OPEN" - which is the guard that was missing.
 
 **And the fingerprint's figures are a run condition in part - which the cooled re-measure separated from a
 format effect.** A grouped refresh measured all eight lanes on 2026-10-13, every one below the table, with a
