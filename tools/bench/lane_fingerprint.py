@@ -18,26 +18,30 @@ Comparison rules, which the first run got wrong in two ways worth keeping:
   * Acceptance is read from **`accept_rate`** explicitly. A substring search for "accept" picks
     `spec_accepted`, which is a token count: the first run reported "acceptance 1328.0 against 71.2".
 
-**A single run of this tool is not comparable with the published table. Two runs, measured.**
+**A single run of this tool is not comparable with the published table.**
 
-This is not a caveat added from caution; it is a measured result, and it is the reason the table
-carries an interleaved-window figure. Two runs of this exact tool, on the exact same binary, an
-hour apart on an idle card, differed on **all twenty-four lane x cell comparisons, every one in
-the same direction**: the second run read 5.1% to 7.3% faster than the first, uniformly.
-
-| | first run (cold) | second run (warm) | published table |
-|---|---|---|---|
-| `ninfer` DFlash2 `code` | 342.5 | 363.2 | 365.6 |
-| `ninfer` MTP4 `code` | 196.7 | 209.7 | 212.8 |
-| `swift15` DFlash2 `code` | 295.9 | 314.4 | 319.3 |
+This tool already records the reason, and does not need it restated: the drift block below
+cites one lane reading 216.6 (the committed table), 230.5 and 239.0 within six hours -- a
+10.3% span -- against a within-run spread of 0.3 to 5.1%, so no statistic available inside a
+run can size it. Two runs of this tool, same binary, an hour apart, differed on **all
+twenty-four lane x cell comparisons, every one in the same direction**: 5.1% to 7.3%,
+uniformly.
 
 A uniform one-directional shift is the card's clocks settling, not engine behaviour: a code
 change moves acceptance, and acceptance on the seeded `code` cell was bit-identical across all
 eight lanes in both runs (0.5175, 0.5612, 0.4493, 0.4772, 0.548, 0.597, 0.509, 0.5804). Decode
 is a clock measurement and is not evidence about the code.
 
-So: **do not fold a single run of this tool into `profiles.py`.** The published figures come
-from an interleaved window -- `profiles.py` names it -- and they sit between the two runs above.
+**The first lane is the worst case, and the tool can see it.** Lanes run sequentially in table
+order with no warm-up, and this file records the card state per lane. In the run of
+2026-10-13T22:13:51Z the first lane's "before" reads **37 C, 637 MHz, 61.73 W** -- an idle card
+that has not ramped -- and it reaches 2865 MHz only inside that lane. Every later lane starts at
+57-66 C and 2812-2895 MHz. **So the first lane is measured on a card in a different power state
+from the other seven, and its figure is the least trustworthy in the file.** Compare it against
+its own previous entry, never against the table, and never fold it.
+
+So: **do not fold a single run of this tool into `profiles.py`.** The published figures come from
+an interleaved window -- `profiles.py` names it -- and they sit between the two runs above.
 Folding the cold run would publish a figure ~6% pessimistic; folding the warm run would publish
 one ~6-8% optimistic. Either makes the documentation worse, and both would look like a result.
 
@@ -162,6 +166,8 @@ def main() -> int:
                              "has no build/, so the runner passes the machine's own binary")
     parser.add_argument("--models", type=Path, default=MODELS,
                         help="where the artifacts live")
+    parser.add_argument("--no-warmup", action="store_true",
+                        help="skip the warm-up lane (it is run and discarded by default)")
     parser.add_argument("--no-write", action="store_true", help="measure and report, record nothing")
     parser.add_argument("--kv-dtype", choices=["bf16", "int8", "fp8", "nvfp4", "k8v4"],
                         help="override every selected lane's KV format, for a format A/B; the record "
@@ -198,6 +204,21 @@ def main() -> int:
     # (tok, table figure) per lane on the table's own cell, for the run-level statement below: a drift
     # check compares against a past number and cannot see that a whole run moved together.
     run_level: list[tuple[float, float]] = []
+    if selected and not args.no_warmup:
+        # Run the first selected lane once and throw the numbers away. The card is idle when
+        # this tool starts, and the first lane is otherwise measured while it is still
+        # ramping -- 637 MHz on the recorded run of 2026-10-13, against 2812-2895 MHz for
+        # every later lane. That is a property of the run, not of the lane.
+        warm = selected[0]
+        print(f"\n=== warm-up: {warm['file']} (discarded)")
+        for name, _chars, _prompts in cells:
+            domain = name if name not in CELL_SOURCES else f"fingerprint-{name}"
+            try:
+                run_profile(profile=warm, domain=domain, sampling="default")
+            except Exception as exc:  # noqa: BLE001 - a warm-up must never fail the run
+                print(f"    warm-up cell {name} did not run: {exc}")
+        print("    card warmed; every measured lane now starts ramped")
+
     for profile in selected:
         launcher = profile["file"]
         print(f"\n=== {launcher}")
