@@ -461,7 +461,7 @@ config table" unticked, and users report it "does not work with modern models" a
 TurboQuant produces degenerate token loops** — which is this product's shipping configuration.
 
 **This closes the investigation, not the option.** `k8v4` stays selectable and fully implemented here
-(`src/ops/kv_cache/append/k8v4_kernel.cuh`, `k8v4_launch.cu`). Unlike item 9's `PromptLookup`, this is
+(`src/ops/kv_cache/append/k8v4_kernel.cuh (pre-merge path; the merge moved it)`, `k8v4_launch.cu`). Unlike item 9's `PromptLookup`, this is
 a working format behind a flag, not a ported component whose consumer will never exist — so it is not a
 withdrawal candidate, and nothing in this row should be read as a reason to remove it.
 
@@ -755,7 +755,7 @@ configuration nobody was checking.
 > `Fp8A8TmaMmaSchedule` derives from `Fp8A8MmaSchedule` and overrides only `kTmaSwizzle`, the producer
 > warp and the cache hint. So an MMA twin of a TMA tile is the same instantiation of the base template —
 > same BlockTokens, BlockRows, BlockK, WarpsTokens, WarpsRows, Stages and MinBlocksPerSm — and only the
-> load path differs. `tools/bench/tma_ab.cmd` runs both arms in ONE binary, interleaved
+> load path differs. `tools/bench/tma_ab.cmd (since deleted)` runs both arms in ONE binary, interleaved
 > (tma, mma, tma, mma...), 5 repeats, and reports per-arm medians with the ratio taken after them.
 >
 > | tokens | tile | tma us | mma us | mma/tma |
@@ -774,7 +774,7 @@ configuration nobody was checking.
 >
 > **Correctness is checked too, and it had to be.** The bench times but has no oracle, so a throughput
 > ratio between two kernels where only one is known to be right is not a measurement.
-> `tools/bench/tma_ab_correctness.cmd` runs `ninfer_linear_add_fp8_test` -- which does have one
+> `tools/bench/tma_ab_correctness.cmd (since deleted)` runs `ninfer_linear_add_fp8_test` -- which does have one
 > (`kA8Tolerance{0.04, ...}`, `verify_preserved`) -- once per arm: **tma OK, mma OK, unset OK.** Both
 > arms compute the same thing, so the ratio compares two correct kernels.
 >
@@ -1207,7 +1207,7 @@ configuration nobody was checking.
 > **This does not touch the fix.** The fix was validated by a different loop that drives the project's
 > own kernel — flip the gates, build `ninfer_linear_fp8_a8_test`, run it — and that one reproduced
 > `cudaErrorIllegalInstruction` at `[14336,5120] T=129` and went green after `a5077adf`. This tree's
-> only `try_wait` is `src/ops/common/mbarrier.cuh:21`, which is correctly numbered (no output operand,
+> only `try_wait` is `src/ops/common/mbarrier.cuh (pre-merge path; the merge moved it):21`, which is correctly numbered (no output operand,
 > so `%0` is the barrier address), so the project does not share the reproducer's defect. The
 > reproducer has been deleted rather than corrected: the real loop supersedes it.
 
@@ -1266,7 +1266,7 @@ unaffected. Resolutions, to reuse rather than re-derive:
    now states the opposite in its own words — "the reason is **NOT** the one an earlier revision of this
    comment gave … The attribute is not applied at all" — and quotes the probe's output
    (`alignof(CUtensorMap) = 8, TENSOR_MAP_ALIGN = 64, __cplusplus = 199711, attribute applied: NO`).
-   `src/ops/common/mbarrier.cuh` and the two other headers were corrected with it. The measurement
+   `src/ops/common/mbarrier.cuh (pre-merge path; the merge moved it)` and the two other headers were corrected with it. The measurement
    above is unchanged and is the reason the comments now say what they say; what changed is that the
    tree no longer contradicts it.
 
@@ -2863,7 +2863,7 @@ which never decodes.
 > **THE MEDIANS' CONFIGURATION — one authority for five files that quote them.** `fp8_attn_input_a8.cu`,
 > `fp8_gdn_input_a8.cu`, `n14336_k5120.cu`, `fp8_linear_add_a8.cu` and `fp8_linear_swiglu_a8.cu` each
 > quote a subset of these figures. None of them carries the configuration, and the harness that took
-> them — `tools/bench/tma_ab.cmd` — was withdrawn with the gates it flipped, so nothing in the repository
+> them — `tools/bench/tma_ab.cmd (since deleted)` — was withdrawn with the gates it flipped, so nothing in the repository
 > can regenerate or refute them today. They are recorded here instead, once, with everything needed to
 > judge them.
 >
