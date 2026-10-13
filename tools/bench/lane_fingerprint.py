@@ -18,6 +18,32 @@ Comparison rules, which the first run got wrong in two ways worth keeping:
   * Acceptance is read from **`accept_rate`** explicitly. A substring search for "accept" picks
     `spec_accepted`, which is a token count: the first run reported "acceptance 1328.0 against 71.2".
 
+**A single run of this tool is not comparable with the published table. Two runs, measured.**
+
+This is not a caveat added from caution; it is a measured result, and it is the reason the table
+carries an interleaved-window figure. Two runs of this exact tool, on the exact same binary, an
+hour apart on an idle card, differed on **all twenty-four lane x cell comparisons, every one in
+the same direction**: the second run read 5.1% to 7.3% faster than the first, uniformly.
+
+| | first run (cold) | second run (warm) | published table |
+|---|---|---|---|
+| `ninfer` DFlash2 `code` | 342.5 | 363.2 | 365.6 |
+| `ninfer` MTP4 `code` | 196.7 | 209.7 | 212.8 |
+| `swift15` DFlash2 `code` | 295.9 | 314.4 | 319.3 |
+
+A uniform one-directional shift is the card's clocks settling, not engine behaviour: a code
+change moves acceptance, and acceptance on the seeded `code` cell was bit-identical across all
+eight lanes in both runs (0.5175, 0.5612, 0.4493, 0.4772, 0.548, 0.597, 0.509, 0.5804). Decode
+is a clock measurement and is not evidence about the code.
+
+So: **do not fold a single run of this tool into `profiles.py`.** The published figures come
+from an interleaved window -- `profiles.py` names it -- and they sit between the two runs above.
+Folding the cold run would publish a figure ~6% pessimistic; folding the warm run would publish
+one ~6-8% optimistic. Either makes the documentation worse, and both would look like a result.
+
+Use this tool to detect that a figure's CONDITIONS changed, which is what it is for. To produce
+a figure, use the interleaved window in `tools/release/v3_profile_matrix.py`.
+
 Usage:
     python tools/bench/lane_fingerprint.py                      # all eight lanes, three cells
     python tools/bench/lane_fingerprint.py --file <launcher> --cell code
@@ -38,6 +64,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "release"))
@@ -175,7 +202,7 @@ def main() -> int:
         launcher = profile["file"]
         print(f"\n=== {launcher}")
         artifact = args.models / profile["art"]
-        recorded = {
+        recorded: dict[str, Any] = {
             "artifact": {"path": artifact.name, "bytes": artifact.stat().st_size,
                          "mtime": artifact.stat().st_mtime},
             "cells": {},
