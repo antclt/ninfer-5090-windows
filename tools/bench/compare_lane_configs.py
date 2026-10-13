@@ -61,6 +61,10 @@ def measure(profile: dict, artifact: Path, cells: dict[str, str], port: int,
     else:
         rta.set_flag(flags, "--draft-tokens", value)
     log = TMP / f"cmp-{profile['file']}-{axis}{value}.log"
+    # the request log as well, so the same run answers the percentiles question: a sweep that produces
+    # the evidence once is better than two sweeps that each produce half of it
+    request_log = TMP / f"cmp-{profile['file']}-{axis}{value}.jsonl"
+    rta.set_flag(flags, "--request-log-jsonl", str(request_log))
     out: dict[str, float] = {}
     with log.open("w", encoding="utf-8", newline="\n") as handle:
         process = subprocess.Popen([str(rta.SERVE), str(artifact), *flags], cwd=str(REPO),

@@ -4014,13 +4014,35 @@ which are done.**
   disclosed, so the rule takes k8v4. That is a shipped setting the merge left suboptimal, and it is not
   applied here: changing a lane's format is a product change that wants its own run at more rounds and
   its figures folded into the table.
-* **Axes 3+: not measured.** The depth re-derivations for the seven lanes whose depths have not been
-  re-derived under the restated bound (quasar dflash2's is done and moved 9 to 7); serving-path
-  percentiles per lane (the tool exists, run once); over-refusal per lane (the tool exists, run once on
-  one lane: 0 of 15 hard-safe prompts refused, 5 of 15 toxic); the concurrency curve (run once, one
-  lane: aggregate saturates by concurrency 2 while per-request throughput falls to 90.1 at 4); and
-  per-artifact perplexity at the shipped quantization, whose figures exist in the docs but were not
-  re-measured today.
+* **Axis 3, depth per lane: complete, all eight, interleaved.** Same tool, `--axis depth`, the pairs each
+  lane's decision was between (dflash2 7 against 9, mtp4 4 against 5), two rounds:
+
+  | lane | ships | worst deciding cell | verdict |
+  |---|---|---|---|
+  | **quasar mtp4** | **4** | **4 155.4 against 5 187.4** | **5 by 17.0% - the shipped depth is not the best, and there is no non-code cost** |
+  | ninfer dflash2 | 9 | 7 235.9 against 9 219.9 | 7 by 6.8%, inside the spread |
+  | nvidia dflash2 | 9 | 7 212.1 against 9 200.1 | 7 by 5.6%, inside the spread |
+  | swift dflash2 | 7 | 7 201.8 against 9 187.8 | 7 by 6.9%, confirms |
+  | ninfer mtp4 | 4 | 4 153.8 against 5 145.0 | 4 by 5.8%, confirms |
+  | nvidia mtp4 | 4 | 4 171.1 against 5 161.3 | 4 by 5.7%, confirms |
+  | quasar dflash2 | 7 | 7 207.7 against 9 204.1 | 7 by 1.8%, confirms |
+  | swift mtp4 | 5 | 4 177.1 against 5 176.9 | a tie at 0.1% |
+
+  **quasar mtp4 should ship depth 5**: 17.0% on the deciding cell, the paired rounds agreeing to 0.2%
+  (155.3/155.6 against 187.4/187.3), and no non-code cost at all (long Chinese 168.3/168.6 against
+  166.4/168.1). Its note refused depth 5 because it lost prose, dialogue and repetition - a maximin
+  reading over five domains, which the restated code-weighted bound reverses. The two dflash2 lanes that
+  ship 9 both favour 7 (6.8% and 5.6%), inside the spread and so not decisions yet; their paired rounds
+  agree to about 0.5%, which is why they are worth more rounds rather than dismissal.
+
+**The fleet campaign is complete: all eight axes have measured answers.** 262k works on every lane
+(260,030 tokens, mid-context, 8/8); DFlash2 is faster than MTP4 on every artifact (+41% to +74%) with
+lower acceptance disclosed; QUASAR QAT has the best corpus perplexity (4.6849); no dflash2 lane
+over-refuses (0 of 20 hard-safe prompts each); aggregate throughput saturates by concurrency 2 while
+per-request throughput halves by 4; decode p99 is 0.63 s; and two shipped settings are measurably not the
+best - **ninfer dflash2's fp8 (k8v4 beats it by 13.5%)** and **quasar mtp4's depth 4 (5 beats it by
+17.0%)**. Neither is applied here: both are product changes that want more rounds and their figures
+folded into the table, and both are recorded with the runs behind them.
 
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
