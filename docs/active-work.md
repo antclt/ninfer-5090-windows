@@ -3991,10 +3991,29 @@ which are done.**
   concatenation. Method: a fresh random needle per cell, exact-match scoring, the query at the end as
   RULER places it. A hit means the lane prefilled ~260k tokens and read the middle of them, which is what
   "262k on each model" claims.
-* **Axis 2, fp8 against k8v4: running.** `tools/bench/compare_kv_formats.py` measures the alternative
-  format on each lane's two **code cells** - the rule decides on the worst of those - and compares
-  against the incumbent's recorded figures. One lane had been done by hand (quasar dflash2: k8v4 stands,
-  fp8 gains 29.5% on the deciding cell and gives up 30.5% on the worst non-code cell).
+* **Axis 2, fp8 against k8v4: complete, all eight lanes, interleaved.** Measured with
+  `tools/bench/compare_lane_configs.py` - every candidate in every round, paired so the card's
+  session-to-session drift cancels, on the two deciding cells, reading the engine's own decode rate
+  rather than wall clock. The paired rounds agree to about 1% on every lane, which is what interleaving
+  buys. Two lanes are decided, six are inside the 10.3% spread and need more rounds:
+
+  | lane | ships | worst deciding cell | verdict |
+  |---|---|---|---|
+  | ninfer dflash2 | fp8 | **k8v4 255.4 against fp8 221.0** | **k8v4 by 13.5% - the shipped format is not the best** |
+  | swift mtp4 | k8v4 | **k8v4 177.1 against fp8 144.6** | **k8v4 by 18.4% - the shipped format stands** |
+  | ninfer mtp4 | k8v4 | 153.7 against 170.9 | fp8 by 10.1%, borderline |
+  | nvidia dflash2 | fp8 | 221.4 against 199.1 | k8v4 by 10.1%, borderline |
+  | quasar mtp4 | k8v4 | 152.0 against 166.6 | fp8 by 8.8% |
+  | swift dflash2 | k8v4 | 201.4 against 219.8 | fp8 by 8.4% |
+  | nvidia mtp4 | fp8 | 163.4 against 171.8 | fp8 by 4.9% |
+  | quasar dflash2 | k8v4 | 208.6 against 213.4 | fp8 by 2.3% |
+
+  The decided one: **ninfer dflash2 should ship k8v4, not fp8** - 13.5% on the deciding cells,
+  reproduced across the paired rounds, with its non-code cost disclosed (long Chinese 168.7 against
+  fp8's 197.1). Under the owner's restated bound the code cells decide and the non-code cells are
+  disclosed, so the rule takes k8v4. That is a shipped setting the merge left suboptimal, and it is not
+  applied here: changing a lane's format is a product change that wants its own run at more rounds and
+  its figures folded into the table.
 * **Axes 3+: not measured.** The depth re-derivations for the seven lanes whose depths have not been
   re-derived under the restated bound (quasar dflash2's is done and moved 9 to 7); serving-path
   percentiles per lane (the tool exists, run once); over-refusal per lane (the tool exists, run once on
