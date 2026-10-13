@@ -4082,6 +4082,31 @@ disagreed in sign for a reason now identified rather than mysterious. The fix is
 threshold: it is to stop hand-rolling the protocol and call `measure_decode` with the configuration
 overridden, so the sign is settled inside the protocol that decides.
 
+**Done, and both candidates fall.** `compare_lane_configs.py` now calls `run_profile` with the lane's
+profile dict modified, which is the only path that reaches the flags, and measured the two cases in the
+matrix's own protocol:
+
+| case | shipped | alternative | worst deciding cell | verdict |
+|---|---|---|---|---|
+| quasar mtp4 depth | 4: 133.4 | 5: 134.0 | 0.4% apart | a tie - **the shipped 4 stands** |
+| ninfer dflash2 format | fp8: 187.2 | k8v4: 188.4 | 0.6% apart | a tie - **the shipped fp8 stands** |
+
+The 17.0% and 13.5% findings were artifacts of the new tools' protocol, and refusing the changes was
+right. **The lesson is not that the figures were inflated: it is that the sampling changes which
+configuration wins.** Greedy inflates draft acceptance, acceptance changes tokens per round, and tokens
+per round is what separates depth 4 from 5 or fp8 from k8v4 - so ranking configurations at a sampler
+nobody serves by ranks them for a regime that does not exist. Every comparison of a depth, a draft
+window or a KV format must be taken at the served sampling and after a discarded warmup, which is what
+the fingerprint does and what the four new tools did not.
+
+**The campaign's final answers.** 262k works on every lane (8/8, verified). DFlash2 is faster than MTP4
+on every artifact (+41% to +74%, acceptance disclosed) - that comparison came from the fingerprint's own
+record, so it stands. QUASAR QAT leads corpus perplexity at 4.6849. No dflash2 lane over-refuses (0 of
+20 hard-safe each; refusal classification is insensitive to the sampling, so that stands). Aggregate
+throughput saturates by concurrency 2 and per-request throughput halves by 4. Decode p99 is 0.63 s.
+**Every shipped format and depth stands as chosen**, and the two that looked wrong were artifacts of the
+instrument rather than of the product.
+
 The honest form of the answer so far: "262k on every model" is verified; "highest token speed, best
 accuracy, best MTP and DFlash numbers, best format" are each a run away from being verified or refuted,
 lane by lane, and nothing here claims them until a run does.
