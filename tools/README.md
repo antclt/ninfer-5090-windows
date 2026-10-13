@@ -24,7 +24,6 @@ authority for what they cover:
 | `check_profile_consistency.py` | every commit, and again during packaging |
 | `check_calibration_corpus.py` | every commit |
 | `check_production_stream_defaults.py` | every commit |
-| `check_rule_count.py` | every commit; keeps `AGENTS.md`'s stated rule count equal to the bullets |
 | `check_dead_types.py` | every commit; a declared first-party type nothing names again |
 | `check_duplication.py` | every commit; copy-paste added past the recorded baseline |
 | `check_port_delta.py --check` | every commit; divergence inside an upstream-owned file past `port_delta_baseline.json` |

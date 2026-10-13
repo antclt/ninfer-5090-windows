@@ -2,7 +2,7 @@
 
 The gates answer the parts a script can answer and do it on every commit: links and anchors
 (check_doc_links), `file.ext:LINE` citations (check_doc_citations), encoding (check_text_encoding), the
-lane table against the fingerprint (check_profile_consistency) and the rule count (check_rule_count).
+lane table against the fingerprint (check_profile_consistency).
 This covers the three classes they do not:
 
 1. **A path a document mentions that the tree no longer has.** The field's own description of drift

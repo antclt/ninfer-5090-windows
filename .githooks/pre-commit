@@ -1,14 +1,14 @@
 #!/bin/sh
-# The count is deliberately absent. It read "Thirteen checks" while fifteen gates ran, and a count in
-# prose goes stale silently -- the same failure check_rule_count.py exists to catch in AGENTS.md,
-# where the number is checked against the bullets rather than described.
+# No count is stated here either, for the reason it used to state one: a number in
+# prose goes stale silently. The gate that policed it (check_rule_count.py) is gone
+# with the rule list it was counting.
 #
 # The checks below, all seconds: documentation links resolve, documentation citations still point
 # inside the files they name, tracked text is byte-preserved UTF-8, the
 # profile tables match the profile module and the generated launchers, the FP8 band ladders still
 # describe the artifacts, the calibration corpus is
 # still the one the artifact's creator used, the set of production functions defaulting a CUDA stream
-# has not widened, the rule count in AGENTS.md matches its own bullets, no first-party type is
+# has not widened, no first-party type is
 # declared and never named again, no name a tool still treats as current has outlived the tree,
 # no copy-paste has been
 # added past the recorded baseline, no divergence from upstream inside an upstream-owned
@@ -104,7 +104,6 @@ gate "FP8 band ladders" "$PY" tools/release/check_fp8_band_ladders.py
 gate "profile consistency" "$PY" tools/release/check_profile_consistency.py
 gate "calibration corpus" "$PY" tools/release/check_calibration_corpus.py
 gate "stream-default ratchet" "$PY" tools/release/check_production_stream_defaults.py
-gate "rule count" "$PY" tools/release/check_rule_count.py
 gate "dead types" "$PY" tools/release/check_dead_types.py
 gate "retired names" "$PY" tools/release/check_retired_names.py
 gate "activity predicate" "$PY" tools/release/check_activity_predicate.py
