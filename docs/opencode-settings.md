@@ -39,12 +39,45 @@ verified by re-running the task: 0/116 before, 3/3 after. **A fresh run now reco
 itself**, so this table is reproducible from the tool rather than adjusted after the fact. The
 ranking across efforts was never affected, because the task failed uniformly at every setting.
 
-| model | effort | pass | mean | reasoning chars | trunc |
+**The table below supersedes the rows it replaces, and the reason is the instrument rather than the
+model.** Two defects made the earlier figures unreadable, both now fixed in
+`tools/release/bench_opencode_settings.py`:
+
+- **No seed.** Every cell was a fresh sample, so the table was reporting its own sampling noise. The
+  engine is deterministic given a seed — four repeats of one prompt gave four distinct answers
+  unseeded and one seeded — and `evaluate` at identical settings swung 37 points across eight runs.
+- **The default 2,048-token output cap.** Reasoning is billed against the same cap as the answer, so
+  every hard task truncated and scored as a model failure. The earlier `trunc` column is that
+  artefact: it is zero here because the cap is now 32,768.
+
+Re-measured with both fixed, seed 20261013, two DFlash2 lanes × four efforts × ten tasks:
+
+| model | effort | pass | mean s | mean completion | mean reasoning chars |
 | --- | --- | --- | --- | --- | --- |
-| quasar-dflash2 | **none** | **12/12** | **0.6 s** | 0 | 0 |
-| quasar-dflash2 | low | 11/11 | 2.4 s | 2378 | 0 |
-| quasar-dflash2 | medium | 6/6 | 3.1 s | 2843 | 1 |
-| quasar-dflash2 | xhigh | 3/6 | 5.4 s | 4809 | 3 |
+| quasar-v3-dflash2 | **none** | 9/10 | **0.5 s** | 221 | 0 |
+| quasar-v3-dflash2 | low | 9/10 | 3.4 s | 1202 | 3365 |
+| quasar-v3-dflash2 | medium | 9/10 | 7.0 s | 1856 | 6158 |
+| quasar-v3-dflash2 | **xhigh** | **10/10** | 9.6 s | 2404 | 8460 |
+| ninfer-v3-dflash2 | **none** | 9/10 | **0.7 s** | 283 | 0 |
+| ninfer-v3-dflash2 | **low** | **10/10** | **3.2 s** | 1248 | 3640 |
+| ninfer-v3-dflash2 | medium | 10/10 | 4.1 s | 1518 | 4623 |
+| ninfer-v3-dflash2 | xhigh | 9/10 | 7.4 s | 2006 | 6906 |
+
+Pooled over both models: **none 18/20 (90%), low 19/20 (95%), medium 19/20 (95%), xhigh 19/20
+(95%)**, at 0.6 s, 3.3 s, 5.5 s and 8.5 s.
+
+**This reverses the earlier table's headline.** `xhigh` was recorded at 3/6 — the worst row — and is
+in fact tied for best. The reversal is entirely the two defects above: `xhigh` reasons longest, so it
+was the row most damaged by a cap that truncation punishes hardest, and it is the row a sampling noise
+floor punishes hardest. Only two cells fail at all — `evaluate` once at low and once at xhigh,
+`rooms_needed` once at medium and once at none — and they do not order the efforts.
+
+Two limits. Each cell is one deterministic run, so a single cell can still be unlucky; the paired
+five-seed comparison above is the stronger instrument for any question about a difference. And these
+are two lanes, not all eight — the earlier claim that no artifact is better than another at coding
+still holds within ±10 points here, but the wider table was not re-measured.
+
+The rows below predate both fixes and are kept only as the record of what was measured then.
 | quasar-mtp4 | **none** | **11/11** | **0.8 s** | 0 | 0 |
 | quasar-mtp4 | low | 11/11 | 3.6 s | 2599 | 0 |
 | quasar-mtp4 | medium | 6/6 | 4.5 s | 3060 | 1 |
@@ -91,17 +124,22 @@ a property of the model.
 
 ## What this says
 
-1. **None of the four models is better than the others at coding** — every one scores the
-   same on both grids. Pick by context and speed.
-2. **Use `none` for routine work.** It matches every other setting on recall-shaped tasks at
-   0.6-1.4 s against 7-28 s, and it never truncated.
-3. **Turn thinking on for anything algorithmic.** `none` scored 0/2 on the one task that
-   needed a real algorithm. This is the case thinking exists for.
-4. **`low` is the right thinking level.** Identical results to `medium` and `xhigh` on every
-   hard task, at a third of the time.
+Re-derived from the seeded table above; the reasoning behind each is unchanged, but the numbers moved
+once the instrument was fixed.
+
+1. **No artifact is better than another at coding.** The two re-measured lanes differ by at most one
+   task of ten at any effort, in both directions. Pick by context, footprint and speed.
+2. **`none` for routine work; it costs almost nothing to give up.** 90% against 95% for every
+   thinking level — one task in twenty — at 0.6 s against 3.3-8.5 s. That is a 5-14x latency
+   difference for one task.
+3. **Turn thinking on for anything algorithmic.** `rooms_needed` is the task that needs a real
+   algorithm, and `none` fails it on **both** lanes while every thinking effort passes at least one.
+4. **`low` is the right thinking level, and the data now says so cleanly.** 95% — identical to
+   `medium` and `xhigh` — at 3.3 s against 5.5 s and 8.5 s. `xhigh` costs 2.6x `low` for nothing.
 5. **Never lower `limit.output` below the thinking budget.** Reasoning tokens are billed
    against the same cap as the answer; a tight cap silently truncates the answer and looks
-   like a model failure.
+   like a model failure. This is what made the earlier table wrong, and it is the third time
+   this tree has been bitten by it.
 
 ## Running xhigh: what the effort levels actually are
 

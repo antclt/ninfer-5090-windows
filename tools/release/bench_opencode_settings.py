@@ -379,6 +379,20 @@ def main() -> int:
                          "reproducible, since the engine is deterministic given one")
     args = ap.parse_args()
 
+    # Reject unknown model keys before starting anything. Without this a typo exits 0, prints a
+    # summary, and records nothing: an eight-arm grid silently became seven, and the missing model
+    # read as a result rather than as a name that was never found.
+    unknown = [name for name in args.models if name not in PROFILES]
+    if unknown:
+        print(f"unknown model(s): {', '.join(unknown)}")
+        print(f"available: {', '.join(PROFILES)}")
+        return 2
+    missing_tasks = [t for t in args.tasks if t not in {task["name"] for task in TASKS}]
+    if missing_tasks:
+        print(f"unknown task(s): {', '.join(missing_tasks)}")
+        print(f"available: {', '.join(task['name'] for task in TASKS)}")
+        return 2
+
     wanted = [t for t in TASKS if t["name"] in args.tasks]
     results: list[dict] = []
     for name in args.models:
