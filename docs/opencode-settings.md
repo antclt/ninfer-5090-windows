@@ -1,4 +1,4 @@
-# opencode settings for the four shipped models
+# opencode settings for the eight shipped lanes
 
 Measured, not guessed. 96 runs across four models, four `reasoning_effort` values and six
 coding tasks whose output was executed against hidden assertions, so the score is pass/fail
@@ -353,24 +353,29 @@ Do not add variants named `minimal` or `high` — the chat template rejects thos
 
 ## Which model when
 
-Eight lanes ship: four artifacts × two speculative routes. All eight are vision-capable and all
-eight reach the native 262,144 context, so context is not a differentiator. Register the model id
-you intend to use under `providers` and point it at that lane's port.
+Eight lanes ship, over five artifacts. All eight are vision-capable and all eight reach the native
+262,144 context, so context is not a differentiator. Register the model id you intend to use under
+`providers` and point it at that lane's port.
 
-| lane | port | route | artifact lineage |
+| lane | port | route | artifact |
 | --- | --- | --- | --- |
-| `quasar-v3-dflash2-vision` | 8086 | DFlash2, depth 7, k8v4 | this port's own quantisation-aware-trained image |
-| `quasar-v3-mtp4-vision` | 8087 | MTP, depth 4, fp8 | the same image |
-| `nvfp4-v3-dflash2-vision` | 8088 | DFlash2, depth 9, fp8 | the fuller requantisation of the unsloth line |
-| `nvfp4-v3-mtp4-vision` | 8089 | MTP, depth 4, fp8 | the same image |
-| `swift15-v3-dflash2-vision` | 8090 | DFlash2, depth 7, fp8 | UkisAI's Swift 1.5 finetune, re-encoded by this port |
-| `swift15-v3-mtp4-vision` | 8091 | MTP, depth 5, k8v4 | the same image |
-| `nvidia-v3-dflash2-vision` | 8092 | DFlash2, depth 9, fp8 | NVIDIA's ModelOpt quantization of the base model, built by this port |
-| `nvidia-v3-mtp4-vision` | 8093 | MTP, depth 4, k8v4 | the same image |
+| `quasar-v3-dflash2-vision` | 8086 | DFlash2, depth 7, k8v4 | QUASAR — this port's own quantisation-aware-trained image |
+| `quasar-v3-mtp4-vision` | 8087 | MTP, depth 4, fp8 | QUASAR, the same image |
+| `nvfp4-v3-dflash2-vision` | 8088 | DFlash2, depth 9, fp8 | NVFP4-full **no-exception** — the unsloth line with its nine BF16 exception parents encoded to NVFP4 |
+| `nvfp4-v3-mtp4-vision` | 8089 | MTP, depth 4, fp8 | NVFP4-full — the same line, exceptions still BF16 |
+| `swift15-v3-dflash2-vision` | 8090 | DFlash2, depth 7, fp8 | Swift 1.5 — UkisAI's finetune, re-encoded by this port |
+| `swift15-v3-mtp4-vision` | 8091 | MTP, depth 5, k8v4 | Swift 1.5, the same image |
+| `nvidia-v3-dflash2-vision` | 8092 | DFlash2, depth 9, fp8 | NVIDIA ModelOpt quantization of the base model, built by this port |
+| `nvidia-v3-mtp4-vision` | 8093 | MTP, depth 4, k8v4 | NVIDIA ModelOpt, the same image |
 
-**How to choose.** The four artifacts are four encodings and finetunes of one base model, and on the
-coding grid below **every one of them scores the same** — so the artifact is not a quality choice.
-What separates the lanes is the route and the footprint:
+Three of those artifacts ship both routes; **the NVFP4 line does not**, and the split is a
+measurement rather than an omission: only the no-exception build fits the native 262,144 with
+Vision, so 8088 carries it and 8089 carries the full image. The two lanes are therefore *not* the
+same artifact on two routes, and swapping between them changes the weights, not just the route.
+
+**How to choose.** On the coding grid measured below, the models that were compared all scored the
+same — so the artifact is not a quality choice among them. What separates the lanes is the route and
+the footprint:
 
 - **Route is the real decision.** The DFlash2 lanes decode several times faster than their MTP
   counterparts and are the reason that route exists; the MTP lanes accept a higher fraction of
@@ -378,9 +383,9 @@ What separates the lanes is the route and the footprint:
 - **VRAM differs, and the DFlash2 lanes cost the most.** Two of them sit at 10.6 GiB runtime and
   leave under 3 GiB free on a 32 GB card, against 8.07 GiB for the lightest. That matters when you
   want something else resident — another model, a browser, a build.
-- **Depth is measured per lane, not a convention.** QUASAR's DFlash2 lane is at depth 7 and the
-  NVFP4 and NVIDIA ones at 9, on the maximin rule recorded in `tools/release/profiles.py`. Do not
-  read one lane's depth as applying to another.
+- **Depth is measured per lane, not a convention.** QUASAR's and Swift's DFlash2 lanes are at depth
+  7 and the NVFP4 and NVIDIA ones at 9, on the maximin rule recorded in `tools/release/profiles.py`.
+  Do not read one lane's depth as applying to another.
 
 Each launcher's own header carries its measured decode, acceptance, runtime and free VRAM, so read
 the number there rather than here: a figure copied into a doc is a figure that drifts. The table

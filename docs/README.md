@@ -12,7 +12,7 @@ run the CLI or HTTP server.
 | [Performance](performance.md) | RTX 5090 measurement coverage, per-model serving results, methodology, and publication rules |
 | [Weight conversion](weight-conversion.md) | official recipes, custom formats and sources, conversion methods, optional components and artifact output |
 | [Perplexity](perplexity.md) | fixed-corpus and custom-text causal perplexity, comparison rules, progress, and reports |
-| [opencode settings](opencode-settings.md) | the four shipped model entries, compaction, and the concurrency answer for OpenCode Desktop |
+| [opencode settings](opencode-settings.md) | the eight shipped model entries, compaction, and the concurrency answer for OpenCode Desktop |
 | [v2 to v3 flag diff](v2-v3-flag-diff.md) | what changed between the retired v2 launchers and the shipped v3 ones, flag by flag |
 | [FP8 ungated bands](maintainer/fp8-ungated-bands.md) | the matched-tile measurement, its control, and the two structural limits behind the ungated FP8 A8 TMA bands |
 | [CLI examples](../examples/cli/) | committed text, multimodal, thinking, long-decode, and long-context inputs |

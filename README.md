@@ -415,7 +415,7 @@ Two things the server does offer, with defaults worth knowing:
 ## OpenCode Desktop integration
 
 Point an OpenAI-compatible provider at a running launcher, using the model id from that launcher's
-header. [docs/opencode-settings.md](docs/opencode-settings.md) carries the `opencode.json`, the four
+header. [docs/opencode-settings.md](docs/opencode-settings.md) carries the `opencode.json`, the eight
 model entries, the compaction settings, and the concurrency answer: the launchers run
 `--max-concurrency 1` deliberately, and that only works because the launchers' 8 GiB host quota
 retains conversation state — measured 2026-10-06 with `repro_251.py`: interleaved across 8, 16, 32, 48
