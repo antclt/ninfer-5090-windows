@@ -307,17 +307,38 @@ monotonically and compacted exactly where the formula says:
 214,962 plus one more turn of roughly 12,500 tokens crosses 221,376, and that is where it fired. The
 formula is this client's mechanism, not an approximation of it.
 
-**The intended control arm does not work, and that is worth knowing.** The probe's second arm sets
-`OPENCODE_DISABLE_AUTOCOMPACT`, expecting it to suppress compaction. Measured, it does not: with the
-flag set the session still grew to **212,105** and still collapsed to **47,765** at the same turn,
-against 214,962 → 47,666 with it unset. The flag is inert in v2.0.28, so the two arms differ only in
-sampling — the second is a repeat, not a control.
+**There is still no trustworthy control arm, and the reason is worse than a missing flag.** Two
+things were tried and one of them looked like a success before being checked properly.
 
-A real control needs `"compaction": {"auto": false}`, which means editing the operator's
-configuration, and this build ignores both `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG_CONTENT`. Two
-independent runs landing within 0.6% of each other on the trigger point and within 0.2% on the
-rebuilt size is decent corroboration, but it is corroboration rather than a controlled comparison,
-and is recorded as such.
+`OPENCODE_DISABLE_AUTOCOMPACT` genuinely does nothing — it is a V1 documentation leftover with no
+implementation behind it in v2, found in translated V1 docs and in no source file. Supplying
+`"compaction": {"auto": false}` through a project-level `opencode.json` appeared to work: a
+`--standalone` run reached 192,815 over 14 turns and never dropped. **That control was void.** A
+paired `--standalone` run with `auto: true` also never compacted — it ran to 256,954 and died with
+`prepared prompt exceeds Engine max_context 262144`. So the private server does not compact at all,
+which means "no drop" says nothing about the flag.
+
+| server mode | compaction |
+| --- | --- |
+| the Desktop background service | fires near 215k and rebuilds to 47,666 — three independent runs |
+| `--standalone` private server | **never fires** — reaches the engine ceiling and fails |
+
+So the two modes are not interchangeable, and the one that can be made hermetic is the one that does
+not exhibit the behaviour. That is why the control remains open. A control needs the background
+service and `auto: false` together, which means the operator's own configuration, because
+`OPENCODE_CONFIG_DIR` and friends are read by the private server rather than the already-running one
+that captured its environment at launch.
+
+Two related corrections while this was being pinned down:
+
+- **The config-redirect variables do work — but only for the private server.** An earlier revision of
+  this page said they were ignored. They are wired in v2; the earlier probe was setting them on CLI
+  invocations that omitted `--standalone`, so each attached to the operator's running service and
+  merely forwarded to a server that had captured its environment at launch.
+- **Two opencode installs are present** and they do not agree: the Desktop bundle and its CLI are
+  v2.0.29, while the `opencode` shim on PATH is the npm package at 1.18.4, which rejects this
+  configuration outright as V1 keys. Anything scripted here must use the absolute v2 CLI path, or
+  bare `opencode` silently measures a different product.
 
 Two details worth keeping, both read from the shipped build rather than inferred. The auto-compaction
 predicate is:
@@ -519,13 +540,15 @@ presence means it is still open.
 | question | state | what would close it |
 | --- | --- | --- |
 | What size does a compaction rebuild on a session whose turns are real tool output rather than one repeated block? | 47,666 tokens measured, but on an artificial prompt shape | one more run of `probe_opencode_compaction.py` against a real working session. The number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session — which is also why it is worth confirming rather than assuming. |
-| Can the compaction trigger be isolated by a control? | no — `OPENCODE_DISABLE_AUTOCOMPACT` is inert in v2.0.28, so the probe's second arm is a repeat rather than a control | `"compaction": {"auto": false}` in the operator's configuration. This build ignores `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG_CONTENT`, so there is no environment-only route. Two runs agreeing within 0.6% on the trigger and 0.2% on the rebuild stand in meanwhile. |
 
-Three questions closed earlier, moved out of this table into the prose above as the policy requires:
+| Can the compaction trigger be isolated by a control? | no, and the reason is worse than a missing flag — `--standalone` gives a hermetic server that does not compact at all, while the background service that does compact cannot be reconfigured without editing the operator's own configuration | a run of the background service with `"compaction": {"auto": false}` in the operator's config. Both server modes need to behave alike, or the hermetic one needs to compact. |
+
+Four questions closed earlier, moved out of this table into the prose above as the policy requires:
 the thinking budget (paired over 5 seeds, mean effect +0.2 tasks of 7 against a seed spread of ±2),
-long-horizon constraint retention (23 of 24 turns, first loss at turn 24), and the stripped-trace
-cache rate, which `chat_template.cpp:217` explains from source by tagging reasoning as its own prefix
-origin.
+long-horizon constraint retention (23 of 24 turns, first loss at turn 24), the compaction rebuild
+size and trigger (both measured, three consistent runs on the background service), and the
+stripped-trace cache rate, which `chat_template.cpp:217` explains from source by tagging reasoning
+as its own prefix origin.
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
 is a cost with no measured benefit, and keeping the status quo needs no evidence.

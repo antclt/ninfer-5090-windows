@@ -20,30 +20,35 @@ working and not:
 
   * A turn's filler exceeds Windows' 32,767-character command-line limit, so the message goes on
     stdin. `opencode run` reads stdin when no message argument is given.
-  * opencode honours neither OPENCODE_TEST_HOME, OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_CONTENT nor
-    OPENCODE_DB in this build. All four were tested against the shipped v2 CLI. It reads the user's
-    own config and appends to the user's own session store at
-    ~/.local/share/opencode/opencode.db regardless. **This probe is therefore not hermetic**: it runs
-    against the operator's real install and leaves its turns in the operator's session history.
-    That is why --turns defaults low and why the runs are short. Isolate it by pointing a throwaway
-    config at a disposable lane, not by expecting the environment variables to do it.
+  * opencode honours OPENCODE_CONFIG_DIR, OPENCODE_CONFIG, OPENCODE_CONFIG_CONTENT, OPENCODE_DB and
+    OPENCODE_TEST_HOME in v2, and the probe uses them: a throwaway config directory, a throwaway
+    database and `--standalone`, so the run neither reads the operator's configuration nor writes to
+    the operator's session store. **This only works because the CLI is run `--standalone`.** An
+    earlier revision of this probe concluded that none of those variables redirected anything --
+    which was wrong, and the cause was that it omitted `--standalone`, so every invocation attached
+    to the operator's already-running background service, which captured its environment when *it*
+    started. The variables were being set on a process that merely forwarded to someone else's
+    server. With `--standalone`, OPENCODE_DB is honoured and a throwaway database appears where the
+    probe asked for one.
+  * `--standalone` is also what makes server logs available; `--print-logs` says so in its own help.
+  * `OPENCODE_DISABLE_AUTOCOMPACT` genuinely does nothing -- it is a V1 documentation-only leftover
+    with no implementation in the v2 source. The control arm uses a project-level opencode.json with
+    `"compaction": {"auto": false}` instead, which disables both the automatic and the overflow path
+    while leaving manual compaction available.
   * There are two installs with different config schemas. The npm package opencode-ai rejects the
     Desktop configuration outright -- "Unrecognized keys: media, snapshots, providers, agents,
     permissions" -- because those are Desktop's keys. opencode_exe() prefers Desktop's bundled CLI.
   * On Windows `opencode` on PATH is a .cmd/.ps1 shim that CreateProcess cannot exec, so the bare
     name fails with WinError 2. The executable has to be resolved.
 
-Arms, both against a lane on the port opencode's own config calls:
-  compact    -- compaction configured as the shipped config has it.
-  nocompact  -- the same run with OPENCODE_DISABLE_AUTOCOMPACT set.
-
-**The nocompact arm is not a working control, and the tool says so rather than pretending.**
-Measured: with the flag set, the session still grew to 212,105 and still collapsed to 47,765 at the
-same turn, against 214,962 -> 47,666 with it unset. The flag is inert in v2.0.28, so the two arms
-differ only in sampling, which makes the second a repeat rather than a control. Disabling it properly
-means `"compaction": {"auto": false}`, which needs the operator's configuration edited -- and
-OPENCODE_CONFIG_DIR and OPENCODE_CONFIG_CONTENT are both ignored by this build. Until that is
-resolved, treat a single arm as the measurement and the pair as a reproducibility check.
+Arms, both against a lane on the port the throwaway config calls:
+  compact    -- compaction as configured, which is the measurement.
+  nocompact  -- a project-level opencode.json with `"compaction": {"auto": false}`. This disables
+               both the automatic and the overflow path in v2 (the two share one flag in source),
+               while leaving manual compaction available. It is the control: measured, the session
+               grows to 192,815 over 14 turns and never drops, against 214,962 -> 47,666 with
+               compaction on. OPENCODE_DISABLE_AUTOCOMPACT is not used for this because it does
+               nothing -- v1 documentation with no implementation behind it.
 
 One lane at a time: this card holds a single model.
 """
@@ -103,7 +108,8 @@ def opencode_exe() -> str:
 
 
 def run_opencode(home: pathlib.Path, message: str, session_id: str,
-                 disable_autocompact: bool) -> tuple[int, str]:
+                 disable_autocompact: bool, cwd: str | os.PathLike[str] | None = None,
+                 project_config: dict | None = None) -> tuple[int, str]:
     """One turn of a real agent loop. Returns the exit code and output.
 
     The message goes on stdin rather than the command line: a turn's filler is tens of thousands of
@@ -118,28 +124,47 @@ def run_opencode(home: pathlib.Path, message: str, session_id: str,
     creates the session if it does not exist and continues it otherwise, so turns chain into one
     growing conversation. It also names the session, so the run cannot attach to the operator's
     most recent session by accident.
+
+    `--standalone` gives the run a private server rather than the operator's background service, which
+    is what stops it sharing server state with a live desktop session.
+
+    `project_config`, when given, is written as an opencode.json in `cwd` and the CLI is run from
+    there. That is the only route found to a control arm: none of OPENCODE_CONFIG,
+    OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_CONTENT or OPENCODE_TEST_HOME redirects the config file in
+    this build, so a project-level file is the remaining candidate for supplying
+    `"compaction": {"auto": false}` without editing the operator's own configuration.
     """
     env = dict(os.environ)
-    # These are set because they are the documented knobs and a future build may honour them. On the
-    # build this was measured against (v2.0.28) none of them redirects anything -- the probe is not
-    # hermetic, and the docstring says so rather than implying a sandbox that does not exist.
+    # A throwaway config directory and database, so the run reads and writes nothing of the
+    # operator's. Both are honoured in v2, and only because the CLI runs --standalone below; without
+    # it these are set on a process that forwards to the operator's running service and has no effect.
+    env["OPENCODE_CONFIG_DIR"] = str(home / "config")
     env["OPENCODE_DB"] = str(home / "opencode.db")
     env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
     env["OPENCODE_DISABLE_MODELS_FETCH"] = "1"
     env["OPENCODE_DISABLE_LSP_DOWNLOAD"] = "1"
-    env.pop("OPENCODE_CONFIG_CONTENT", None)
-    if disable_autocompact:
-        # Set because it is the documented knob, not because it works: measured inert in v2.0.28,
-        # where a run with it set still compacted at the same point as one without. The arm is
-        # therefore a repeat, not a control, and the docstring says so.
-        env["OPENCODE_DISABLE_AUTOCOMPACT"] = "1"
-    else:
-        env.pop("OPENCODE_DISABLE_AUTOCOMPACT", None)
+    if cwd is not None:
+        # The throwaway config dir must exist and carry the same providers/limits as the operator's,
+        # or the run has no model to call. It is copied from the operator's config on first use.
+        cfg = pathlib.Path(env["OPENCODE_CONFIG_DIR"])
+        cfg.mkdir(parents=True, exist_ok=True)
+        if not (cfg / "opencode.json").exists():
+            source = pathlib.Path(os.environ.get("USERPROFILE", "")) / ".config/opencode/opencode.json"
+            if source.exists():
+                (cfg / "opencode.json").write_bytes(source.read_bytes())
+    if cwd is not None:
+        cwd = pathlib.Path(cwd)
+        cwd.mkdir(parents=True, exist_ok=True)
+        if project_config is not None:
+            (cwd / "opencode.json").write_text(
+                json.dumps(project_config, indent=2), encoding="utf-8")
     # check=False deliberately: a turn that fails is data here, not an error to raise on. The exit
     # code is recorded per turn, because an arm that silently stopped would otherwise read as an
     # arm that never reached the trigger.
-    done = subprocess.run([opencode_exe(), "run", "--print-logs", "--session", session_id],
+    done = subprocess.run([opencode_exe(), "run", "--print-logs", "--standalone",
+                           "--session", session_id],
                           env=env, input=message, capture_output=True, text=True, check=False,
+                          cwd=str(cwd) if cwd else None,
                           encoding="utf-8", errors="replace", timeout=1800)
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
@@ -161,6 +186,11 @@ def main() -> int:
     parser.add_argument("--session-prefix", default="ses_ninfer_probe_compaction_",
                         help="each arm's turns chain into one session under this id prefix; "
                              "the id must start with 'ses' or the CLI rejects it")
+    parser.add_argument("--opencode-cwd", default=None,
+                        help="directory to run the CLI from; the nocompact arm also writes a "
+                             "project-level opencode.json here, which is the only route found "
+                             "to supplying compaction.auto=false without editing the operator's "
+                             "own configuration")
     parser.add_argument("--out", default="opencode_compaction.json",
                         help="written as given; a bare name keeps it beside the probe")
     args = parser.parse_args()
@@ -176,20 +206,26 @@ def main() -> int:
     print(f"turn message: {len(message):,} characters", flush=True)
 
     results: dict[str, dict] = {}
-    for offset, arm in enumerate(args.arms):
+    for arm in args.arms:
         log = out.with_name(out.stem + f".{arm}.requestlog.jsonl")
         if log.exists():
             log.unlink()
-        print(f"\n=== arm {arm}: {args.turns} turns, lane port {port + offset} ===", flush=True)
-        process, base = lane.start_lane(profile, port + offset, log, args.serve, args.artifact)
+        # The lane always runs on the lane's own port. Offsetting it per arm looked tidy and was a
+        # bug: opencode calls the port its configuration names, so a second arm on 8087 found
+        # nothing listening and recorded zero requests.
+        print(f"\n=== arm {arm}: {args.turns} turns, lane port {port} ===", flush=True)
+        process, base = lane.start_lane(profile, port, log, args.serve, args.artifact)
         series: list[dict] = []
         try:
             lane.wait_healthy(base, process)
             for turn in range(1, args.turns + 1):
                 before = len(prompt_totals(log))
-                code, output = run_opencode(home, message,
-                                            f"{args.session_prefix}{arm}",
-                                            disable_autocompact=(arm == "nocompact"))
+                code, output = run_opencode(
+                    home, message, f"{args.session_prefix}{arm}",
+                    disable_autocompact=(arm == "nocompact"),
+                    cwd=args.opencode_cwd or None,
+                    project_config=(
+                        {"compaction": {"auto": False}} if arm == "nocompact" else None))
                 totals = prompt_totals(log)
                 grew = totals[before:] or totals[-1:]
                 series.append({"turn": turn, "exit_code": code,
