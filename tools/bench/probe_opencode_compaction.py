@@ -109,7 +109,7 @@ def opencode_exe() -> str:
 
 def run_opencode(home: pathlib.Path, message: str, session_id: str,
                  disable_autocompact: bool, cwd: str | os.PathLike[str] | None = None,
-                 project_config: dict | None = None) -> tuple[int, str]:
+                 project_config: dict | None = None, own_config: bool = True) -> tuple[int, str]:
     """One turn of a real agent loop. Returns the exit code and output.
 
     The message goes on stdin rather than the command line: a turn's filler is tens of thousands of
@@ -138,20 +138,26 @@ def run_opencode(home: pathlib.Path, message: str, session_id: str,
     # A throwaway config directory and database, so the run reads and writes nothing of the
     # operator's. Both are honoured in v2, and only because the CLI runs --standalone below; without
     # it these are set on a process that forwards to the operator's running service and has no effect.
-    env["OPENCODE_CONFIG_DIR"] = str(home / "config")
+    # own_config=False reads the operator's real configuration instead, which is how the two are
+    # compared -- a private server pointed at a copy did not compact at all, and that is either
+    # because private servers never compact or because the copy is wrong.
+    if own_config:
+        # Copying only opencode.json is NOT enough: a private server pointed at such a copy never
+        # compacted and ran to the engine ceiling, while the same private server reading the
+        # operator's real configuration compacted at 215,966. Whatever else the global config
+        # directory carries is load-bearing for the trigger, so the whole directory is mirrored.
+        src = pathlib.Path(os.environ.get("USERPROFILE", "")) / ".config/opencode"
+        dst = home / "config"
+        if src.is_dir():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        env["OPENCODE_CONFIG_DIR"] = str(dst)
+    # The database is redirected in every mode. It is the one variable that costs nothing to isolate
+    # and the one that keeps the operator's session history clean; gating it behind own_config sent
+    # one run's turns to the operator's own store.
     env["OPENCODE_DB"] = str(home / "opencode.db")
     env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
     env["OPENCODE_DISABLE_MODELS_FETCH"] = "1"
     env["OPENCODE_DISABLE_LSP_DOWNLOAD"] = "1"
-    if cwd is not None:
-        # The throwaway config dir must exist and carry the same providers/limits as the operator's,
-        # or the run has no model to call. It is copied from the operator's config on first use.
-        cfg = pathlib.Path(env["OPENCODE_CONFIG_DIR"])
-        cfg.mkdir(parents=True, exist_ok=True)
-        if not (cfg / "opencode.json").exists():
-            source = pathlib.Path(os.environ.get("USERPROFILE", "")) / ".config/opencode/opencode.json"
-            if source.exists():
-                (cfg / "opencode.json").write_bytes(source.read_bytes())
     if cwd is not None:
         cwd = pathlib.Path(cwd)
         cwd.mkdir(parents=True, exist_ok=True)
@@ -186,11 +192,14 @@ def main() -> int:
     parser.add_argument("--session-prefix", default="ses_ninfer_probe_compaction_",
                         help="each arm's turns chain into one session under this id prefix; "
                              "the id must start with 'ses' or the CLI rejects it")
+    parser.add_argument("--no-own-config", dest="own_config", action="store_false",
+                        help="read the operator's real configuration instead of a throwaway copy; "
+                             "this separates a private server that never compacts from one "
+                             "pointed at a copy that is somehow wrong")
     parser.add_argument("--opencode-cwd", default=None,
                         help="directory to run the CLI from; the nocompact arm also writes a "
-                             "project-level opencode.json here, which is the only route found "
-                             "to supplying compaction.auto=false without editing the operator's "
-                             "own configuration")
+                             "project-level opencode.json here, which is how compaction.auto=false "
+                             "is supplied without editing the operator's own configuration")
     parser.add_argument("--out", default="opencode_compaction.json",
                         help="written as given; a bare name keeps it beside the probe")
     args = parser.parse_args()
@@ -223,7 +232,7 @@ def main() -> int:
                 code, output = run_opencode(
                     home, message, f"{args.session_prefix}{arm}",
                     disable_autocompact=(arm == "nocompact"),
-                    cwd=args.opencode_cwd or None,
+                    cwd=args.opencode_cwd or None, own_config=args.own_config,
                     project_config=(
                         {"compaction": {"auto": False}} if arm == "nocompact" else None))
                 totals = prompt_totals(log)
