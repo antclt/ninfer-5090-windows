@@ -169,6 +169,50 @@ Two rules that matter more than the numbers:
    speed is what you feel: DFlash2 over MTP, by a wide margin on both artifacts. Each
    launcher's own header carries its measured figure, so read it there.
 
+## What the reasoning trace costs in context
+
+The lane ships `--preserve-thinking`, so every turn's `reasoning_content` is re-sent in full with
+the next request. That is a large fraction of the prompt, and it was unmeasured here until
+`tools/bench/probe_thinking_growth.py` drove a six-turn conversation both ways on this lane's own
+flags — identical turns, fixed seed, differing only in whether assistant messages carry the trace:
+
+| turn | prompt | without the trace | reasoning tax | share of prompt | `model_thinking_tokens` |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 98 | 98 | 0 | 0.0% | 4,096 |
+| 2 | 4,361 | 242 | 4,119 | 94.5% | 443 |
+| 3 | 4,984 | 423 | 4,561 | 91.5% | 1,316 |
+| 4 | 6,511 | 639 | 5,872 | 90.2% | 1,853 |
+| 5 | 8,535 | 912 | 7,623 | 89.3% | 4,096 |
+| 6 | 12,916 | 1,268 | 11,648 | 90.2% | 2,963 |
+
+**~90% of the prompt is replayed reasoning by turn 2.** That is the token cost, and it is real.
+
+The time cost is not. Across the six turns, 37,073 of 37,405 prompt tokens were prefix-cache hits
+(**99.1%**), `prefix_reuse_path: checkpoint`, replay GPU time 0.0000 s, and a 12,916-token prompt
+prefilled in **0.045 s**. The trace is registered as a prefix origin, so re-sending it is close to
+free. Stripping the trace made prefill *slower* — 0.097 s on a ten-times smaller prompt — because
+its hit rate fell to 63.6%. The mechanism for that is not established here and is not guessed at.
+
+Two things follow, and both matter more than the ratio:
+
+- **Context fills in about 100 turns, not 4 or 5.** Measured growth is 2,564 tokens/turn, with
+  mean `model_thinking_tokens` 2,461 against the 4,096 budget and two of six turns pinned at the
+  cap. Treat 100 as an *upper* bound on turn count: these turns returned short answers, and a real
+  session returning file contents and diffs fills sooner. The portable figure is the 2,461-token
+  per-turn tax.
+- **Raising the thinking budget doubles how fast you compact.** Reasoning per turn is bounded by the
+  budget, so 4,096 → 8,192 roughly doubles per-turn growth — about 100 turns to about 50 — on top of
+  the 13.7 s → 26.2 s latency already measured, with no accuracy gain demonstrated. Three costs,
+  no measured benefit: **this is the argument for keeping 4,096**, and it is the argument the
+  thinking-budget ladder could not produce on its own because it measured latency and pass rate
+  without ever seeing the context.
+
+Do not read this as an argument for turning `--preserve-thinking` off. Per
+[QwenCloud's thinking-mode documentation](https://docs.qwencloud.com/developer-guides/text-generation/thinking),
+omitting `reasoning_content` from tool-call turns *degrades accuracy*, and the engine accepts it as
+an assistant-history alias precisely so it round-trips. The trace is the cost of correctness here,
+and the cache is what makes it affordable.
+
 ## Compaction
 
 Compaction replaces older context with a generated checkpoint so a long session can
@@ -219,20 +263,37 @@ rebuilt with its BF16 exception projections encoded to NVFP4.
 ### The cost of compacting, and why the ceiling matters
 
 Compaction rewrites the conversation prefix, so **it invalidates the engine's prefix cache**
-and the next request re-prefills from scratch. Prefill slows as context grows — measured at
-~10,075 tok/s for a 30k prompt but ~3,682 tok/s at 200k — so a post-compaction re-prefill of
-a nearly-full 262k session is on the order of **50 seconds** of stall.
+and the next request re-prefills from scratch. Prefill slows as context grows, and that slope is
+measured — `tools/bench/probe_cold_prefill.py`, on this lane's own configuration, reading
+`first_output_timing.prefill.gpu_seconds` from the request log rather than a wall clock:
+
+| prompt tokens | cache hit | prefill | rate |
+| --- | --- | --- | --- |
+| 30,811 | 0 | 2.586 s | 11,917 tok/s |
+| 102,211 | 0 | 14.210 s | 7,193 tok/s |
+| 204,411 | 0 | 44.661 s | 4,577 tok/s |
+| 204,411 | 204,411 | **0.0000 s** | TTFT 0.015 s |
+
+A full prefix hit costs about **15 ms at any size**. That is the whole value of the cache, and it
+is why `chat_template.cpp` registering the replayed reasoning trace as a prefix origin matters:
+a preserved prefix is free to re-send, however large.
 
 That is the argument for pushing the trigger as late as the numbers allow: fewer
 compactions, and each one cheaper to get back from. It is also a reason to keep the
 prefix-cache bounds set, since the post-compaction prefix becomes a new catalog entry rather
 than a miss forever.
 
-**Caveat, because it matters:** the trigger arithmetic above is exact — it follows the
-documented formula and our configured limits — but I have not measured compaction itself.
-Driving the opencode agent loop is outside what I can test from here, so treat the ~50 s
-re-prefill figure as an estimate derived from measured prefill rates, not as a measurement
-of compaction.
+**What is still not measured, stated precisely.** The trigger arithmetic above is exact — it
+follows the documented formula and our configured limits. What is not measured is *the size of
+the prompt opencode sends after it compacts*, and that is what turns a rate into a stall. The
+earlier "~50 seconds" figure here was an extrapolation that had it wrong in the direction that
+matters: it assumed the re-prefill is the size of the *pre*-compaction context. Compaction
+replaces the older turns with a summary and keeps `keep.tokens`, so the prompt it rebuilds is
+nearer the kept window plus the summary. Prefilling ~30k cold costs **2.6 s**, not 50. A
+compaction that rewrote the full 262,144 would cost ~57 s at the measured 4,577 tok/s, but that
+is not what a client that keeps a 20,000-token window sends. Driving opencode's agent loop
+until its trigger fires is outside what this tree can test, so the stall is bounded by these
+two measured ends rather than asserted as one number.
 
 ## Recommended opencode settings
 
