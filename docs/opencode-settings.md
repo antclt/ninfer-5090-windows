@@ -24,10 +24,20 @@ until the template rejects them at request time.
 ## Measured
 
 Pass counts are over the tasks each configuration ran (some rows accumulated across two
-grids), with one correction: the `alloc_budget` task's expected value was wrong in the
-harness (it admits cost-8 value-14, not 12), so runs failing only that assertion are counted
-as passes. "trunc" counts answers that never arrived because reasoning consumed the output
+grids). "trunc" counts answers that never arrived because reasoning consumed the output
 budget.
+
+One correction applies to every row, and it is now a fix rather than an adjustment. The
+`alloc_budget` task asserted a 0/1 knapsack answer of 12 where its own contract admits 14:
+`(3,5)+(5,9)` costs 8, and the stated bound is `total cost <= budget`, so that subset fits. The
+task was therefore unpassable — 0 successes in 116 runs across eight models and four efforts, every
+failure on that one line. When these rows were first recorded the fix had not landed, so the runs
+that failed only that assertion were counted as passes by hand, which is why a raw
+`opencode_settings.jsonl` reads lower than this table. The harness assertion was corrected on
+2026-10-13 against a reference knapsack written from the stated contract, and the correction was
+verified by re-running the task: 0/116 before, 3/3 after. **A fresh run now records the pass
+itself**, so this table is reproducible from the tool rather than adjusted after the fact. The
+ranking across efforts was never affected, because the task failed uniformly at every setting.
 
 | model | effort | pass | mean | reasoning chars | trunc |
 | --- | --- | --- | --- | --- | --- |

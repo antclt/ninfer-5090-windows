@@ -142,7 +142,15 @@ assert top_k([], 2) == []
 assert schedule([], 10) == 0
 assert schedule([(5, 10)], 4) == 0, "unaffordable"
 assert schedule([(5, 10)], 5) == 10, "exact fit"
-assert schedule([(3, 5), (4, 7), (5, 9)], 8) == 12, "3+5 vs 5+9: pick the better pair"
+# The optimum is (3,5)+(5,9): cost 8, value 14. It is admitted because the task's own contract is
+# "total cost <= budget", so cost 8 against budget 8 fits -- which is the boundary this case exists
+# to test. This assertion read 12, which is (3,5)+(4,7) at cost 7: the worse subset. The task was
+# therefore unpassable, and it showed as one: 0 successes in 116 runs across eight models and four
+# efforts, every failure carrying this line. An expectation that no correct answer satisfies is a
+# defect in the expectation rather than a finding about the model, and it depressed every published
+# pass rate by one task's worth. Corrected 2026-10-13 against a reference 0/1 knapsack written from
+# the stated contract, not from what the models produced.
+assert schedule([(3, 5), (4, 7), (5, 9)], 8) == 14, "3+5 vs 5+9: cost 8 fits the bound, so 14 wins"
 assert schedule([(1, 1)] * 5, 3) == 3
 assert schedule([(2, 3), (2, 3), (2, 3)], 4) == 6, "two of three fit"
 assert schedule([(10, 100), (1, 60), (1, 60)], 2) == 120, "cheap pair beats one costly"
