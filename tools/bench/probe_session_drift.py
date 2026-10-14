@@ -53,7 +53,12 @@ def main() -> int:
     parser.add_argument("--lane", default="dflash2", help="substring of the launcher profile to run")
     parser.add_argument("--turns", type=int, default=40)
     parser.add_argument("--filler-chars", type=int, default=1500, help="distinct corpus text per turn")
-    parser.add_argument("--max-tokens", type=int, default=64)
+    # Reasoning is billed against the same output cap as the answer, so a cap of 64 left zero room
+    # for one: measured directly, content came back empty with finish_reason=length at every cap
+    # below the model's appetite. This default has to clear the thinking budget with room for a short
+    # answer, or the probe measures truncation and calls it drift.
+    parser.add_argument("--max-tokens", type=int, default=4096,
+                        help="output cap; must exceed the thinking budget, which is billed against it")
     parser.add_argument("--seed", type=int, default=20261012)
     parser.add_argument("--port", type=int, default=8093)
     args = parser.parse_args()
@@ -100,18 +105,36 @@ def main() -> int:
                 body = {"model": model_id, "messages": messages, "max_tokens": args.max_tokens,
                         **DOCUMENTED_SAMPLING}
                 answer = rta.post_json(args.port, body, 900)
-                text = ""
-                if answer["status"] == 200:
-                    message = ((answer["payload"].get("choices") or [{}])[0].get("message") or {})
-                    text = (message.get("content") or "") + " " + (message.get("reasoning_content") or "")
-                else:
+                if answer["status"] != 200:
                     print(f"  turn {turn}: HTTP {answer['status']}")
                     break
-                ok = code in text
+                message = ((answer["payload"].get("choices") or [{}])[0].get("message") or {})
+                content = message.get("content") or ""
+                reasoning = message.get("reasoning_content") or ""
+                finish = ((answer["payload"].get("choices") or [{}])[0].get("finish_reason"))
+                # Scored on the answer alone. Counting reasoning made the verdict depend on whether
+                # the code happened to appear in a thinking block, which is noise: a turn truncated
+                # before it could answer reads "held" or "lost" by luck. A constraint survives if the
+                # model can produce it when asked, and the answer is what produces it.
+                ok = code in content
+                if finish == "length":
+                    # A truncated turn cannot demonstrate anything. Record it as unknown rather than
+                    # folding truncation into the retention rate, which is what made this probe
+                    # report drift at turn 1 -- the model had not been given room to answer.
+                    print(f"  turn {turn:3d}  TRUNC  max_tokens={args.max_tokens} reached"
+                          f" with {len(content)} chars of answer")
+                    continue
                 held.append(ok)
-                messages.append({"role": "assistant", "content": text[:2000]})
+                # Reasoning goes back in its own field. Concatenating it into content is not
+                # supported by the chat template, which expects a complete reasoning block preserved
+                # separately; and truncating the stored turn to 2000 chars throws away the history
+                # the probe is trying to measure the survival of.
+                assistant: dict[str, str] = {"role": "assistant", "content": content}
+                if reasoning:
+                    assistant["reasoning_content"] = reasoning
+                messages.append(assistant)
                 if not ok or turn % 5 == 0:
-                    flat = " ".join(text.split())[:80]
+                    flat = " ".join(content.split())[:80]
                     print(f"  turn {turn:3d}  {'held ' if ok else 'LOST '}  {flat!r}")
 
         finally:

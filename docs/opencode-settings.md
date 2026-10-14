@@ -471,7 +471,7 @@ presence means it is still open.
 | Why is a stripped-trace prompt's cache hit rate lower than a replayed one's? | answered | `chat_template.cpp:217` tags reasoning as its own prefix origin, so it is reused independently of the surrounding prefix. Replay miss is flat at ~46 tokens/turn; strip miss grows 151→363. |
 | Does a thinking budget above 4,096 earn its cost? | 4,096 costs 13.7 s and fills ~100 turns; 8,192 costs 26.2 s and fills ~51; no accuracy gain shown at n=4 | **not answerable on this grid as built** — the run-to-run noise floor is larger than any effect it could show. Quantified below. |
 | What size does a compaction rebuild on a real session? | 47,666 tokens after one compaction, on a session whose turns are one repeated filler block | a run whose turns are real tool output; the number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session |
-| Long-horizon agentic behaviour | probe run, and the probe is instrument-limited — see below | the restatement criterion has to become a behavioural one before this measures anything |
+| Long-horizon constraint retention | **measured: 23/24 turns, 96%, first loss at turn 24** | closed — the first reported figure was a truncation artefact and is corrected below |
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
 is a cost with no measured benefit, and keeping the status quo needs no evidence.
@@ -506,34 +506,37 @@ functions. **The honest answer is that this question is not worth that spend**, 
 the cost side of the ledger with no measured benefit against it. Anyone who wants it settled anyway
 should widen the grid first — more tasks, harder tasks — and only then run repetitions.
 
-### The long-horizon probe runs, and what it cannot yet tell you
+### The long-horizon probe: constraint retention, measured
 
-`tools/bench/probe_session_drift.py` asks for the same constraint to survive 24 turns of unrelated
-work: a build code stated at turn 1, 1,500 characters of distinct corpus text per turn after it,
-961,774 characters in total. Result: **the build code was restated in 8 of 24 turns, 33%, and the
-first failure is turn 1.**
+`tools/bench/probe_session_drift.py` asks whether a constraint survives unrelated work: a random
+build code stated at turn 1, then 24 turns of corpus text, 1,500 characters of *distinct* corpus per
+turn, 961,774 characters in total, with the code re-requested under five different phrasings.
 
-That last part is what stops this being a finding about the model. Drift *by turn 1* cannot be
-long-horizon drift — there is no horizon yet. What the run actually shows is that the model declines
-to restate a 16-character code verbatim when asked to, and the probe scores that refusal as a lost
-constraint:
+**Result: the constraint held in 23 of 24 turns — 96% — and the first loss is turn 24**, the longest
+context in the run. The single failure returned `d010127`, a truncated form of the code, rather than
+refusing: the model reached for it and did not finish it.
 
-```
-turn  1  LOST   'We need to respond to user. User says first: Before we start build code ... Keep'
-turn 11  LOST   'User asks build'
-turn 19  LOST   'The user keeps asking for the'
-turn  5  held   'Thinking: 1. **Analyze the Request:** * The user provided a build code in the ve'
-```
+That is the useful shape of answer. Retention is high, and it degrades at the end of the context
+rather than immediately, which is what a long-horizon effect looks like and is not what a
+model that simply ignores instructions looks like.
 
-So the fifth measurement gap is **still open**, and the reason is the criterion rather than the
-budget. Restating verbatim is the wrong test: it measures compliance with an artificial instruction,
-and it cannot separate "forgot the constraint" from "chose not to echo it", which is a different and
-much less interesting failure.
+**An earlier run of this probe reported 33% with drift at turn 1, and that number was wrong.** Its
+`--max-tokens` default was 64, and on a reasoning model reasoning is billed against the same output
+cap — measured directly, a 64-token cap returns `content: ""` with `finish_reason: "length"`, so the
+model was never given room to answer at all. Worse, the probe scored `content + reasoning`, so a
+truncated turn read "held" or "lost" depending on whether the code happened to appear in a fragment
+of unfinished thinking. Three defects, all in the probe:
 
-Closing it needs a behavioural criterion — a constraint the model can only satisfy by *doing*
-something, where a dropped constraint produces a checkable wrong output, as the coding grid above
-does for correctness. The harness, the haystack and the lane plumbing are all working; the question
-it asks needs replacing.
+- **the output cap** could not accommodate the thinking budget, so answers were truncated;
+- **scoring included reasoning**, making the verdict a coin flip on truncated turns;
+- **history was stored as `content[:2000]` with reasoning concatenated into it**, which the chat
+  template does not support and which discarded the history the probe exists to measure.
+
+Fixed: the cap must clear the thinking budget, the verdict is scored on the answer alone, reasoning
+goes back in its own field, and a turn that hits `finish_reason: "length"` is recorded as truncated
+and excluded from the rate rather than being counted as drift. This is the same truncation trap the
+coding grid documents — reasoning billed against the answer's cap — and it went unnoticed here
+because the probe printed a plausible-looking retention figure either way.
 
 ## Caveats
 
