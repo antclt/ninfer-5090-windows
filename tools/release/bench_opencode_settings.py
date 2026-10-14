@@ -330,12 +330,25 @@ def score(task: dict, code: str) -> tuple[bool, str]:
 
 
 def ask(port: int, prompt: str, effort: str, output_tokens: int = 2048,
-        timeout: int = 900) -> tuple[str, float, dict]:
+        timeout: int = 900, seed: int | None = None) -> tuple[str, float, dict]:
     body = {"model": "settings-probe",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": output_tokens, "temperature": 0.2}
     if effort != "default":
         body["reasoning_effort"] = effort
+    # A fixed seed makes every cell of this grid reproducible, and the engine is exactly
+    # deterministic given one -- measured, not assumed: four repeats of one prompt at temperature 1.0
+    # produced four distinct answers unseeded and one distinct answer seeded. Without a seed the grid
+    # carried a 37-point noise floor, which is what made the effort and budget comparisons
+    # unreadable: `evaluate` scored [False False False True True True False True] across eight runs
+    # at identical settings. Sampling at temperature 0.2 is still sampling, so the seed is what
+    # removes the variance, not the low temperature.
+    #
+    # Comparison across cells is therefore a paired one: the same seed is sent everywhere, so two
+    # settings differ only in what was changed. Vary the seed to sample the model's behaviour, and
+    # use several seeds rather than several unseeded runs -- the variance is already gone.
+    if seed is not None:
+        body["seed"] = seed
     request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions",
                                      data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -361,6 +374,9 @@ def main() -> int:
                     help="server cap on reasoning tokens; the chat template sets none")
     ap.add_argument("--output-tokens", type=int, default=2048,
                     help="completion cap; reasoning tokens are billed against it")
+    ap.add_argument("--seed", type=int, default=20261013,
+                    help="sampling seed, sent on every request; a fixed seed makes each cell "
+                         "reproducible, since the engine is deterministic given one")
     args = ap.parse_args()
 
     wanted = [t for t in TASKS if t["name"] in args.tasks]
@@ -376,13 +392,14 @@ def main() -> int:
             for task in wanted:
                 try:
                     text, elapsed, extra = ask(profile["port"], task["prompt"], effort,
-                                               args.output_tokens)
+                                               args.output_tokens, seed=args.seed)
                     ok, detail = score(task, extract_code(text))
                 except Exception as error:  # noqa: BLE001
                     ok, detail, elapsed, extra = False, f"{type(error).__name__}", 0.0, {}
                 record = dict(model=name, effort=effort, task=task["name"], pass_=ok,
                               detail=detail, seconds=round(elapsed, 1),
-                              output_tokens=args.output_tokens, thinking_budget=args.thinking_budget, **extra)
+                              output_tokens=args.output_tokens, thinking_budget=args.thinking_budget,
+                              seed=args.seed, **extra)
                 results.append(record)
                 mark = "PASS" if ok else "FAIL"
                 print(f"   {effort:<6} {task['name']:<18} {mark}  {elapsed:5.1f}s  "

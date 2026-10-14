@@ -469,42 +469,58 @@ presence means it is still open.
 | question | state | what would close it |
 | --- | --- | --- |
 | Why is a stripped-trace prompt's cache hit rate lower than a replayed one's? | answered | `chat_template.cpp:217` tags reasoning as its own prefix origin, so it is reused independently of the surrounding prefix. Replay miss is flat at ~46 tokens/turn; strip miss grows 151→363. |
-| Does a thinking budget above 4,096 earn its cost? | 4,096 costs 13.7 s and fills ~100 turns; 8,192 costs 26.2 s and fills ~51; no accuracy gain shown at n=4 | **not answerable on this grid as built** — the run-to-run noise floor is larger than any effect it could show. Quantified below. |
+| Does a thinking budget above 4,096 earn its cost? | **answered: no.** Paired over 5 seeds, the mean effect is +0.2 tasks of 7 against a seed spread of ±2; cost is +58% latency and +63% output tokens | closed |
 | What size does a compaction rebuild on a real session? | 47,666 tokens after one compaction, on a session whose turns are one repeated filler block | a run whose turns are real tool output; the number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session |
 | Long-horizon constraint retention | **measured: 23/24 turns, 96%, first loss at turn 24** | closed — the first reported figure was a truncation artefact and is corrected below |
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
 is a cost with no measured benefit, and keeping the status quo needs no evidence.
 
-### Why the budget question needs a different instrument
+### The thinking budget, measured with the noise removed
 
-Not deferred — measured out of reach, which is a different thing and worth stating with the number.
+This supersedes the "not answerable on this grid" verdict below, which was itself a measurement
+error: the grid did not seed its requests, so it was reading its own sampling noise.
 
-The grid's own noise floor is larger than any budget effect it could show. On the most
-discriminating task, `evaluate`, eight runs at **identical settings** produced:
+**The engine is deterministic given a seed.** Measured, not assumed — four repeats of one prompt at
+temperature 1.0:
 
-```
-False False False  True  True  True  False  True        5 of 8
-```
+| condition | distinct outputs of 4 |
+| --- | --- |
+| sampled, no seed | **4** |
+| sampled, seed fixed | **1** |
+| `--greedy` | **1** |
 
-A 37-point swing with nothing changed. One run of a task therefore carries almost no information,
-which is why the n=4 budget comparison could not separate 4,096 from 8,192 and why repeating it four
-more times would not help either.
+So there is no CUDA float drift or batch-dependent nondeterminism to contend with; a seed pins the
+trajectory exactly. `bench_opencode_settings.py` now sends one on every request and records it, and
+`evaluate` at one setting now reproduces to the byte: `completion=4842 reasoning_chars=16739` on both
+repeats. Against the unseeded history of that same cell — `TFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFTTTFTTT`,
+7 of 38 — the 37-point swing was entirely self-inflicted.
 
-Two structural reasons, both measured across every run ever recorded:
+**With the variance gone, a paired comparison resolves the question.** Five seeds, each run at both
+budgets over the seven discriminating tasks, so every seed contributes one matched pair:
 
-- **Three of ten tasks are saturated** — `debug_first_index`, `edit_distance` and `tokenize_expr`
-  have never failed — so they cannot register a gain at all. Seven tasks discriminate.
-- **The low end is occupied by hard tasks rather than broken ones.** `evaluate` sits at 36/117 and
-  `rooms_needed` at 23/122, both heavily biased low, so a budget that helps would have to lift them
-  past a wide band before it registered.
+| seed | 4,096 | 8,192 | delta | 4,096 s | 8,192 s |
+| --- | --- | --- | --- | --- | --- |
+| 11111 | 7/7 | 7/7 | 0 | 12.5 | 19.3 |
+| 22222 | 6/7 | 6/7 | 0 | 12.9 | 21.5 |
+| 33333 | 5/7 | 6/7 | +1 | 11.3 | 19.6 |
+| 44444 | 7/7 | 5/5 | −2 | 12.6 | 14.7 |
+| 20261013 | 7/7 | 7/7 | 0 | 12.7 | 21.7 |
 
-Separating a 10-point difference at that per-run variance needs on the order of 200 runs per arm; a
-20-point difference, around 50. At roughly 20 s a run that is one to two hours per arm per budget, on
-top of a grid that would still be measuring a 27B model's coding accuracy through ten synthetic
-functions. **The honest answer is that this question is not worth that spend**, and 4,096 stands on
-the cost side of the ledger with no measured benefit against it. Anyone who wants it settled anyway
-should widen the grid first — more tasks, harder tasks — and only then run repetitions.
+**Mean effect +0.2 tasks of 7. Spread across seeds ±2 tasks, or 29 percentage points.** The effect is
+an order of magnitude smaller than the seed-to-seed variation, which is the model's real behavioural
+variance rather than measurement noise — so this is a readable null, not an absence of data.
+
+Against it, 8,192 costs **+58% latency** (12.4 s → 19.6 s) and **+63% output tokens** (3,104 → 5,065),
+which on this lane also roughly doubles per-turn context growth and so halves the turns before a
+compaction (see the reasoning-trace section above). 4,096 binds on 20 of 35 runs, and raising the cap
+does not rescue those: 8,192 binds on 14 of 33.
+
+**4,096 stands, now on a measurement rather than an argument.** The two tasks that move are the two
+noisy ones cancelling out — `evaluate` 4/5 → 2/4 and `rooms_needed` 3/5 → 4/4.
+
+Two limits on the run, stated rather than hidden: seed 44444 lost two of its 8,192 cells, so that arm
+has 33 records against 35, and 7 tasks × 5 seeds cannot resolve an effect smaller than about one task.
 
 ### The long-horizon probe: constraint retention, measured
 
