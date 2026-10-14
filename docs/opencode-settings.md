@@ -269,6 +269,18 @@ monotonically and compacted exactly where the formula says:
 214,962 plus one more turn of roughly 12,500 tokens crosses 221,376, and that is where it fired. The
 formula is this client's mechanism, not an approximation of it.
 
+**The intended control arm does not work, and that is worth knowing.** The probe's second arm sets
+`OPENCODE_DISABLE_AUTOCOMPACT`, expecting it to suppress compaction. Measured, it does not: with the
+flag set the session still grew to **212,105** and still collapsed to **47,765** at the same turn,
+against 214,962 → 47,666 with it unset. The flag is inert in v2.0.28, so the two arms differ only in
+sampling — the second is a repeat, not a control.
+
+A real control needs `"compaction": {"auto": false}`, which means editing the operator's
+configuration, and this build ignores both `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG_CONTENT`. Two
+independent runs landing within 0.6% of each other on the trigger point and within 0.2% on the
+rebuilt size is decent corroboration, but it is corroboration rather than a controlled comparison,
+and is recorded as such.
+
 Two details worth keeping, both read from the shipped build rather than inferred. The auto-compaction
 predicate is:
 

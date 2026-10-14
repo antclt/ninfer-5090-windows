@@ -35,9 +35,15 @@ working and not:
 
 Arms, both against a lane on the port opencode's own config calls:
   compact    -- compaction configured as the shipped config has it.
-  nocompact  -- the same run with OPENCODE_DISABLE_AUTOCOMPACT, as the control. Without it, an arm
-               that never compacts could be a run that simply never reached the threshold, and the
-               two are indistinguishable from one arm alone.
+  nocompact  -- the same run with OPENCODE_DISABLE_AUTOCOMPACT set.
+
+**The nocompact arm is not a working control, and the tool says so rather than pretending.**
+Measured: with the flag set, the session still grew to 212,105 and still collapsed to 47,765 at the
+same turn, against 214,962 -> 47,666 with it unset. The flag is inert in v2.0.28, so the two arms
+differ only in sampling, which makes the second a repeat rather than a control. Disabling it properly
+means `"compaction": {"auto": false}`, which needs the operator's configuration edited -- and
+OPENCODE_CONFIG_DIR and OPENCODE_CONFIG_CONTENT are both ignored by this build. Until that is
+resolved, treat a single arm as the measurement and the pair as a reproducibility check.
 
 One lane at a time: this card holds a single model.
 """
@@ -123,6 +129,9 @@ def run_opencode(home: pathlib.Path, message: str, session_id: str,
     env["OPENCODE_DISABLE_LSP_DOWNLOAD"] = "1"
     env.pop("OPENCODE_CONFIG_CONTENT", None)
     if disable_autocompact:
+        # Set because it is the documented knob, not because it works: measured inert in v2.0.28,
+        # where a run with it set still compacted at the same point as one without. The arm is
+        # therefore a repeat, not a control, and the docstring says so.
         env["OPENCODE_DISABLE_AUTOCOMPACT"] = "1"
     else:
         env.pop("OPENCODE_DISABLE_AUTOCOMPACT", None)
