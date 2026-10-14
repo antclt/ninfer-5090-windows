@@ -469,12 +469,71 @@ presence means it is still open.
 | question | state | what would close it |
 | --- | --- | --- |
 | Why is a stripped-trace prompt's cache hit rate lower than a replayed one's? | answered | `chat_template.cpp:217` tags reasoning as its own prefix origin, so it is reused independently of the surrounding prefix. Replay miss is flat at ~46 tokens/turn; strip miss grows 151→363. |
-| Does a thinking budget above 4,096 earn its cost? | 4,096 costs 13.7 s and fills ~100 turns; 8,192 costs 26.2 s and fills ~51; no accuracy gain shown at n=4 | repetitions at both budgets on a task with headroom. Three of ten tasks sit at 100% and cannot detect a gain, so the grid needs harder cases before repetitions are worth running. |
+| Does a thinking budget above 4,096 earn its cost? | 4,096 costs 13.7 s and fills ~100 turns; 8,192 costs 26.2 s and fills ~51; no accuracy gain shown at n=4 | **not answerable on this grid as built** — the run-to-run noise floor is larger than any effect it could show. Quantified below. |
 | What size does a compaction rebuild on a real session? | 47,666 tokens after one compaction, on a session whose turns are one repeated filler block | a run whose turns are real tool output; the number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session |
-| Long-horizon agentic behaviour | not measured | the tasks are short self-contained functions, and no grid here stresses work where reasoning pays off over many turns |
+| Long-horizon agentic behaviour | probe run, and the probe is instrument-limited — see below | the restatement criterion has to become a behavioural one before this measures anything |
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
 is a cost with no measured benefit, and keeping the status quo needs no evidence.
+
+### Why the budget question needs a different instrument
+
+Not deferred — measured out of reach, which is a different thing and worth stating with the number.
+
+The grid's own noise floor is larger than any budget effect it could show. On the most
+discriminating task, `evaluate`, eight runs at **identical settings** produced:
+
+```
+False False False  True  True  True  False  True        5 of 8
+```
+
+A 37-point swing with nothing changed. One run of a task therefore carries almost no information,
+which is why the n=4 budget comparison could not separate 4,096 from 8,192 and why repeating it four
+more times would not help either.
+
+Two structural reasons, both measured across every run ever recorded:
+
+- **Three of ten tasks are saturated** — `debug_first_index`, `edit_distance` and `tokenize_expr`
+  have never failed — so they cannot register a gain at all. Seven tasks discriminate.
+- **The low end is occupied by hard tasks rather than broken ones.** `evaluate` sits at 36/117 and
+  `rooms_needed` at 23/122, both heavily biased low, so a budget that helps would have to lift them
+  past a wide band before it registered.
+
+Separating a 10-point difference at that per-run variance needs on the order of 200 runs per arm; a
+20-point difference, around 50. At roughly 20 s a run that is one to two hours per arm per budget, on
+top of a grid that would still be measuring a 27B model's coding accuracy through ten synthetic
+functions. **The honest answer is that this question is not worth that spend**, and 4,096 stands on
+the cost side of the ledger with no measured benefit against it. Anyone who wants it settled anyway
+should widen the grid first — more tasks, harder tasks — and only then run repetitions.
+
+### The long-horizon probe runs, and what it cannot yet tell you
+
+`tools/bench/probe_session_drift.py` asks for the same constraint to survive 24 turns of unrelated
+work: a build code stated at turn 1, 1,500 characters of distinct corpus text per turn after it,
+961,774 characters in total. Result: **the build code was restated in 8 of 24 turns, 33%, and the
+first failure is turn 1.**
+
+That last part is what stops this being a finding about the model. Drift *by turn 1* cannot be
+long-horizon drift — there is no horizon yet. What the run actually shows is that the model declines
+to restate a 16-character code verbatim when asked to, and the probe scores that refusal as a lost
+constraint:
+
+```
+turn  1  LOST   'We need to respond to user. User says first: Before we start build code ... Keep'
+turn 11  LOST   'User asks build'
+turn 19  LOST   'The user keeps asking for the'
+turn  5  held   'Thinking: 1. **Analyze the Request:** * The user provided a build code in the ve'
+```
+
+So the fifth measurement gap is **still open**, and the reason is the criterion rather than the
+budget. Restating verbatim is the wrong test: it measures compliance with an artificial instruction,
+and it cannot separate "forgot the constraint" from "chose not to echo it", which is a different and
+much less interesting failure.
+
+Closing it needs a behavioural criterion — a constraint the model can only satisfy by *doing*
+something, where a dropped constraint produces a checkable wrong output, as the coding grid above
+does for correctness. The harness, the haystack and the lane plumbing are all working; the question
+it asks needs replacing.
 
 ## Caveats
 
