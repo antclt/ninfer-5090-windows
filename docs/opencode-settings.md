@@ -480,18 +480,22 @@ presence means it is still open.
 
 | question | state | what would close it |
 | --- | --- | --- |
-| Why is a stripped-trace prompt's cache hit rate lower than a replayed one's? | answered | `chat_template.cpp:217` tags reasoning as its own prefix origin, so it is reused independently of the surrounding prefix. Replay miss is flat at ~46 tokens/turn; strip miss grows 151→363. |
-| Does a thinking budget above 4,096 earn its cost? | **answered: no.** Paired over 5 seeds, the mean effect is +0.2 tasks of 7 against a seed spread of ±2; cost is +58% latency and +63% output tokens | closed |
-| What size does a compaction rebuild on a real session? | 47,666 tokens after one compaction, on a session whose turns are one repeated filler block | a run whose turns are real tool output; the number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session |
-| Long-horizon constraint retention | **measured: 23/24 turns, 96%, first loss at turn 24** | closed — the first reported figure was a truncation artefact and is corrected below |
+| What size does a compaction rebuild on a session whose turns are real tool output rather than one repeated block? | 47,666 tokens measured, but on an artificial prompt shape | one more run of `probe_opencode_compaction.py` against a real working session. The number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session — which is also why it is worth confirming rather than assuming. |
+| Can the compaction trigger be isolated by a control? | no — `OPENCODE_DISABLE_AUTOCOMPACT` is inert in v2.0.28, so the probe's second arm is a repeat rather than a control | `"compaction": {"auto": false}` in the operator's configuration. This build ignores `OPENCODE_CONFIG_DIR` and `OPENCODE_CONFIG_CONTENT`, so there is no environment-only route. Two runs agreeing within 0.6% on the trigger and 0.2% on the rebuild stand in meanwhile. |
+
+Three questions closed earlier, moved out of this table into the prose above as the policy requires:
+the thinking budget (paired over 5 seeds, mean effect +0.2 tasks of 7 against a seed spread of ±2),
+long-horizon constraint retention (23 of 24 turns, first loss at turn 24), and the stripped-trace
+cache rate, which `chat_template.cpp:217` explains from source by tagging reasoning as its own prefix
+origin.
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
 is a cost with no measured benefit, and keeping the status quo needs no evidence.
 
 ### The thinking budget, measured with the noise removed
 
-This supersedes the "not answerable on this grid" verdict below, which was itself a measurement
-error: the grid did not seed its requests, so it was reading its own sampling noise.
+This section replaces an earlier verdict of "not answerable on this grid", which was itself a
+measurement error: the grid did not seed its requests, so it was reading its own sampling noise.
 
 **The engine is deterministic given a seed.** Measured, not assumed — four repeats of one prompt at
 temperature 1.0:
