@@ -96,13 +96,22 @@ def opencode_exe() -> str:
         "configuration under test")
 
 
-def run_opencode(home: pathlib.Path, message: str,
+def run_opencode(home: pathlib.Path, message: str, session_id: str,
                  disable_autocompact: bool) -> tuple[int, str]:
     """One turn of a real agent loop. Returns the exit code and output.
 
     The message goes on stdin rather than the command line: a turn's filler is tens of thousands of
     characters and Windows caps a command line at 32,767, so passing it as an argument fails with
     WinError 206 before opencode starts.
+
+    `session_id` is passed on every turn and is what makes this a compaction measurement at all.
+    `opencode run` without --continue/--session starts a NEW session per invocation, so N turns were
+    N independent conversations and the conversation never grew. An earlier version of this probe
+    ran that way and reported 13 compactions that were 13 session boundaries: prompt_tokens reset to
+    the size of one filler message every time, which is a new session, not a compaction. --session
+    creates the session if it does not exist and continues it otherwise, so turns chain into one
+    growing conversation. It also names the session, so the run cannot attach to the operator's
+    most recent session by accident.
     """
     env = dict(os.environ)
     # These are set because they are the documented knobs and a future build may honour them. On the
@@ -120,8 +129,8 @@ def run_opencode(home: pathlib.Path, message: str,
     # check=False deliberately: a turn that fails is data here, not an error to raise on. The exit
     # code is recorded per turn, because an arm that silently stopped would otherwise read as an
     # arm that never reached the trigger.
-    done = subprocess.run([opencode_exe(), "run", "--print-logs"], env=env, input=message,
-                          capture_output=True, text=True, check=False,
+    done = subprocess.run([opencode_exe(), "run", "--print-logs", "--session", session_id],
+                          env=env, input=message, capture_output=True, text=True, check=False,
                           encoding="utf-8", errors="replace", timeout=1800)
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
@@ -140,6 +149,9 @@ def main() -> int:
     parser.add_argument("--serve", default=None, help="ninfer-serve executable")
     parser.add_argument("--artifact", default=None, help="model artifact")
     parser.add_argument("--arms", nargs="+", default=["compact", "nocompact"])
+    parser.add_argument("--session-prefix", default="ses_ninfer_probe_compaction_",
+                        help="each arm's turns chain into one session under this id prefix; "
+                             "the id must start with 'ses' or the CLI rejects it")
     parser.add_argument("--out", default="opencode_compaction.json",
                         help="written as given; a bare name keeps it beside the probe")
     args = parser.parse_args()
@@ -167,6 +179,7 @@ def main() -> int:
             for turn in range(1, args.turns + 1):
                 before = len(prompt_totals(log))
                 code, output = run_opencode(home, message,
+                                            f"{args.session_prefix}{arm}",
                                             disable_autocompact=(arm == "nocompact"))
                 totals = prompt_totals(log)
                 grew = totals[before:] or totals[-1:]

@@ -255,42 +255,43 @@ Applied:
 | swift15-v3-dflash2-vision | 221,376 | 209,376 | 262,144 |
 | swift15-v3-mtp4-vision | 221,376 | 209,376 | 262,144 |
 
-**The predicted column is contradicted by measurement, and the mechanism has since been read out of
-the shipped build.** `tools/bench/probe_opencode_compaction.py` drives a real agent loop — 14 turns,
-123 requests, against a lane whose request log records every `prompt_tokens` — and observed **13
-compactions at a median of 79,076 tokens, range 49,709-118,380, peak 118,380**. The session never came
-within 1.87x of 221,376.
+**The arithmetic above is confirmed, and the first measurement of it was wrong.** Measured with
+`tools/bench/probe_opencode_compaction.py` driving one chained agent session of 14 turns / 20
+requests against a lane whose request log records every `prompt_tokens`, the context grew
+monotonically and compacted exactly where the formula says:
 
-The arithmetic above is not this build's mechanism. Recovered from the shipped OpenCode CLI
-(`resources/opencode-cli.exe`, v2.0.28), the auto-compaction predicate is:
+| | tokens |
+| --- | --- |
+| predicted trigger, `min(input_limit - buffer, context_limit - max(output_reserve, buffer))` | **221,376** |
+| last request before compaction | **214,962** |
+| first request after compaction | **47,666** |
+
+214,962 plus one more turn of roughly 12,500 tokens crosses 221,376, and that is where it fired. The
+formula is this client's mechanism, not an approximation of it.
+
+Two details worth keeping, both read from the shipped build rather than inferred. The auto-compaction
+predicate is:
 
 ```js
 A = (ctx, threshold) => {
-  const msgs = ctx.messages
-  if (msgs.at(-1)?.type === "compaction" && msgs.at(-1).status === "completed") return false
-  if (msgs.findLastIndex(m => matchesModel(m, ctx.model.ref)) < msgs.findLastIndex(lastUserTurn)) return false
-  return estimate(ctx) >= threshold
+  skip if the last message is a completed compaction        // never compact twice in a row
+  skip if the model has not answered since the last user turn // never compact mid-turn
+  return count(ctx) >= threshold
 }
-// threshold for reason "auto":     derived from model.limit and config.compaction.buffer
-// threshold for reason "overflow": Math.min(above, Math.floor(estimate(ctx) * ratio))
 ```
 
-Three consequences, each of which the page previously got wrong:
+and `count` is `tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write`.
+That looks like it double-counts, and it does not: `input + cache.read` **is** the prompt, split into
+new and cached. Verified against real sessions in the operator's own store — 245,027 + 81 = 245,108,
+218,195 + 797 = 218,992 — and a real session crosses 221,376 at a prompt of 222,542. So the count and
+the engine's `prompt_tokens` are the same quantity, which is why a single threshold fits.
 
-- **The comparison is against opencode's own estimate of the message list, not the engine's
-  `prompt_tokens`.** That is why the observed triggers scatter across 49,709-118,380 instead of
-  clustering at one threshold: the two counts are not in a fixed ratio, so no single engine-token
-  figure can predict the trigger.
-- **The overflow path is proportional, not additive.** It scales with the estimate rather than
-  subtracting a reserve, which is a different mechanism from the formula quoted here.
-- **The formula's own variable names do not exist in this build.** `input_limit`, `output_reserve`,
-  `context_limit`, `outputLimit` and `inputLimit` appear nowhere in the binary, and the shipped
-  config default is `{auto: true, keep: 15000}` — with no `buffer` key at all.
-
-So the table above should be read as **what the configured limits imply, not what this client does.**
-The `buffer` and `keep` settings are still worth setting deliberately — the predicate does read
-`buffer`, and `keep` is the window the summary is built beside — but no figure derived from the
-arithmetic above should be trusted as the trigger point. Measure it, as above, if it matters.
+An earlier revision of this page reported 13 compactions at a median of 79,076 tokens and concluded
+the formula did not apply. **That was a defect in the probe, not a finding.** `opencode run` starts a
+new session per invocation, so N turns were N independent conversations that never grew; the 13
+"compactions" were 13 session boundaries, every one resetting to exactly one filler message's worth of
+tokens. The probe now passes `--session` so turns chain into one growing conversation. Recorded here
+because a harness that cannot produce the phenomenon must not be read as having measured it.
 
 Two limits on this measurement, because they bear on how far it generalises:
 
@@ -339,21 +340,23 @@ post-compaction prefix becomes a new catalog entry rather than a miss forever. *
 paragraphs before relying on it: the stall it trades against turned out to be milliseconds, and
 the trigger it moves fires far earlier than this page predicts.**
 
-**The stall is measured now, and it is far smaller than the estimate it replaces.** The same probe
-recorded `first_output_timing.prefill.gpu_seconds` on every request. A post-compaction request
-prefilled in **0.027 s**, against a mean of **0.790 s** for every other request — so compaction's
-re-prefill is about **29x cheaper than a normal request's**, not a 50-second stall. Every one of the
-13 compactions landed on the same **13,033**-token prompt, small enough that the prefix cache
-serves nearly all of it (92.5% hit rate across the session).
+**The stall is measured now.** The same run recorded `first_output_timing.prefill.gpu_seconds` on
+every request. The compaction itself is a summary request against the full context — 203,085 tokens
+at a **99.7% prefix-cache hit, 0.351 s** — and the request after it is the cold one: **47,666 tokens
+with a 0.0% hit, costing 4.757 s of prefill and 4.830 s to first token.**
 
-The estimate this replaces assumed the re-prefill was the size of the pre-compaction context. It is
-not: it is the size of what opencode rebuilt, which here was 13k. At the measured cold rates above
-that is milliseconds. The old "~50 seconds" was wrong by three orders of magnitude, and wrong in
-the direction that would have argued for a smaller `buffer`.
+That 4.757 s is the honest figure, and it sits between two numbers this page has previously carried.
+It is not the ~50 s an earlier estimate assumed, because that extrapolated the rate to the
+*pre*-compaction 262,144 rather than to what opencode actually rebuilds. It is not the ~0.03 s an
+intermediate revision claimed, because that was a new session's first request rather than a
+compacted one. Cross-checked against the cold-prefill table above, 47,666 tokens at roughly
+10,000 tok/s is 4.8 s, which is what the engine reported.
 
-Two things remain genuinely unmeasured, and both are opencode's rather than the engine's: the
-size of the summary it writes, and why its trigger fires at ~79k when the formula above predicts
-221,376.
+The cost therefore tracks the size of the rebuilt prompt, not the size of the session that was
+compacted. Raising `keep.tokens` raises it directly, since the kept window is part of what is
+re-prefilled; lowering `buffer` moves the trigger earlier and does not change this.
+
+
 
 ## Recommended opencode settings
 
@@ -465,10 +468,9 @@ presence means it is still open.
 
 | question | state | what would close it |
 | --- | --- | --- |
-| Where exactly does the auto-compaction threshold land, in opencode's own token units? | predicate and threshold derivation recovered from the shipped binary; the threshold itself is a minified helper (`F0`) defined in another module | opencode v2.0.28 source, or a bisection run that finds the smallest context that compacts |
 | Why is a stripped-trace prompt's cache hit rate lower than a replayed one's? | answered | `chat_template.cpp:217` tags reasoning as its own prefix origin, so it is reused independently of the surrounding prefix. Replay miss is flat at ~46 tokens/turn; strip miss grows 151→363. |
 | Does a thinking budget above 4,096 earn its cost? | 4,096 costs 13.7 s and fills ~100 turns; 8,192 costs 26.2 s and fills ~51; no accuracy gain shown at n=4 | repetitions at both budgets on a task with headroom. Three of ten tasks sit at 100% and cannot detect a gain, so the grid needs harder cases before repetitions are worth running. |
-| What size summary does opencode's compaction write on a real session? | 13,033 tokens in all 13 observed compactions, but on a session whose turns are one repeated filler block | a run whose turns are real tool output rather than repeated text |
+| What size does a compaction rebuild on a real session? | 47,666 tokens after one compaction, on a session whose turns are one repeated filler block | a run whose turns are real tool output; the number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session |
 | Long-horizon agentic behaviour | not measured | the tasks are short self-contained functions, and no grid here stresses work where reasoning pays off over many turns |
 
 The thinking-budget row is a decision already taken, not a blocker: 4,096 stands because raising it
