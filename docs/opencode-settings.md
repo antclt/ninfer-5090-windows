@@ -353,15 +353,39 @@ Do not add variants named `minimal` or `high` — the chat template rejects thos
 
 ## Which model when
 
-| model | context | why |
-| --- | --- | --- |
-| quasar-dflash2 | 262,144 | the fastest QUASAR lane; the default |
-| quasar-mtp4 | 262,144 | lowest-VRAM QUASAR profile |
-| nvfp4full dflash2 | 262,144 | second artifact, same reach as QUASAR |
-| nvfp4full mtp5 | 262,144 | the MTP lane on the second artifact |
+Eight lanes ship: four artifacts × two speculative routes. All eight are vision-capable and all
+eight reach the native 262,144 context, so context is not a differentiator. Register the model id
+you intend to use under `providers` and point it at that lane's port.
+
+| lane | port | route | artifact lineage |
+| --- | --- | --- | --- |
+| `quasar-v3-dflash2-vision` | 8086 | DFlash2, depth 7, k8v4 | this port's own quantisation-aware-trained image |
+| `quasar-v3-mtp4-vision` | 8087 | MTP, depth 4, fp8 | the same image |
+| `nvfp4-v3-dflash2-vision` | 8088 | DFlash2, depth 9, fp8 | the fuller requantisation of the unsloth line |
+| `nvfp4-v3-mtp4-vision` | 8089 | MTP, depth 4, fp8 | the same image |
+| `swift15-v3-dflash2-vision` | 8090 | DFlash2, depth 7, fp8 | UkisAI's Swift 1.5 finetune, re-encoded by this port |
+| `swift15-v3-mtp4-vision` | 8091 | MTP, depth 5, k8v4 | the same image |
+| `nvidia-v3-dflash2-vision` | 8092 | DFlash2, depth 9, fp8 | NVIDIA's ModelOpt quantization of the base model, built by this port |
+| `nvidia-v3-mtp4-vision` | 8093 | MTP, depth 4, k8v4 | the same image |
+
+**How to choose.** The four artifacts are four encodings and finetunes of one base model, and on the
+coding grid below **every one of them scores the same** — so the artifact is not a quality choice.
+What separates the lanes is the route and the footprint:
+
+- **Route is the real decision.** The DFlash2 lanes decode several times faster than their MTP
+  counterparts and are the reason that route exists; the MTP lanes accept a higher fraction of
+  drafted tokens but decode far slower. If you are waiting on a turn, you want DFlash2.
+- **VRAM differs, and the DFlash2 lanes cost the most.** Two of them sit at 10.6 GiB runtime and
+  leave under 3 GiB free on a 32 GB card, against 8.07 GiB for the lightest. That matters when you
+  want something else resident — another model, a browser, a build.
+- **Depth is measured per lane, not a convention.** QUASAR's DFlash2 lane is at depth 7 and the
+  NVFP4 and NVIDIA ones at 9, on the maximin rule recorded in `tools/release/profiles.py`. Do not
+  read one lane's depth as applying to another.
 
 Each launcher's own header carries its measured decode, acceptance, runtime and free VRAM, so read
-the number there rather than here: a figure copied into a doc is a figure that drifts.
+the number there rather than here: a figure copied into a doc is a figure that drifts. The table
+in `tools/release/profiles.py` is the single copy, and `tools/bench/lane_process.py` reads it, so a
+probe measures the shipped lane rather than a copy of it.
 
 ## Concurrency
 
