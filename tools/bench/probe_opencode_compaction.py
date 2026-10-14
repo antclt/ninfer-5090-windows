@@ -20,10 +20,13 @@ working and not:
 
   * A turn's filler exceeds Windows' 32,767-character command-line limit, so the message goes on
     stdin. `opencode run` reads stdin when no message argument is given.
-  * opencode honours neither OPENCODE_TEST_HOME nor OPENCODE_CONFIG_DIR for config loading; it
-    reads the user's own config either way. So the probe runs against the operator's configured
-    model, which is the subject under test rather than a deviation from it. OPENCODE_DB does
-    redirect the session store, so turns land in a throwaway database.
+  * opencode honours neither OPENCODE_TEST_HOME, OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_CONTENT nor
+    OPENCODE_DB in this build. All four were tested against the shipped v2 CLI. It reads the user's
+    own config and appends to the user's own session store at
+    ~/.local/share/opencode/opencode.db regardless. **This probe is therefore not hermetic**: it runs
+    against the operator's real install and leaves its turns in the operator's session history.
+    That is why --turns defaults low and why the runs are short. Isolate it by pointing a throwaway
+    config at a disposable lane, not by expecting the environment variables to do it.
   * There are two installs with different config schemas. The npm package opencode-ai rejects the
     Desktop configuration outright -- "Unrecognized keys: media, snapshots, providers, agents,
     permissions" -- because those are Desktop's keys. opencode_exe() prefers Desktop's bundled CLI.
@@ -102,6 +105,9 @@ def run_opencode(home: pathlib.Path, message: str,
     WinError 206 before opencode starts.
     """
     env = dict(os.environ)
+    # These are set because they are the documented knobs and a future build may honour them. On the
+    # build this was measured against (v2.0.28) none of them redirects anything -- the probe is not
+    # hermetic, and the docstring says so rather than implying a sandbox that does not exist.
     env["OPENCODE_DB"] = str(home / "opencode.db")
     env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
     env["OPENCODE_DISABLE_MODELS_FETCH"] = "1"
