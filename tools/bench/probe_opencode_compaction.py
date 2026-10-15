@@ -167,12 +167,38 @@ def run_opencode(home: pathlib.Path, message: str, session_id: str,
     # check=False deliberately: a turn that fails is data here, not an error to raise on. The exit
     # code is recorded per turn, because an arm that silently stopped would otherwise read as an
     # arm that never reached the trigger.
-    done = subprocess.run([opencode_exe(), "run", "--print-logs", "--standalone",
+    done = subprocess.run([opencode_exe(), "run", "--print-logs", "--standalone", "--auto",
                            "--session", session_id],
                           env=env, input=message, capture_output=True, text=True, check=False,
                           cwd=str(cwd) if cwd else None,
                           encoding="utf-8", errors="replace", timeout=1800)
     return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+TASK = (
+    "Investigate this repository and report what you find. Work in the tree: read the maintainer "
+    "docs under docs/maintainer, the lane table in tools/release/profiles.py, and the hooks in "
+    ".githooks. Run whatever read-only commands help you, and do not edit any file."
+)
+
+
+def message_for(turn: int, fill_repeats: int, task: str | None) -> str:
+    """What a turn says.
+
+    The default is filler: a repeated block of known size, so the context grows by a predictable
+    amount and the trigger can be timed. That is the wrong shape for measuring what compaction
+    rebuilds, because a session made of one repeated block is not a working session -- its summary
+    has an unusually easy job, and the rebuilt size measured on it is not one anybody will see.
+
+    A task drives the agent instead: it reads the tree, runs commands, and its tool output becomes
+    the context, which is the shape the rebuild size actually has to survive. The invocation matches
+    tools/bench/repo_fix_eval.py, which drives the same CLI against the same tree for the same
+    reason. --auto is what lets that happen unattended; without it the agent stops on the first
+    permission it was not granted.
+    """
+    if task:
+        return task
+    return "Acknowledge this and continue.\n\n" + (FILLER_PARA * fill_repeats)
 
 
 def prompt_totals(log: pathlib.Path) -> list[int]:
@@ -185,6 +211,12 @@ def main() -> int:
     parser.add_argument("--turns", type=int, default=16)
     parser.add_argument("--fill-repeats", type=int, default=260,
                         help="filler paragraphs per turn; sets how fast the trigger is reached")
+    parser.add_argument("--task", action="store_true",
+                        help="drive the agent at real repository work instead of filler, so the "
+                             "context is filled with genuine tool output. Runs the CLI from --cwd "
+                             "with --auto, matching tools/bench/repo_fix_eval.py. Slower and less "
+                             "predictable turn to turn, but it is the shape a compaction rebuild "
+                             "has to survive.")
     parser.add_argument("--lane", default=lane.QUASAR_DFLASH2, help="launcher file name")
     parser.add_argument("--serve", default=None, help="ninfer-serve executable")
     parser.add_argument("--artifact", default=None, help="model artifact")
@@ -211,8 +243,9 @@ def main() -> int:
     profile = lane.lane_profile(args.lane)
     port = int(profile["port"])
 
-    message = "Acknowledge this and continue.\n\n" + (FILLER_PARA * args.fill_repeats)
-    print(f"turn message: {len(message):,} characters", flush=True)
+    message = message_for(1, args.fill_repeats, TASK if args.task else None)
+    print(f"turn message: {len(message):,} characters"
+          + ("  (real agent task)" if args.task else ""), flush=True)
 
     results: dict[str, dict] = {}
     for arm in args.arms:

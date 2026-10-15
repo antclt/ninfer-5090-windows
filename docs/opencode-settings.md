@@ -73,9 +73,12 @@ floor punishes hardest. Only two cells fail at all — `evaluate` once at low an
 `rooms_needed` once at medium and once at none — and they do not order the efforts.
 
 Two limits. Each cell is one deterministic run, so a single cell can still be unlucky; the paired
-five-seed comparison above is the stronger instrument for any question about a difference. And these
-are two lanes, not all eight — the earlier claim that no artifact is better than another at coding
-still holds within ±10 points here, but the wider table was not re-measured.
+five-seed comparison above is the stronger instrument for any question about a difference. And the
+effort-level finding above (`xhigh` tied for best) was re-measured on two lanes; the "no
+artifact is better than another at coding, within ±10 points" claim comes from the unseeded
+eight-lane table, where the truncation artefact affected every artifact uniformly. The wider
+table was not re-measured, so the seeded instrument neither confirms nor contradicts it — it only
+removes the artefact that made the earlier reading of it unreliable.
 
 The rows below predate both fixes and are kept only as the record of what was measured then.
 | quasar-mtp4 | **none** | **11/11** | **0.8 s** | 0 | 0 |
@@ -411,21 +414,23 @@ post-compaction prefix becomes a new catalog entry rather than a miss forever. *
 paragraphs before relying on it: the stall it trades against turned out to be milliseconds, and
 the trigger it moves fires far earlier than this page predicts.**
 
-**The stall is measured now.** The same run recorded `first_output_timing.prefill.gpu_seconds` on
-every request. The compaction itself is a summary request against the full context — 203,085 tokens
-at a **99.7% prefix-cache hit, 0.351 s** — and the request after it is the cold one: **47,666 tokens
-with a 0.0% hit, costing 4.757 s of prefill and 4.830 s to first token.**
+**The stall is measured now, and it depends on what the session was made of.** The compaction itself
+is a summary request against the full context — 203,085 tokens at a **99.7% prefix-cache hit, 0.351 s**
+— and the request after it is the cold one. Two sessions, same lane, same trigger:
 
-That 4.757 s is the honest figure, and it sits between two numbers this page has previously carried.
-It is not the ~50 s an earlier estimate assumed, because that extrapolated the rate to the
-*pre*-compaction 262,144 rather than to what opencode actually rebuilds. It is not the ~0.03 s an
-intermediate revision claimed, because that was a new session's first request rather than a
-compacted one. Cross-checked against the cold-prefill table above, 47,666 tokens at roughly
-10,000 tok/s is 4.8 s, which is what the engine reported.
+| session | rebuilt to | cold prefill of that request |
+| --- | --- | --- |
+| one repeated filler block | 47,666 | 4.757 s |
+| **real tool output against this repository** | **32,744** | ~3.3 s at the measured cold rate |
 
-The cost therefore tracks the size of the rebuilt prompt, not the size of the session that was
-compacted. Raising `keep.tokens` raises it directly, since the kept window is part of what is
-re-prefilled; lowering `buffer` moves the trigger earlier and does not change this.
+The filler session's own claim was that the number "should hold" whatever filled the session,
+because the rebuild is set by `keep.tokens` plus the summary. **It does not hold.** A real agentic
+session — 46 requests in its first turn alone, reading the tree — rebuilds 15k *smaller* than one made
+of a repeated block. Which session you are in matters more than the configuration does.
+
+That is worth stating plainly because it was the last open row and it was expected to be a
+confirmation rather than a result. The cheap assumption was wrong in the direction that makes the
+cost look better, which is the direction nobody would have checked.
 
 
 
@@ -539,7 +544,7 @@ presence means it is still open.
 
 | question | state | what would close it |
 | --- | --- | --- |
-| What size does a compaction rebuild on a session whose turns are real tool output rather than one repeated block? | 47,666 tokens measured, but on an artificial prompt shape | one more run of `probe_opencode_compaction.py` against a real working session. The number should hold, since it is set by `keep.tokens` plus the summary rather than by what filled the session — which is also why it is worth confirming rather than assuming. |
+| What size does a compaction rebuild on a session whose turns are real tool output rather than one repeated block? | **measured: 32,744** — and the prior reasoning that it "should hold" was wrong | closed — `probe_opencode_compaction.py --task` drives the agent at real repository work, matching `tools/bench/repo_fix_eval.py`'s invocation |
 
 Three questions closed earlier, moved out of this table into the prose above as the policy requires:
 the thinking budget (paired over 5 seeds, mean effect +0.2 tasks of 7 against a seed spread of ±2),
