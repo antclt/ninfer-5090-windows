@@ -22,11 +22,13 @@
 #include <span>
 #include <vector>
 
-namespace ninfer::models::qwen3_5::detail {
-class MoeResources;
+namespace ninfer::models::moe {
+class Resources;
 }
 
 namespace ninfer::models::qwen3_5::execution {
+
+class TextGraphRun;
 
 using Phase = qwen3_5::TextPhase;
 
@@ -69,16 +71,6 @@ struct DFlashFeatureSink {
 
 class VisionPrefillSession;
 
-// The per-call inputs that used to be three setters called immediately after construction. Passing
-// them here makes the sequence unrepresentable rather than merely conventional: as setters they
-// could be called in any order, or not at all, and only the caller's discipline kept them right.
-struct TextCallConfig {
-    const ops::SamplingConfig* sampling = nullptr;
-    std::int32_t state_source_slot      = 0;
-    std::int32_t state_destination_slot = 0;
-    std::uint32_t mtp_proposal_extent   = 0;
-};
-
 class TextContext {
 public:
     TextContext(DeviceContext& ctx, const execution::Parameters& weights, MemoryArena& work,
@@ -86,10 +78,10 @@ public:
                 qwen3_5::RoundState& io, Tensor& prefill_hidden, std::uint32_t prefill_chunk,
                 std::uint32_t text_kv_base,
                 qwen3_5::PagedKVCacheView mtp_kv          = qwen3_5::PagedKVCacheView(),
-                const qwen3_5::PagedKVCache* batch_mtp_kv = nullptr,
-                TextCallConfig call                       = {},
-                detail::MoeResources* moe                 = nullptr);
+                const qwen3_5::PagedKVCache* batch_mtp_kv = nullptr, moe::Resources* moe = nullptr);
     ~TextContext();
+
+    void set_graph_run(TextGraphRun* graphs) noexcept { graphs_ = graphs; }
 
     TextContext(const TextContext&)            = delete;
     TextContext& operator=(const TextContext&) = delete;
@@ -103,6 +95,8 @@ public:
 
     void set_rope_delta(std::int32_t delta) noexcept { rope_delta_ = delta; }
 
+    void set_sampling(const ops::SamplingConfig* config) noexcept { sampling_config_ = config; }
+
     void set_prefill_gpu_timer(CudaEventTimer* timer) noexcept { prefill_gpu_timer_ = timer; }
 
     void set_prefill_split_frontier(std::int64_t position) noexcept {
@@ -113,9 +107,9 @@ public:
         rewrite_checkpoint_hidden_output_ = output;
     }
 
-    // This one stays a setter, and it is why the others did not have to: the target verification
-    // path switches the action on a card it was handed, after construction, so the action is a
-    // per-phase input rather than a per-call one.
+    void set_mtp_proposal_extent(std::uint32_t extent) noexcept { mtp_proposal_extent_ = extent; }
+
+    void set_linear_state_slots(std::int32_t source_slot, std::int32_t destination_slot);
     void set_gdn_state_action(GdnStateAction action, const GdnReplayRecords* replay_records);
 
     [[nodiscard]] const LinearParameters* proposal_head() const noexcept { return proposal_head_; }
@@ -220,7 +214,8 @@ private:
     [[nodiscard]] PrefillChunkResult
     prefill_impl(std::span<const int> ids, const TextPrefill* text_prefill,
                  const MultimodalPrefill* multimodal, Tap& tap, bool finalize_at_end);
-    detail::MoeResources* moe_;
+    moe::Resources* moe_;
+    TextGraphRun* graphs_ = nullptr;
     DeviceContext& ctx_;
     CudaExecutionView execution_;
     const Parameters& parameters_;

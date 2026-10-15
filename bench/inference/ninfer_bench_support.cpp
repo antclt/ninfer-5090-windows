@@ -77,6 +77,15 @@ std::uint32_t parse_u32(std::string_view text, const char* label, bool allow_zer
     return static_cast<std::uint32_t>(value);
 }
 
+KvCacheStorage parse_kv_cache(std::string_view text) {
+    if (text == "bf16") { return KvCacheStorage::BFloat16; }
+    if (text == "int8") { return KvCacheStorage::Int8Group64; }
+    if (text == "fp8") { return KvCacheStorage::Fp8E4M3Row256; }
+    if (text == "nvfp4") { return KvCacheStorage::Nvfp4Group16; }
+    if (text == "k8v4") { return KvCacheStorage::Fp8KeyNvfp4Value; }
+    throw std::invalid_argument("--kv-dtype must be bf16, int8, fp8, nvfp4, or k8v4");
+}
+
 std::vector<int> parse_int_list(std::string_view value, const char* label) {
     std::vector<int> out;
     std::size_t start = 0;
@@ -196,26 +205,8 @@ SpeculativeStats aggregate_speculative(const TestResult& result) {
         if (out.accepted_per_position.size() < in.accepted_per_position.size()) {
             out.accepted_per_position.resize(in.accepted_per_position.size());
         }
-        if (out.proposed_per_position.size() < in.proposed_per_position.size()) {
-            out.proposed_per_position.resize(in.proposed_per_position.size());
-        }
-        if (out.recall1_per_position.size() < in.recall1_per_position.size()) {
-            out.recall1_per_position.resize(in.recall1_per_position.size());
-        }
-        if (out.recall16_per_position.size() < in.recall16_per_position.size()) {
-            out.recall16_per_position.resize(in.recall16_per_position.size());
-        }
         for (std::size_t i = 0; i < in.accepted_per_position.size(); ++i) {
             out.accepted_per_position[i] += in.accepted_per_position[i];
-        }
-        for (std::size_t i = 0; i < in.proposed_per_position.size(); ++i) {
-            out.proposed_per_position[i] += in.proposed_per_position[i];
-        }
-        for (std::size_t i = 0; i < in.recall1_per_position.size(); ++i) {
-            out.recall1_per_position[i] += in.recall1_per_position[i];
-        }
-        for (std::size_t i = 0; i < in.recall16_per_position.size(); ++i) {
-            out.recall16_per_position[i] += in.recall16_per_position[i];
         }
     }
     return out;
@@ -260,36 +251,6 @@ void append_vision_workspace_json(std::ostringstream& out,
     out << '\n';
 }
 
-std::string counts_per_position(const std::vector<std::uint64_t>& counts) {
-    std::ostringstream out;
-    out << '[';
-    for (std::size_t i = 0; i < counts.size(); ++i) {
-        if (i != 0) { out << ", "; }
-        out << counts[i];
-    }
-    out << ']';
-    return out.str();
-}
-
-// One rate per position over the rounds that proposed it, `null` where none did. The denominator is
-// emitted alongside every rate so a ratio is never reported over an invisible base.
-std::string rate_per_position(const std::vector<std::uint64_t>& hits,
-                              const std::vector<std::uint64_t>& proposed) {
-    std::ostringstream out;
-    out << '[';
-    for (std::size_t i = 0; i < proposed.size(); ++i) {
-        if (i != 0) { out << ", "; }
-        const std::uint64_t hit = i < hits.size() ? hits[i] : 0;
-        if (proposed[i] == 0) {
-            out << "null";
-        } else {
-            out << number(static_cast<double>(hit) / static_cast<double>(proposed[i]));
-        }
-    }
-    out << ']';
-    return out.str();
-}
-
 void append_speculative_json(std::ostringstream& out, const SpeculativeStats& stats,
                              std::string_view indent) {
     out << indent << "\"speculative\": {\n"
@@ -315,23 +276,12 @@ void append_speculative_json(std::ostringstream& out, const SpeculativeStats& st
         out << number(1.0 + static_cast<double>(stats.accepted_tokens) /
                                 static_cast<double>(stats.rounds));
     }
-    out << ",\n" << indent << "  \"accepted_per_position\": "
-        << counts_per_position(stats.accepted_per_position);
-    out << ",\n" << indent << "  \"proposed_per_position\": "
-        << counts_per_position(stats.proposed_per_position);
-    out << ",\n" << indent << "  \"recall1_per_position\": "
-        << counts_per_position(stats.recall1_per_position);
-    out << ",\n" << indent << "  \"recall16_per_position\": "
-        << counts_per_position(stats.recall16_per_position);
-    // The per-position split that separates a weak drafter from a lossy selector: what the drafter
-    // put first, what it put anywhere in its ranked candidates, and what the selector committed.
-    out << ",\n" << indent << "  \"recall1_rate_per_position\": "
-        << rate_per_position(stats.recall1_per_position, stats.proposed_per_position);
-    out << ",\n" << indent << "  \"recall16_rate_per_position\": "
-        << rate_per_position(stats.recall16_per_position, stats.proposed_per_position);
-    out << ",\n" << indent << "  \"path_acceptance_per_position\": "
-        << rate_per_position(stats.accepted_per_position, stats.proposed_per_position);
-    out << "\n" << indent << '}';
+    out << ",\n" << indent << "  \"accepted_per_position\": [";
+    for (std::size_t i = 0; i < stats.accepted_per_position.size(); ++i) {
+        if (i != 0) { out << ", "; }
+        out << stats.accepted_per_position[i];
+    }
+    out << "]\n" << indent << '}';
 }
 
 void append_timings_json(std::ostringstream& out, const GenerationTimings& timings,
@@ -462,7 +412,7 @@ BenchOptions parse_args(int argc, char** argv) {
         } else if (arg == "--prefill-chunk") {
             options.prefill_chunk = parse_u32(value("--prefill-chunk"), "prefill-chunk");
         } else if (arg == "--kv-dtype") {
-            options.kv_cache = parse_kv_storage(value("--kv-dtype"));
+            options.kv_cache = parse_kv_cache(value("--kv-dtype"));
         } else if (arg == "--spec") {
             options.speculative.backend = product::parse_speculative_backend(value("--spec"));
         } else if (arg == "--draft-tokens") {
@@ -720,13 +670,14 @@ std::string format_table(const BenchEnvironment& env, const std::vector<TestResu
         << (env.memory.vision_workspace
                 ? format_bytes(env.memory.vision_workspace->handoff_capacity_bytes)
                 : "disabled")
-        << " (within workspace), graph allowance "
-        << format_bytes(env.memory.cuda_graph_allowance_bytes) << ", KV payload "
-        << format_bytes(env.memory.kv_payload_bytes) << '\n'
+        << " (within workspace), graph rebuild estimate "
+        << format_bytes(
+               env.memory.cuda_graph.value_or(ninfer::GraphMemorySummary{}).rebuild_estimate_bytes)
+        << ", KV payload " << format_bytes(env.memory.kv_payload_bytes) << '\n'
         << "  corpus:     " << env.corpus_path << " (" << env.corpus_tokens << " tokens)\n"
         << "  config:     max_context=" << env.max_context << " prefill_chunk=" << env.prefill_chunk
         << " concurrency=" << env.concurrency << " constraint=" << constraint_name(env.constraint)
-        << (env.mixed_constraints ? " (mixed)" : "") << " kv_cache=" << kv_storage_name(env.kv_cache)
+        << (env.mixed_constraints ? " (mixed)" : "") << " kv_cache=" << kv_cache_name(env.kv_cache)
         << " spec=" << product::speculative_backend_name(env.speculative.backend)
         << " draft_tokens=" << env.speculative.draft_tokens
         << " proposal_head=" << proposal_head_name(env.speculative.proposal_head)
@@ -779,6 +730,7 @@ std::string format_table(const BenchEnvironment& env, const std::vector<TestResu
 
 std::string format_json(const BenchEnvironment& env, const std::string& command,
                         const std::vector<TestResult>& results) {
+    const auto graph = env.memory.cuda_graph.value_or(ninfer::GraphMemorySummary{});
     std::ostringstream formats;
     formats << '[';
     for (std::size_t i = 0; i < env.load.weight_formats.size(); ++i) {
@@ -823,7 +775,7 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
         << "    \"kv_capacity_page_groups\": " << env.memory.kv_capacity_page_groups << ",\n"
         << "    \"kv_capacity_max_page_groups\": " << env.memory.kv_capacity_max_page_groups
         << ",\n"
-        << "    \"kv_cache\": \"" << kv_storage_name(env.memory.kv_cache) << "\",\n";
+        << "    \"kv_cache\": \"" << kv_cache_name(env.memory.kv_cache) << "\",\n";
     if (env.memory.moe) {
         const auto& m = *env.memory.moe;
         out << "    \"moe\": {\n"
@@ -872,7 +824,14 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
         << ",\n"
         << "    \"kv_capacity_headroom_bytes\": " << env.memory.kv_capacity_headroom_bytes << ",\n"
         << "    \"planned_slack_bytes\": " << env.memory.planned_slack_bytes << ",\n"
-        << "    \"cuda_graph_allowance_bytes\": " << env.memory.cuda_graph_allowance_bytes << ",\n"
+        << "    \"cuda_graph_rebuild_estimate_bytes\": " << graph.rebuild_estimate_bytes << ",\n"
+        << "    \"cuda_graph_prepare_increment_bytes\": " << graph.preparation_increment_bytes
+        << ",\n"
+        << "    \"cuda_graph_calibration_increment_bytes\": " << graph.calibration_increment_bytes
+        << ",\n"
+        << "    \"cuda_graph_calibration_retained_bytes\": " << graph.calibration_retained_bytes
+        << ",\n"
+        << "    \"startup_retained_bytes\": " << env.memory.startup_retained_bytes << ",\n"
         << "    \"kv_payload_bytes\": " << env.memory.kv_payload_bytes << "\n"
         << "  },\n"
         << "  \"config\": {\n"
@@ -885,7 +844,7 @@ std::string format_json(const BenchEnvironment& env, const std::string& command,
         << "    \"mixed_constraints\": " << (env.mixed_constraints ? "true" : "false") << ",\n"
         << "    \"max_context\": " << env.max_context << ",\n"
         << "    \"prefill_chunk\": " << env.prefill_chunk << ",\n"
-        << "    \"kv_cache\": \"" << kv_storage_name(env.kv_cache) << "\",\n"
+        << "    \"kv_cache\": \"" << kv_cache_name(env.kv_cache) << "\",\n"
         << "    \"speculative_backend\": \""
         << product::speculative_backend_name(env.speculative.backend) << "\",\n"
         << "    \"draft_tokens\": " << env.speculative.draft_tokens << ",\n"
@@ -983,6 +942,7 @@ std::string csv_field(std::string_view value) {
 } // namespace
 
 std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult>& results) {
+    const auto graph = env.memory.cuda_graph.value_or(ninfer::GraphMemorySummary{});
     std::ostringstream out;
     out << "label,kind,n_prompt,n_gen,architecture,prefill_signature,model_name,artifact_path,max_"
            "context,prefill_chunk,concurrency,constraint_type,constraint_file,constraint_source,"
@@ -992,17 +952,12 @@ std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult
            "proposal_head,decode_path,kv_cache,kv_payload_bytes,load_host_to_device_bytes,"
            "weights_capacity_bytes,sequence_capacity_bytes,workspace_capacity_bytes,"
            "workspace_general_capacity_bytes,vision_handoff_capacity_bytes,"
-           "cuda_graph_allowance_bytes,"
+           "cuda_graph_rebuild_estimate_bytes,cuda_graph_prepare_increment_bytes,"
+           "cuda_graph_calibration_increment_bytes,cuda_graph_calibration_retained_bytes,"
+           "startup_retained_bytes,"
            "workspace_peak_bytes,workspace_allocator_peak_bytes,expert_upload_bytes,"
-           "spec_rounds,spec_fallback_steps,spec_acceptance_rate,";
-    // One column per proposal position and per split, so every number keeps its own header name and
-    // a row stays flat. The width is the run's own draft window, so a non-speculative run adds none.
-    for (std::size_t position = 0; position < env.speculative.draft_tokens; ++position) {
-        out << "spec_proposed_pos" << position << ",spec_recall1_rate_pos" << position
-            << ",spec_recall16_rate_pos" << position << ",spec_path_acceptance_rate_pos" << position
-            << ',';
-    }
-    out << "repetitions,prefill_tok_s_mean,prefill_tok_s_stddev,decode_output_tok_s_mean,"
+           "spec_rounds,spec_fallback_steps,spec_acceptance_rate,"
+           "repetitions,prefill_tok_s_mean,prefill_tok_s_stddev,decode_output_tok_s_mean,"
            "decode_output_tok_s_stddev,decode_engine_tok_s_mean,decode_engine_tok_s_stddev,"
            "prepare_seconds_mean,prefill_seconds_mean,decode_seconds_mean,total_seconds_mean,"
            "output_tok_s_mean,output_tok_s_stddev\n";
@@ -1011,9 +966,6 @@ std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult
     };
     const auto stddev = [](const std::vector<double>& values) {
         return values.empty() ? std::string() : number(compute_stats(values).stddev);
-    };
-    const auto at = [](const std::vector<std::uint64_t>& counts, std::size_t position) {
-        return position < counts.size() ? counts[position] : std::uint64_t{0};
     };
     for (const TestResult& result : results) {
         const SpeculativeStats spec  = aggregate_speculative(result);
@@ -1034,7 +986,7 @@ std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult
             << env.speculative.draft_tokens << ','
             << proposal_head_name(env.speculative.proposal_head) << ','
             << decode_path_name(env.use_cuda_graph, env.speculative) << ','
-            << kv_storage_name(env.kv_cache) << ',' << env.memory.kv_payload_bytes << ','
+            << kv_cache_name(env.kv_cache) << ',' << env.memory.kv_payload_bytes << ','
             << env.load.host_to_device_bytes << ',' << env.memory.weights.capacity_bytes << ','
             << env.memory.sequence.capacity_bytes << ',' << env.memory.workspace.capacity_bytes
             << ','
@@ -1045,24 +997,14 @@ std::string format_csv(const BenchEnvironment& env, const std::vector<TestResult
             << (env.memory.vision_workspace
                     ? std::to_string(env.memory.vision_workspace->handoff_capacity_bytes)
                     : std::string())
-            << ',' << env.memory.cuda_graph_allowance_bytes << ',' << result.workspace_peak_bytes
-            << ',' << result.workspace_allocator_peak_bytes << ',' << result.expert_upload_bytes
-            << ',' << spec.rounds << ','
-            << spec.fallback_steps << ',' << acceptance << ',';
-        for (std::size_t position = 0; position < env.speculative.draft_tokens; ++position) {
-            const std::uint64_t proposed = at(spec.proposed_per_position, position);
-            const auto rate = [proposed](std::uint64_t hits) {
-                return proposed == 0 ? std::string()
-                                     : number(static_cast<double>(hits) /
-                                              static_cast<double>(proposed));
-            };
-            out << proposed << ',' << rate(at(spec.recall1_per_position, position)) << ','
-                << rate(at(spec.recall16_per_position, position)) << ','
-                << rate(at(spec.accepted_per_position, position)) << ',';
-        }
-        out << result.reps.size() / result.concurrency << ','
-            << mean(prefill_tok_s_series(result)) << ',' << stddev(prefill_tok_s_series(result))
-            << ',' << mean(decode_output_tok_s_series(result)) << ','
+            << ',' << graph.rebuild_estimate_bytes << ',' << graph.preparation_increment_bytes
+            << ',' << graph.calibration_increment_bytes << ',' << graph.calibration_retained_bytes
+            << ',' << env.memory.startup_retained_bytes << ',' << result.workspace_peak_bytes << ','
+            << result.workspace_allocator_peak_bytes << ',' << result.expert_upload_bytes << ','
+            << spec.rounds << ',' << spec.fallback_steps << ',' << acceptance << ','
+            << result.reps.size() / result.concurrency << ',' << mean(prefill_tok_s_series(result))
+            << ',' << stddev(prefill_tok_s_series(result)) << ','
+            << mean(decode_output_tok_s_series(result)) << ','
             << stddev(decode_output_tok_s_series(result)) << ','
             << mean(decode_engine_tok_s_series(result)) << ','
             << stddev(decode_engine_tok_s_series(result)) << ','
@@ -1105,6 +1047,22 @@ std::string json_escape(std::string_view value) {
         }
     }
     return out;
+}
+
+std::string kv_cache_name(KvCacheStorage storage) {
+    switch (storage) {
+    case KvCacheStorage::BFloat16:
+        return "bf16";
+    case KvCacheStorage::Int8Group64:
+        return "int8-group64";
+    case KvCacheStorage::Fp8E4M3Row256:
+        return "fp8-e4m3-row256";
+    case KvCacheStorage::Nvfp4Group16:
+        return "nvfp4";
+    case KvCacheStorage::Fp8KeyNvfp4Value:
+        return "k8v4";
+    }
+    return "unknown";
 }
 
 std::string proposal_head_name(ProposalHead head) {

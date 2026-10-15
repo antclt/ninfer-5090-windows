@@ -1,5 +1,5 @@
 #pragma once
-#include "models/qwen3_5/program/moe_resources.h"
+#include "models/common/moe/resources.h"
 #include "models/qwen3_5/program/internal.h"
 
 #include "core/arena.h"
@@ -9,6 +9,7 @@
 #include "ninfer/ops/gdn_replay.h"
 #include "ninfer/ops/sampling.h"
 #include "core/decode_graph.h"
+#include "models/qwen3_5/program/text_graph.h"
 #include "models/qwen3_5/frontend/prepared_prompt.h"
 
 #include "models/qwen3_5/program/planning/startup.h"
@@ -127,11 +128,13 @@ struct DecodeGraphProfile {
     std::uint32_t max_execution_frontier = 0;
     std::uint32_t topology_class         = 0;
     DecodeGraphDefinition definition;
+    std::unique_ptr<execution::TextGraphDefinition> text;
 };
 
 struct DecodeGraphTopology {
     std::uint32_t topology_class = 0;
     DecodeGraphExecutable executable;
+    std::unique_ptr<execution::TextGraphExecutable> text;
     std::optional<std::size_t> installed_profile;
 };
 
@@ -139,7 +142,7 @@ struct DecodeGraphFamily {
     std::vector<DecodeGraphProfile> profiles;
     std::vector<DecodeGraphTopology> topologies;
     DecodeGraphProfile& select(std::uint32_t batch_size, std::uint32_t frontier);
-    DecodeGraphExecutable& install(DecodeGraphProfile& profile);
+    DecodeGraphTopology& install(DecodeGraphProfile& profile);
 };
 
 // A Forward stage publishes these IDs before target execution finishes. Program owns the
@@ -257,15 +260,11 @@ public:
     ProgramImpl(const execution::Parameters&, const SequencePlanImpl&, DeviceContext&,
                 const StartupObserver&);
     ~ProgramImpl() noexcept;
+    void initialize_graphs();
+    void release_graphs();
     [[nodiscard]] RequestBasePlan plan_request(PreparedPromptData&&,
                                                const runtime::ResolvedExecutionOptions&);
     [[nodiscard]] std::vector<float> causal_score(PreparedPromptData&&, std::uint32_t first_target);
-    // topk == 0 is the scalar route causal_score forwards to, so the two share one staging loop
-    // and cannot disagree about which positions were scored. Port declaration: upstream
-    // b9114396 has no top-k scoring at all, and ProgramImpl::causal_score_topk is the port''s
-    // instrument for per-domain KL against a reference that cannot be resident on this machine.
-    [[nodiscard]] CausalTopk causal_score_topk(PreparedPromptData&&, std::uint32_t first_target,
-                                             std::int32_t topk);
     [[nodiscard]] std::optional<SourceCandidate>
     inspect_source(const RequestBasePlan&, std::optional<CheckpointHandle>, bool = false,
                    std::span<const CheckpointHandle> = {},
@@ -357,13 +356,13 @@ public:
     const bool use_cuda_graph;
     const bool causal_scoring;
     const std::size_t kv_payload_bytes;
-    const std::size_t graph_allowance_bytes;
+    std::optional<GraphMemorySummary> graph_memory;
     const WorkspacePlan workspace_plan;
 
     DeviceBuffer persistent;
     DeviceBuffer workspace_storage;
     MemoryArena work;
-    std::unique_ptr<MoeResources> moe;
+    std::unique_ptr<moe::Resources> moe;
     std::unique_ptr<qwen3_5::DecoderState> decoder;
     std::unique_ptr<HostContextArena> host_context_arena;
     std::unique_ptr<HostKVArena> host_kv_arena;
@@ -401,13 +400,6 @@ public:
 
     std::optional<PinnedHostBuffer> round_host;
     std::optional<PinnedHostBuffer> score_logprobs_host;
-    // Landing buffer for the top-k reduction, sized for a full tile at the Op's documented maximum
-    // K: kCausalScoreTile * kTopkLogprobsMaxK * (sizeof(TokenId) + sizeof(float)) = 2 MiB. Planned
-    // for the maximum rather than for the k a caller happens to ask for, because k is a runtime
-    // choice here and threading it through sequence planning would add a parameter to every
-    // scoring entry point to save 2 MiB on an offline evaluator. The public contract still
-    // validates k against the same maximum the Op does.
-    std::optional<PinnedHostBuffer> score_topk_host;
     TokenId* host_tokens = nullptr;
     std::optional<PinnedHostBuffer> ordinary_host;
     qwen3_5::OrdinaryDecodeIngress* ordinary_host_ingress = nullptr;

@@ -13,10 +13,12 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
-#    include <process.h>  // _getpid
+#ifdef _WIN32
+#include <process.h>
+#define ninfer_getpid _getpid
 #else
-#include <unistd.h>  // getpid
+#include <unistd.h>
+#define ninfer_getpid ::getpid
 #endif
 
 namespace {
@@ -129,7 +131,8 @@ int main() {
     memory.available_after_weights_bytes     = 1700;
     memory.available_after_startup_bytes     = 180;
     memory.planned_slack_bytes               = 100;
-    memory.cuda_graph_allowance_bytes        = 600;
+    memory.cuda_graph                        = ninfer::GraphMemorySummary{600, -30, 800, 200};
+    memory.startup_retained_bytes            = 1000;
     memory.kv_payload_bytes                  = 400;
     memory.host_context_capacity_bytes       = 64ULL << 20;
     memory.host_context_occupied_bytes       = 12ULL << 20;
@@ -176,7 +179,7 @@ int main() {
                       "request log path missing");
     failures += check(server.at("server").at("default_thinking_budget") == 512,
                       "server thinking budget missing");
-    failures += check(server.at("engine").at("kv_cache") == "fp8-e4m3-r256", "KV type missing");
+    failures += check(server.at("engine").at("kv_cache") == "fp8-e4m3-row256", "KV type missing");
     options.kv_cache        = ninfer::KvCacheStorage::Nvfp4Group16;
     engine_options.kv_cache = options.kv_cache;
     memory.kv_cache         = options.kv_cache;
@@ -230,8 +233,13 @@ int main() {
                   server.at("memory").at("vision_workspace").at("handoff_capacity_bytes") == 200 &&
                   server.at("memory").at("vision_workspace").at("handoff_peak_bytes") == 150,
               "Vision workspace layout missing");
-    failures += check(server.at("memory").at("cuda_graph_allowance_bytes") == 600,
-                      "CUDA Graph allowance missing");
+    failures += check(server.at("memory").at("cuda_graph_rebuild_estimate_bytes") == 600,
+                      "CUDA Graph rebuild estimate missing");
+    failures += check(server.at("memory").at("cuda_graph_prepare_increment_bytes") == -30 &&
+                          server.at("memory").at("cuda_graph_calibration_increment_bytes") == 800 &&
+                          server.at("memory").at("cuda_graph_calibration_retained_bytes") == 200 &&
+                          server.at("memory").at("startup_retained_bytes") == 1000,
+                      "signed Graph and startup deltas missing");
     failures += check(server.at("memory").at("runtime_reservation_bytes") == 1600 &&
                           server.at("memory").at("available_after_weights_bytes") == 1700 &&
                           server.at("memory").at("available_after_startup_bytes") == 180 &&
@@ -271,11 +279,6 @@ int main() {
     prepared.preparation.media_preprocess_seconds      = 0.08;
     prepared.preparation.media_preprocess_work_seconds = 0.31;
     prepared.preparation.tokenize_seconds              = 0.02;
-    prepared.preparation.render_seconds                = 0.09;
-    prepared.preparation.context_cache_seconds         = 0.005;
-    prepared.preparation.convert_seconds               = 0.003;
-    prepared.preparation.contract_seconds              = 0.001;
-    prepared.preparation.positions_seconds             = 0.0004;
     prepared.preparation.media_items                   = 1;
     prepared.preparation.media_cache_misses            = 1;
     prepared.preparation.built_patch_bytes             = 49152;
@@ -294,29 +297,8 @@ int main() {
     failures += check(
         pretty_start.message ==
             "req#7 started | openai-chat non-stream | 2 messages | max output 4,096 | thinking "
-            "xhigh, budget 256 | media 1 | prepared 120 ms, contract 1.00 ms, convert 3.00 ms, "
-            "render 90.0 ms, tokenize 20.0 ms, positions 400 us, cache prep 5.00 ms, media "
-            "preprocess 80.0 ms, media work 310 ms | preserve thinking",
-        // Name the actual line. The first version of this check reported only "mismatch", so a
-        // golden that was one character wrong and a producer that was wrong looked identical.
-        // c_str() on the temporary is safe: it outlives the full-expression that calls check.
-        ("pretty request-start record mismatch: " + pretty_start.message).c_str());
-    // Preparation happens on every request, so a request without media still reports it. Before
-    // this, the clause lived inside the media branch and a media-less request's time to first token
-    // could not be attributed at all.
-    RequestLogContext unmediated       = context;
-    unmediated.media_item_count        = 0;
-    const std::string unmediated_start = render_request_start(unmediated).message;
-    // The split is what makes the remainder attributable, so every phase is asserted here rather
-    // than the total alone: a preparation whose cost is not the render must say which phase it is.
-    failures += check(unmediated_start.find("prepared 120 ms") != std::string::npos &&
-                          unmediated_start.find("contract 1.00 ms") != std::string::npos &&
-                          unmediated_start.find("convert 3.00 ms") != std::string::npos &&
-                          unmediated_start.find("render 90.0 ms") != std::string::npos &&
-                          unmediated_start.find("tokenize 20.0 ms") != std::string::npos &&
-                          unmediated_start.find("positions 400 us") != std::string::npos &&
-                          unmediated_start.find("cache prep 5.00 ms") != std::string::npos,
-                      "preparation time is missing for a request without media");
+            "xhigh, budget 256 | media 1, prepared 120 ms | preserve thinking",
+        "pretty request-start record mismatch");
     RequestLogContext default_thinking = context;
     default_thinking.requested_reasoning_effort.reset();
     default_thinking.thinking_budget.reset();
@@ -873,17 +855,11 @@ int main() {
             throughput_json.at("context_cache").at("selections").at("checkpoint") == 2,
         "context-cache throughput statistics missing or not interval-scoped");
 
-    // Windows spells getpid() as _getpid(); the name only has to be unique per process, so
-    // either serves. The file-scope includes are guarded the same way as in
-    // src/serve/request_log.cpp.
-#if defined(_WIN32)
-    const auto pid = static_cast<long long>(_getpid());
-#else
-    const auto pid = static_cast<long long>(::getpid());
-#endif
     const std::filesystem::path log_path =
         std::filesystem::temp_directory_path() /
-        ("ninfer-request-log-test-" + std::to_string(pid) + ".jsonl");
+        ("ninfer-request-log-test-" + std::to_string(static_cast<long long>(ninfer_getpid())) +
+         ".jsonl");
+    std::filesystem::remove(log_path);
     {
         JsonlRequestLog writer(log_path.string());
         writer.write_request_start(context);

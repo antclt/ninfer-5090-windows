@@ -51,7 +51,12 @@ DFlashFeatureSink make_dflash_prefill_sink(PrefillContext& state) {
 
 // The sampling configuration, the state slots and the proposal extent arrive at construction now.
 // What remains here is the action this phase needs, and the check that a head was selected.
-void configure_text_card(TextContext& card, const ExecutionCore& execution) {
+void configure_text_card(TextContext& card, const ExecutionCore& execution,
+                        const ops::SamplingConfig* sampling, std::int32_t state_source_slot,
+                        std::int32_t state_destination_slot, std::uint32_t mtp_proposal_extent) {
+    card.set_sampling(sampling);
+    card.set_linear_state_slots(state_source_slot, state_destination_slot);
+    card.set_mtp_proposal_extent(mtp_proposal_extent);
     card.set_gdn_state_action(GdnStateAction::UpdateInPlace, nullptr);
     if (execution.proposal_head == ProposalHead::Full) {
         card.set_proposal_head(nullptr, nullptr, 0);
@@ -70,12 +75,8 @@ PrefillChunkResult prefill_text_chunk(PrefillContext& state, std::span<const Tok
                      state.text_cache, state.execution.linear_attention, state.execution.io,
                      state.execution.prefill_hidden, state.execution.prefill_chunk,
                      state.text_kv_base, state.mtp_kv, state.mtp_cache,
-                     TextCallConfig{.sampling = state.sampling,
-                                    .state_source_slot = state.state_source_slot,
-                                    .state_destination_slot = state.state_destination_slot,
-                                    .mtp_proposal_extent = state.mtp_proposal_extent},
                      state.execution.moe);
-    configure_text_card(card, state.execution);
+    configure_text_card(card, state.execution, state.sampling, state.state_source_slot, state.state_destination_slot, state.mtp_proposal_extent);
     card.set_prefill_gpu_timer(state.prefill_gpu_timer);
     card.set_rope_delta(state.rope_delta);
     card.set_rewrite_checkpoint_hidden_output(state.rewrite_checkpoint_hidden);
@@ -99,12 +100,8 @@ PrefillChunkResult prefill_multimodal_chunk(PrefillContext& state, const Prepare
                      state.text_cache, state.execution.linear_attention, state.execution.io,
                      state.execution.prefill_hidden, state.execution.prefill_chunk,
                      state.text_kv_base, state.mtp_kv, state.mtp_cache,
-                     TextCallConfig{.sampling = state.sampling,
-                                    .state_source_slot = state.state_source_slot,
-                                    .state_destination_slot = state.state_destination_slot,
-                                    .mtp_proposal_extent = state.mtp_proposal_extent},
                      state.execution.moe);
-    configure_text_card(card, state.execution);
+    configure_text_card(card, state.execution, state.sampling, state.state_source_slot, state.state_destination_slot, state.mtp_proposal_extent);
     card.set_prefill_gpu_timer(state.prefill_gpu_timer);
     card.set_rope_delta(state.rope_delta);
     card.set_rewrite_checkpoint_hidden_output(state.rewrite_checkpoint_hidden);

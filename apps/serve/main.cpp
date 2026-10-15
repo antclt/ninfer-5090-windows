@@ -136,7 +136,6 @@ int main(int argc, char** argv) {
         // Exit code 3 is distinct from 1 (configuration/bind/warmup error) so a supervisor
         // can tell "engine fault, restart required" from "bad configuration, do not retry".
         if (!service.is_available()) {
-            operational_log.engine_failure();
             return 3;
         }
         operational_log.server_stopped();

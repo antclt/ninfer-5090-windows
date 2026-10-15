@@ -2,7 +2,6 @@
 #include "product/constraint_observation.h"
 #include "product/logging/pretty_format.h"
 #include "product/speculative_options.h"
-#include "ninfer/kv_storage.h"
 
 #include <spdlog/logger.h>
 
@@ -20,8 +19,12 @@
 #include <system_error>
 #include <utility>
 
-#if !defined(_WIN32)
-#    include <unistd.h>
+#ifdef _WIN32
+#include <process.h>
+#define ninfer_getpid _getpid
+#else
+#include <unistd.h>
+#define ninfer_getpid ::getpid
 #endif
 
 namespace ninfer::serve {
@@ -43,16 +46,8 @@ std::uint64_t unix_time_ms() {
 std::string new_server_instance_id() {
     const auto now    = std::chrono::system_clock::now().time_since_epoch();
     const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    // getpid() is POSIX. Windows names the same value _getpid() in <process.h>, and the instance id
-    // only has to be unique per process, so either spelling serves. Upstream guards the include the
-    // same way in serve/http_transport.cpp; the call site is the part that has to differ.
-#if defined(_WIN32)
-#    include <process.h>
-    const auto pid = static_cast<long long>(_getpid());
-#else
-    const auto pid = static_cast<long long>(::getpid());
-#endif
-    return "serve-" + std::to_string(pid) + '-' + std::to_string(micros);
+    return "serve-" + std::to_string(static_cast<long long>(ninfer_getpid())) + '-' +
+           std::to_string(micros);
 }
 
 std::filesystem::path normalized_absolute_path(const std::string& value) {
@@ -98,25 +93,12 @@ const char* finish_reason_name(ninfer::FinishReason reason) {
 }
 
 Json tool_call_parse_json(const ninfer::ToolCallParseDiagnostics& diagnostics) {
-    Json parse{{"marker_seen", diagnostics.marker_seen},
-               {"structured_call_count", diagnostics.structured_call_count},
-               {"empty_arguments_omitted", diagnostics.empty_arguments_omitted},
-               {"schema_mismatch_arguments", diagnostics.schema_mismatch_arguments},
-               {"fallback_reason",
-                ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason)}};
-    // The reason alone cannot tell a model that misspelled a declared tool from one that invented a
-    // tool, and those need opposite responses, so the subject belongs in the machine-readable record
-    // too. `rejected_tool_name` is set only when it is already a valid tool name and the length only
-    // when it is not, which is what keeps generated markup out of both records.
-    if (!diagnostics.rejected_tool_name.empty()) {
-        parse["rejected_tool_name"] = diagnostics.rejected_tool_name;
-        if (!diagnostics.rejected_tool_near_match.empty()) {
-            parse["rejected_tool_near_match"] = diagnostics.rejected_tool_near_match;
-        }
-    } else if (diagnostics.rejected_tool_name_length != 0) {
-        parse["rejected_tool_name_length"] = diagnostics.rejected_tool_name_length;
-    }
-    return parse;
+    return Json{{"marker_seen", diagnostics.marker_seen},
+                {"structured_call_count", diagnostics.structured_call_count},
+                {"empty_arguments_omitted", diagnostics.empty_arguments_omitted},
+                {"schema_mismatch_arguments", diagnostics.schema_mismatch_arguments},
+                {"fallback_reason",
+                 ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason)}};
 }
 
 std::string tool_choice_name(const ToolChoice& choice) {
@@ -132,6 +114,22 @@ std::string tool_choice_name(const ToolChoice& choice) {
 Json requested_reasoning_effort_json(const std::optional<RequestedReasoningEffort>& requested) {
     return requested ? Json(std::string(requested_reasoning_effort_name(*requested)))
                      : Json(nullptr);
+}
+
+const char* kv_cache_name(ninfer::KvCacheStorage storage) {
+    switch (storage) {
+    case ninfer::KvCacheStorage::BFloat16:
+        return "bf16";
+    case ninfer::KvCacheStorage::Int8Group64:
+        return "int8-group64";
+    case ninfer::KvCacheStorage::Fp8E4M3Row256:
+        return "fp8-e4m3-row256";
+    case ninfer::KvCacheStorage::Nvfp4Group16:
+        return "nvfp4";
+    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
+        return "k8v4";
+    }
+    return "unknown";
 }
 
 const char* kv_capacity_mode_name(ninfer::KvCapacityMode mode) {
@@ -563,7 +561,7 @@ std::string format_server_start_json(
              {"pending_timeout_ms", engine_options.pending_timeout_ms},
              {"prefill_chunk", engine_options.prefill_chunk},
              {"log_stats_interval_ms", options.log_stats_interval_ms},
-             {"kv_cache", kv_storage_name(engine_options.kv_cache)},
+             {"kv_cache", kv_cache_name(engine_options.kv_cache)},
              {"vision", engine_options.enable_vision},
              {"cuda_graph", engine_options.use_cuda_graph},
              {"prefix_reuse", options.allow_prefix_reuse},
@@ -588,6 +586,7 @@ std::string format_server_start_json(
              {"server_overrides", overrides_json(options.sampling_overrides)},
              {"omitted_seed", "random"},
              {"greedy", options.greedy}};
+    const auto graph = memory.cuda_graph.value_or(ninfer::GraphMemorySummary{});
     record["memory"] =
         Json{{"weights", arena_json(memory.weights)},
              {"device_budget_bytes", memory.device_budget_bytes},
@@ -602,7 +601,11 @@ std::string format_server_start_json(
              {"available_after_startup_bytes", memory.available_after_startup_bytes},
              {"kv_capacity_headroom_bytes", memory.kv_capacity_headroom_bytes},
              {"planned_slack_bytes", memory.planned_slack_bytes},
-             {"cuda_graph_allowance_bytes", memory.cuda_graph_allowance_bytes},
+             {"cuda_graph_rebuild_estimate_bytes", graph.rebuild_estimate_bytes},
+             {"cuda_graph_prepare_increment_bytes", graph.preparation_increment_bytes},
+             {"cuda_graph_calibration_increment_bytes", graph.calibration_increment_bytes},
+             {"cuda_graph_calibration_retained_bytes", graph.calibration_retained_bytes},
+             {"startup_retained_bytes", memory.startup_retained_bytes},
              {"kv_payload_bytes", memory.kv_payload_bytes},
              {"host_context_capacity_bytes", memory.host_context_capacity_bytes},
              {"host_context_occupied_bytes", memory.host_context_occupied_bytes},

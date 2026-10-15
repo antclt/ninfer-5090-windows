@@ -1,5 +1,4 @@
 #include "options.h"
-#include "product/logging/console_code_page.h"
 #include "product/logging/logging.h"
 #include "product/logging/pretty_format.h"
 #include "product/logging/startup_log.h"
@@ -7,7 +6,6 @@
 #include "product/speculative_options.h"
 
 #include "ninfer/engine.h"
-#include "ninfer/kv_storage.h"
 
 #include <cstdint>
 #include <exception>
@@ -18,16 +16,8 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include <spdlog/logger.h>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace {
 
@@ -82,6 +72,22 @@ std::string format_finish(ninfer::FinishReason reason) {
         return "stop-string";
     case ninfer::FinishReason::Cancelled:
         return "cancelled";
+    }
+    return "unknown";
+}
+
+std::string format_kv_cache(ninfer::KvCacheStorage storage) {
+    switch (storage) {
+    case ninfer::KvCacheStorage::BFloat16:
+        return "bf16";
+    case ninfer::KvCacheStorage::Int8Group64:
+        return "int8-group64";
+    case ninfer::KvCacheStorage::Fp8E4M3Row256:
+        return "fp8-e4m3-row256";
+    case ninfer::KvCacheStorage::Nvfp4Group16:
+        return "nvfp4";
+    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
+        return "k8v4";
     }
     return "unknown";
 }
@@ -172,8 +178,11 @@ void print_generation_summary(const ninfer::GenerationResult& result,
     print_metric("throughput (overall)",
                  format_rate(static_cast<double>(generated), model_seconds));
 
-    const std::uint64_t reserved = static_cast<std::uint64_t>(memory.weights.capacity_bytes) +
-                                   memory.runtime_reservation_bytes;
+    const std::uint64_t reserved =
+        static_cast<std::uint64_t>(memory.weights.capacity_bytes) +
+        memory.runtime_reservation_bytes +
+        memory.cuda_graph.value_or(ninfer::GraphMemorySummary{}).rebuild_estimate_bytes +
+        static_cast<std::size_t>(std::max<std::int64_t>(0, memory.startup_retained_bytes));
     print_metric("device", std::to_string(memory.device));
     print_metric("max context", std::to_string(memory.max_context));
     print_metric("prefill chunk", std::to_string(memory.prefill_chunk));
@@ -194,7 +203,7 @@ void print_generation_summary(const ninfer::GenerationResult& result,
         print_metric("expert CPU workers", std::to_string(memory.moe->cpu_workers));
     }
     print_metric("gpu sequence used", format_arena_used(memory.sequence));
-    print_metric("kv cache dtype", ninfer::kv_storage_name(memory.kv_cache));
+    print_metric("kv cache dtype", format_kv_cache(memory.kv_cache));
     print_metric("kv cache payload", format_bytes(memory.kv_payload_bytes));
     print_metric("gpu workspace peak", format_arena_peak(memory.workspace));
     print_metric("runtime reservation", format_bytes(memory.runtime_reservation_bytes));
@@ -202,7 +211,17 @@ void print_generation_summary(const ninfer::GenerationResult& result,
     print_metric("free after startup", format_bytes(memory.available_after_startup_bytes));
     print_metric("KV capacity headroom", format_bytes(memory.kv_capacity_headroom_bytes));
     print_metric("planned slack", format_bytes(memory.planned_slack_bytes));
-    print_metric("CUDA Graph allowance", format_bytes(memory.cuda_graph_allowance_bytes));
+    if (memory.cuda_graph) {
+        print_metric("graph rebuild estimate",
+                     format_bytes(memory.cuda_graph->rebuild_estimate_bytes));
+        print_metric("graph prepare increment",
+                     std::to_string(memory.cuda_graph->preparation_increment_bytes) + " B");
+        print_metric("graph calibration growth",
+                     std::to_string(memory.cuda_graph->calibration_increment_bytes) + " B");
+        print_metric("graph calibration retained",
+                     std::to_string(memory.cuda_graph->calibration_retained_bytes) + " B");
+    }
+    print_metric("startup retained", std::to_string(memory.startup_retained_bytes) + " B");
     print_metric("planned device total", format_bytes(reserved));
 
     const ninfer::SpeculativeStats& speculative = result.speculative;
@@ -231,35 +250,12 @@ void print_generation_summary(const ninfer::GenerationResult& result,
             }
             print_metric(backend + " accepted by pos", positions.str());
         }
-        if (!speculative.proposed_per_position.empty()) {
-            const auto rate_by_pos = [&](const std::vector<std::uint64_t>& hits) {
-                std::ostringstream rates;
-                for (std::size_t i = 0; i < speculative.proposed_per_position.size(); ++i) {
-                    if (i != 0) { rates << ','; }
-                    rates << format_percent(i < hits.size() ? hits[i] : 0,
-                                            speculative.proposed_per_position[i]);
-                }
-                return rates.str();
-            };
-            print_metric(backend + " recall@1 by pos", rate_by_pos(speculative.recall1_per_position));
-            print_metric(backend + " recall@16 by pos",
-                         rate_by_pos(speculative.recall16_per_position));
-            print_metric(backend + " path acceptance by pos",
-                         rate_by_pos(speculative.accepted_per_position));
-        }
     }
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-#ifdef _WIN32
-    // The application manifest sets the *process* code page, which covers the narrow APIs, argv and file
-    // names; it does not touch the console, so a console whose code page is not UTF-8 still renders this
-    // program's bytes its own way. This is the guard that changes the console itself and restores it;
-    // cmake/windows-utf8.manifest carries the measurement and the reason.
-    const ninfer::product::ConsoleOutputCodePage console_code_page;
-#endif
     ninfer::cli::Options cli;
     try {
         cli = ninfer::cli::parse_options(argc, argv);

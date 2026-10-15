@@ -1,4 +1,5 @@
 #include "models/qwen3_5/program/internal.h"
+#include "core/startup.h"
 #include "models/qwen3_5/frontend/prepared_prompt.h"
 #include "models/qwen3_5/program/planning/startup.h"
 #include "models/qwen3_5/program/program_impl.h"
@@ -126,15 +127,6 @@ RequestBasePlan Program::plan_request(PreparedPrompt&& prompt,
 
 std::vector<float> Program::causal_score(PreparedPrompt&& prompt, std::uint32_t target) {
     return impl_->causal_score(PreparedPromptAccess::take(std::move(prompt)), target);
-}
-
-// Port forwarder: upstream b9114396 has no top-k causal scoring at all. ProgramImpl's
-// causal_score_topk is the port's instrument for per-domain KL against a reference that cannot
-// be resident on this machine (Qwen3.8-27B is 51.75 GiB of BF16 against a 31.85 GiB card).
-CausalTopk Program::causal_score_topk(PreparedPrompt&& prompt, std::uint32_t first_target,
-                                      std::int32_t k) {
-    return impl_->causal_score_topk(PreparedPromptAccess::take(std::move(prompt)), first_target,
-                                     k);
 }
 
 std::optional<SourceCandidate>
@@ -314,7 +306,7 @@ SequencePlanner make_sequence_planner(const execution::Parameters& parameters,
 
 SequencePlanner make_sequence_planner(std::shared_ptr<const execution::ModelProfile> profile,
                                       DeviceContext& device, const EngineOptions& options,
-                                      std::shared_ptr<const detail::MoePlan> moe) {
+                                      std::shared_ptr<const moe::Plan> moe) {
     return SequencePlanner(
         detail::make_sequence_planner_impl(std::move(profile), device, options, std::move(moe)));
 }
@@ -331,6 +323,11 @@ std::unique_ptr<Program> create_program(const execution::Parameters& parameters,
     }
     auto impl =
         std::make_unique<detail::ProgramImpl>(parameters, *plan.impl_, device, startup_observer);
+    if (plan.impl_->use_cuda_graph) {
+        StartupPhaseScope phase(startup_observer, StartupPhase::CudaGraphPrepare);
+        impl->initialize_graphs();
+        phase.complete();
+    }
     plan.impl_.reset();
     return std::unique_ptr<Program>(new Program(std::move(impl)));
 }

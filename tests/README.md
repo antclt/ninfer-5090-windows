@@ -17,6 +17,9 @@ ownership contracts are defined in [Engine architecture](../docs/maintainer/engi
   Linear and fused Linear suites are separated by their supported weight/activation paths;
 - `runtime/` — scheduler fairness, cache resource policy, capacity and context-cost calculations;
 - `cpu/` — topology/ISA, bounded task admission, bound collectives, publication and shutdown;
+- `io/` — bounded direct reads, partial submission, completion, wakeup and borrowed-buffer lifetime;
+- `models/qwen4_exp/ple/` — PLE disk binding, exact hash/NF4 reconstruction, incremental windows,
+  cancellation and Host/CUDA buffer lifetimes;
 - `bench/ttft/` — HTTP measurements, campaign orchestration and workload construction;
 - root C++ tests — core storage, public API, serving protocols, logging, benchmark reports and
   causal-scoring evaluation;
@@ -63,6 +66,16 @@ After building, `ctest --preset dev` runs the same CTest suite. See
 [Build system](../docs/maintainer/build-system.md) for local interpreter presets.
 
 The chat-template reference test uses Python Jinja2.
+
+PLE reading foundations run with
+`ctest --test-dir build -R 'ninfer_(nf4|read_queue|artifact_backing|ple_(disk|upload))' --output-on-failure`.
+The NF4 oracle uses exact Python fractions. The PLE fixture includes a row split across three files.
+`ninfer_ple_upload_test` checks exact Host-to-Device E and slot retirement using a direct Host
+producer, without a table or disk service. Disk preparation tests separately cover their composition.
+These tests use small synthetic files to check addressing, decoded values and queue lifecycle.
+Real-weight I/O throughput measurements belong to separate, explicitly selected benchmarks.
+The Host preparation test runs without visible CUDA devices. The GPU test delays upload/consumption,
+injects event-record failures and checks graph consumption against independently reconstructed E.
 
 CPU foundation tests link only the C++ `ninfer_cpu` target and need no GPU:
 `ctest --test-dir build -R '^ninfer_cpu_.*_test$' --output-on-failure`.
@@ -149,6 +162,10 @@ HC suites qualify the public [gated residual forms](../include/ninfer/ops/gated_
 including Mix, using [family-owned criteria](ops/gated_residual/criteria.h). Exact copying and
 mathematical outputs retain their respective references and the public BF16 residual boundary.
 
+PLE GPU Ops run with `ctest --test-dir build -R '^ninfer_ple_(gate|conv|state_extract)_test$'`.
+Gate uses an independent FP64 oracle for U and norm(actual BF16 U), including strided projections,
+record windows, masks, Graph replay and the Conv/StateExtract handoff. These tests perform no file I/O.
+
 Linear tests are independently runnable by weight and activation-compute profile:
 
 ```bash
@@ -210,29 +227,44 @@ NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
   ctest --test-dir build -R ninfer_qwen3_5_score_real_test --output-on-failure
 ```
 
-`ninfer_moe_test` qualifies routing, complete MoE and routed SwiGLU.
+`ninfer_moe_test` qualifies the integer routing, complete MoE and routed SwiGLU profiles.
+`ninfer_moe_block_scaled_test` qualifies NVFP4 A4 and block-FP8 A8/G128 experts with BF16
+control/shared and small-token A16 routes. It uses independent FP64 formulas and encoded-weight
+decoders, covering per-expert divisors, K128 scales, zero groups, affine/indexed banks, masks,
+changed Graph contents, private route boundaries and workspace guards. Optional `nvfp4` or `fp8`
+arguments select one format; CTest runs both.
 `ninfer_sum_contributions_test` covers FP32 partial summation with optional BF16 residual.
 Their independent FP64 oracles start from represented inputs and decoded logical weights. The MoE
 suite covers the resident codec profiles, FP32/BF16 outputs, residual modes, expert masks, strided/indexed
 banks, empty GPU assignments, Graph relocation and workspace guards. The complete MoE retains
 its existing numerical samples and criteria.
 
-`ninfer_moe_cpu_test` qualifies Q4+Q5/Q6 CPU routed SwiGLU against decoded-input FP64 mathematics,
+`ninfer_moe_cpu_groupwise_int_test` qualifies Q4+Q5/Q6 CPU routed SwiGLU against decoded-input
+FP64 mathematics,
 using an FP32 forward-error budget for dot products, SiLU, multiplication and weighted reduction.
-`ninfer_moe_cpu_avx2_test` and `ninfer_moe_cpu_fma_test` use the same public entry and oracle with
+`ninfer_moe_cpu_groupwise_int_avx2_test` and `ninfer_moe_cpu_groupwise_int_fma_test` use the same
+public entry and oracle with
 restricted test-only dispatch. All three run with CUDA devices hidden. They cover mask/None
 semantics, arbitrary token tails through T=72, affine and strided parent banks, workspace and alias
 checks, signed code domains, scale extremes and tiny-BF16 cancellation around the BF16-dot guard.
+`ninfer_moe_cpu_nvfp4_test` and its `_avx2`/`_fma` variants qualify native NVFP4 banks against
+independent FP64 mathematics, including scale swizzles, per-expert divisors, masked metadata,
+column and chunk tails, full-precision products and tiny inputs. These CPU tests do not load
+model files or use GPU memory.
 `ninfer_moe_test` also qualifies complementary CPU/GPU subsets plus GPU shared/residual composition.
 
-`ninfer_qwen3_5_moe_execution_test` qualifies single-layer mixed execution and the Program's
+`ninfer_moe_execution_test` qualifies the shared single-layer execution and the Program-owned
 multi-layer fixed-cache and streaming-window schedule against the same independent complete-MoE oracle. It uses registered native Host banks and the real ExpertCache,
-covering absent CPU-only replicas, explicit region replacement, All/None/partial partitions, variable frame
-reuse through T=1024, delayed bridge progress, failed acquisition and asynchronous teardown.
+covering Write/AddResidual outputs, absent CPU-only replicas, explicit region replacement,
+All/None/partial partitions, bank IDs independent of traversal order, variable frame reuse through
+T=1024, delayed bridge progress, failed acquisition and asynchronous teardown. Eager and segmented
+Graph handoffs use the same oracle; Graph cases also cover expert relocation and streaming-window
+transitions through the real cache schedule. The compact Graph calibration storage also runs
+All/None/partial contributions against the same oracle while reusing one bank window.
 
 ```bash
-ctest --test-dir build -R '^ninfer_moe(_cpu(_avx2|_fma)?)?_test$' --output-on-failure
-ctest --test-dir build -R '^ninfer_qwen3_5_moe_execution_test$' --output-on-failure
+ctest --test-dir build -R '^ninfer_moe(_block_scaled|_cpu_(groupwise_int|nvfp4)(_avx2|_fma)?)?_test$' --output-on-failure
+ctest --test-dir build -R '^ninfer_moe_execution_test$' --output-on-failure
 ```
 
 Run the 35B-A3B MoE route independently:
@@ -243,10 +275,11 @@ NINFER_TEST_ARTIFACT=$PWD/out/qwen3_6_35b_a3b.ninfer \
 ```
 
 `ninfer_qwen3_5_moe_offload_real_test` uses the same artifact with a 16 GiB Device budget and
-eager execution. It covers MTP, prefix reuse, Vision, per-layer expert priorities,
+segmented CUDA Graph execution (`NINFER_TEST_EAGER=1` selects eager). It covers MTP, prefix reuse, Vision, per-layer expert priorities,
 eight resident rows, and stable small-T cache reuse. The DFlash and
 preemption real tests also accept `NINFER_TEST_EAGER=1`; combine it with
-`NINFER_VRAM_BUDGET_MIB` to exercise offload. CausalScoring always uses eager execution.
+`NINFER_VRAM_BUDGET_MIB` to exercise eager offload, or set only the budget for Graph offload.
+CausalScoring always uses eager execution.
 
 Without `NINFER_TEST_ARTIFACT`, CTest marks these real Engine tests as skipped. Real-artifact targets
 carry the `real` label and `RUN_SERIAL` so CTest runs them alone. Run directly invoked GPU

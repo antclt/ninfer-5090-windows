@@ -73,7 +73,7 @@ struct WorkspacePlan {
 
 struct SequencePlanningInputs {
     std::shared_ptr<const execution::ModelProfile> profile;
-    std::shared_ptr<const MoePlan> moe;
+    std::shared_ptr<const moe::Plan> moe;
     std::uint32_t capacity                 = 0;
     std::uint32_t max_concurrency          = 1;
     std::uint32_t prefill_chunk            = 0;
@@ -90,7 +90,7 @@ struct SequencePlanningInputs {
 
 struct SequencePlanImpl {
     std::shared_ptr<const execution::ModelProfile> profile;
-    std::shared_ptr<const MoePlan> moe;
+    std::shared_ptr<const moe::Plan> moe;
     std::uint32_t capacity                 = 0;
     std::uint32_t kv_capacity              = 0;
     std::uint32_t main_page_groups         = 0;
@@ -107,7 +107,7 @@ struct SequencePlanImpl {
     ContextCacheOptions context_cache;
     PersistentLayout persistent;
     WorkspacePlan workspace;
-    std::size_t graph_allowance_bytes    = 0;
+    bool graph_probe                     = false;
     std::size_t device_reservation_bytes = 0;
 };
 
@@ -120,9 +120,13 @@ struct SequencePlannerImpl {
 [[nodiscard]] std::unique_ptr<qwen3_5::detail::SequencePlannerImpl>
 make_sequence_planner_impl(std::shared_ptr<const execution::ModelProfile> profile,
                            DeviceContext& device, const EngineOptions& options,
-                           std::shared_ptr<const MoePlan> moe = {});
+                           std::shared_ptr<const moe::Plan> moe = {});
 [[nodiscard]] std::unique_ptr<SequencePlanImpl>
 finalize_sequence_plan_impl(std::unique_ptr<qwen3_5::detail::SequencePlannerImpl> planner,
                             std::uint32_t main_page_groups);
+
+[[nodiscard]] std::unique_ptr<SequencePlanImpl>
+make_graph_probe_plan(std::shared_ptr<const execution::ModelProfile>, DeviceContext&,
+                      const EngineOptions&, std::shared_ptr<const moe::Plan>);
 
 } // namespace ninfer::models::qwen3_5::detail

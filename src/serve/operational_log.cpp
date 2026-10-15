@@ -2,7 +2,6 @@
 
 #include "product/logging/pretty_format.h"
 #include "product/speculative_options.h"
-#include "ninfer/kv_storage.h"
 
 #include <spdlog/logger.h>
 
@@ -112,6 +111,22 @@ const char* protocol_name(std::string_view protocol) noexcept {
     return "http";
 }
 
+const char* kv_cache_name(ninfer::KvCacheStorage storage) noexcept {
+    switch (storage) {
+    case ninfer::KvCacheStorage::BFloat16:
+        return "bf16";
+    case ninfer::KvCacheStorage::Int8Group64:
+        return "int8";
+    case ninfer::KvCacheStorage::Fp8E4M3Row256:
+        return "fp8";
+    case ninfer::KvCacheStorage::Nvfp4Group16:
+        return "nvfp4";
+    case ninfer::KvCacheStorage::Fp8KeyNvfp4Value:
+        return "k8v4";
+    }
+    return "unknown";
+}
+
 const char* kv_capacity_mode_name(ninfer::KvCapacityMode mode) noexcept {
     return mode == ninfer::KvCapacityMode::Automatic ? "auto" : "explicit";
 }
@@ -174,39 +189,9 @@ OperationalRecord render_request_start(const RequestLogContext& context) {
     }
     if (context.media_item_count != 0) {
         append_counted_clause(out, "media", context.media_item_count);
-    }
-    // Preparation is host-side prompt work on every request, media or not: building the tool-call
-    // contract, converting the messages, rendering the chat template, tokenizing the whole
-    // conversation and planning the context-cache request. It is O(history) per turn while the
-    // engine reuses only the tail, so it is reported unconditionally and split into its host phases
-    // in the order they run -- a media-only field hid it, and a growing conversation's time to
-    // first token is not attributable while "not tokenization" is one unmeasured term. A request
-    // with media renders inside the processor and reports that component's own tokenize and
-    // media-preprocess timings instead, so `render` and `positions` are absent for it.
-    if (context.preparation.seconds > 0.0) {
-        std::string clause =
-            "prepared " + product::format_pretty_duration(context.preparation.seconds);
-        const auto phase = [&clause](std::string_view name, double seconds) {
-            if (seconds > 0.0) {
-                clause += ", " + std::string(name) + " " + product::format_pretty_duration(seconds);
-            }
-        };
-        // The phases run in this order, and each is printed only when it ran. There is deliberately
-        // no `prepare` phase: `seconds` is the total, `prepared` already states it, and emitting it
-        // again printed the same figure twice on every started line.
-        //
-        // `render` and `positions` are absent for a request with media, which renders inside the
-        // processor and reports that component's own timings instead; the field is zero, and the
-        // `phase` lambda prints a phase only when it ran.
-        phase("contract", context.preparation.contract_seconds);
-        phase("convert", context.preparation.convert_seconds);
-        phase("render", context.preparation.render_seconds);
-        phase("tokenize", context.preparation.tokenize_seconds);
-        phase("positions", context.preparation.positions_seconds);
-        phase("cache prep", context.preparation.context_cache_seconds);
-        phase("media preprocess", context.preparation.media_preprocess_seconds);
-        phase("media work", context.preparation.media_preprocess_work_seconds);
-        append_clause(out, clause);
+        if (context.preparation.seconds > 0.0) {
+            out << ", prepared " << product::format_pretty_duration(context.preparation.seconds);
+        }
     }
     if (context.tool_count != 0) { append_counted_clause(out, "tools", context.tool_count); }
     if (context.preserve_thinking == true) { append_clause(out, "preserve thinking"); }
@@ -299,28 +284,16 @@ OperationalRecord render_request_done(const RequestLogContext& context,
 
 std::optional<OperationalRecord> render_tool_call_fallback(const RequestLogContext& context,
                                                            const GenerationOutcome& outcome) {
-    const ninfer::ToolCallParseDiagnostics& diagnostics = outcome.tool_call_parse;
-    if (!diagnostics.marker_seen ||
-        diagnostics.fallback_reason == ninfer::ToolCallParseFallbackReason::None) {
+    const ninfer::ToolCallParseFallbackReason reason = outcome.tool_call_parse.fallback_reason;
+    if (!outcome.tool_call_parse.marker_seen ||
+        reason == ninfer::ToolCallParseFallbackReason::None) {
         return std::nullopt;
     }
-    std::ostringstream out;
-    out << "req#" << context.id << " tool markup returned as text | "
-        << pretty_code(ninfer::tool_call_parse_fallback_reason_name(diagnostics.fallback_reason));
-    // The reason alone cannot tell a model that misspelled a declared name from one that invented a
-    // tool, and those need opposite responses, so the subject travels with it. Only an identifier is
-    // quoted; anything else is reported as a length, which keeps model text out of the log.
-    if (!diagnostics.rejected_tool_name.empty()) {
-        out << " | emitted \"" << diagnostics.rejected_tool_name << '\"';
-        if (!diagnostics.rejected_tool_near_match.empty()) {
-            out << ", declared \"" << diagnostics.rejected_tool_near_match
-                << "\" differs only by case";
-        }
-    } else if (diagnostics.rejected_tool_name_length != 0) {
-        out << " | " << diagnostics.rejected_tool_name_length
-            << " characters were not a valid tool name";
-    }
-    return OperationalRecord{.severity = OperationalSeverity::Warning, .message = out.str()};
+    return OperationalRecord{
+        .severity = OperationalSeverity::Warning,
+        .message  = "req#" + std::to_string(context.id) + " tool markup returned as text | " +
+                   pretty_code(ninfer::tool_call_parse_fallback_reason_name(reason)),
+    };
 }
 
 OperationalRecord render_request_failure(const RequestLogContext& context,
@@ -469,7 +442,7 @@ void OperationalLog::engine_capacity(const GenerationService& service) const {
     const ninfer::ContextCostSummary context_cost = service.load_summary().context_cost;
 
     logger_->info("capacity | KV {} tokens, {}, {} | pages {}/{} | runtime {} | free {}",
-                  product::format_pretty_count(memory.kv_capacity), kv_storage_name(memory.kv_cache),
+                  product::format_pretty_count(memory.kv_capacity), kv_cache_name(memory.kv_cache),
                   kv_capacity_mode_name(memory.kv_capacity_mode),
                   product::format_pretty_count(memory.kv_capacity_page_groups),
                   product::format_pretty_count(memory.kv_capacity_max_page_groups),
@@ -487,13 +460,19 @@ void OperationalLog::engine_capacity(const GenerationService& service) const {
                       product::format_pretty_bytes(media.live_capacity_bytes));
     }
 
-    logger_->debug("memory ledger | after weights {} | after startup {} | headroom {} | slack {} | "
-                   "CUDA graphs {}",
-                   product::format_pretty_bytes(memory.available_after_weights_bytes),
-                   product::format_pretty_bytes(memory.available_after_startup_bytes),
-                   product::format_pretty_bytes(memory.kv_capacity_headroom_bytes),
-                   product::format_pretty_bytes(memory.planned_slack_bytes),
-                   product::format_pretty_bytes(memory.cuda_graph_allowance_bytes));
+    const auto graph = memory.cuda_graph.value_or(ninfer::GraphMemorySummary{});
+    logger_->debug(
+        "memory ledger | after weights {} | after startup {} | headroom {} | slack {} | "
+        "graph rebuild estimate {} | graph preparation increment {} B | "
+        "graph calibration increment {} B | graph calibration retained {} B | startup retained {} "
+        "B",
+        product::format_pretty_bytes(memory.available_after_weights_bytes),
+        product::format_pretty_bytes(memory.available_after_startup_bytes),
+        product::format_pretty_bytes(memory.kv_capacity_headroom_bytes),
+        product::format_pretty_bytes(memory.planned_slack_bytes),
+        product::format_pretty_bytes(graph.rebuild_estimate_bytes),
+        graph.preparation_increment_bytes, graph.calibration_increment_bytes,
+        graph.calibration_retained_bytes, memory.startup_retained_bytes);
     logger_->debug("context cost | transfer {} | prefill {} | hardware {} | prefill signature {}",
                    ninfer::context_cost_preset_source_name(context_cost.transfer_source),
                    ninfer::context_cost_preset_source_name(context_cost.prefill_source),
@@ -536,10 +515,6 @@ void OperationalLog::server_stopped() const { logger_->info("server stopped"); }
 void OperationalLog::server_failure(bool serving, std::string_view detail) const {
     logger_->critical("server failed during {} | {}", serving ? "serving" : "startup",
                       product::format_pretty_text(detail));
-}
-
-void OperationalLog::engine_failure() const {
-    logger_->critical("engine failed | exiting with code 3 (restart required)");
 }
 
 } // namespace ninfer::serve

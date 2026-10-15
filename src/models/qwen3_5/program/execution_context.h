@@ -1,5 +1,5 @@
 #pragma once
-#include "models/qwen3_5/program/moe_resources.h"
+#include "models/common/moe/resources.h"
 #include "models/qwen3_5/program/internal.h"
 
 #include "core/arena.h"
@@ -25,6 +25,8 @@
 
 namespace ninfer::models::qwen3_5::execution {
 
+class TextGraphRun;
+
 using qwen3_5::PreparedPromptData;
 using detail::DFlashPersistentState;
 using qwen3_5::PromptModality;
@@ -34,7 +36,7 @@ struct ExecutionCore {
                   LinearAttentionStatePool& linear_attention,
                   const GdnReplayRecords* replay_records, qwen3_5::RoundState& io,
                   Tensor& prefill_hidden, std::uint32_t prefill_chunk, ProposalHead proposal_head,
-                  detail::MoeResources* moe = nullptr)
+                  moe::Resources* moe = nullptr)
         : device(device), cuda(device.execution_view()), parameters(parameters), work(work),
           linear_attention(linear_attention), replay_records(replay_records), io(io),
           prefill_hidden(prefill_hidden), prefill_chunk(prefill_chunk),
@@ -50,7 +52,8 @@ struct ExecutionCore {
     Tensor& prefill_hidden;
     std::uint32_t prefill_chunk;
     ProposalHead proposal_head;
-    detail::MoeResources* moe;
+    moe::Resources* moe;
+    TextGraphRun* text_graph = nullptr;
 };
 
 struct PrefillContext {
@@ -145,7 +148,9 @@ struct TargetVerifyFrameView {
     DFlashFeatureSink* feature_sink        = nullptr;
 };
 
-void configure_text_card(TextContext& card, const ExecutionCore& execution);
+void configure_text_card(TextContext& card, const ExecutionCore& execution,
+                        const ops::SamplingConfig* sampling = nullptr, std::int32_t state_source_slot = 0,
+                        std::int32_t state_destination_slot = 0, std::uint32_t mtp_proposal_extent = 0);
 void target_verify_forward(TextContext&, TargetVerifyFrameView,
                            ops::CausalAttentionExecutionEnvelope);
 void target_accept(ExecutionCore&, Tensor& continuation_hidden_store, TargetVerifyFrameView);

@@ -6,11 +6,12 @@ download an artifact using the [project README](../README.md) before following t
 The examples use Qwen3.8-27B NVFP4 with FP8 KV storage.
 
 For Qwen3.6-35B-A3B, `NINFER_VRAM_BUDGET_MIB` caps the Engine's GPU allocation budget. If the
-model cannot remain fully on GPU, Main MoE experts use CPU/GPU eager execution:
+model cannot remain fully on GPU, Main MoE experts use CPU/GPU execution with segmented CUDA
+Graph decode:
 
 ```bash
 NINFER_VRAM_BUDGET_MIB=16384 ./build/apps/ninfer out/qwen3_6_35b_a3b.ninfer \
-  --no-cuda-graph --prompt "Explain how a compiler works." --max-context 8192 --max-new 128
+  --prompt "Explain how a compiler works." --max-context 8192 --max-new 128
 ```
 
 `--prefill-chunk N` sets a fixed positive multiple of 128. When omitted, the default is 1024 for
@@ -332,16 +333,18 @@ The artifact describes its model configuration and weight representations;
 the 64-token page size. Startup plans the selected weights and complete enabled runtime layout
 from artifact metadata before allocating their backing. With resident weights,
 `--kv-capacity auto` chooses the largest legal page capacity within the available Device budget,
-including the selected speculative backend, fixed sequence state, unified workspace and CUDA
-Graph allowance, while leaving the default 1 GiB automatic headroom unallocated. With CPU expert
+including the selected speculative backend, fixed sequence state, unified workspace and
+measured CUDA Graph rebuilding cost, using 1 GiB of automatic headroom as a planning margin. Startup
+calibration releases its temporary storage before sizing the final pools; retained driver memory
+is already included in the remaining free memory. With CPU expert
 offload, `auto` reserves one full context and assigns the remaining budget to expert storage;
-set an explicit capacity when more shared KV is needed. Startup does not probe allocations or
-resize the pool at request time. The single-request
+set an explicit capacity when more shared KV is needed. Graph calibration runs only at startup;
+the pool stays fixed while serving requests. The single-request
 CLI normally leaves the option omitted so it follows
 `--max-context`; the distinction matters primarily to a concurrent Engine or server.
 
 At Engine startup NInfer reserves model weights, persistent sequence state, one phase-reused
-Program workspace, and a separate CUDA Graph driver allowance. With Vision enabled, that one
+Program workspace, and CUDA Graph resources sized through calibration. With Vision enabled, that one
 workspace contains a general execution prefix and a fixed item-output handoff region. Vision encode
 may reuse the full backing before producing the output; Text/MTP/decode work remains inside the
 general prefix while the handoff is live. The capacity is therefore the maximum legal simultaneous

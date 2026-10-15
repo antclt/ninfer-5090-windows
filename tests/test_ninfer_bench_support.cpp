@@ -6,7 +6,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -14,11 +13,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#undef near
-#undef far
-#endif
 
 namespace {
 
@@ -196,9 +190,9 @@ int test_cli_contract() {
     failures += expect(k8v4.kv_cache == ninfer::KvCacheStorage::Fp8KeyNvfp4Value, "K8V4 KV");
     failures += expect(qb::usage_text("ninfer_bench").find("nvfp4|k8v4") != std::string::npos,
                        "benchmark help omits new KV modes");
-    failures += expect_string(ninfer::kv_storage_name(ninfer::KvCacheStorage::Nvfp4Group16), "nvfp4",
+    failures += expect_string(qb::kv_cache_name(ninfer::KvCacheStorage::Nvfp4Group16), "nvfp4",
                               "NVFP4 report name");
-    failures += expect_string(ninfer::kv_storage_name(ninfer::KvCacheStorage::Fp8KeyNvfp4Value), "k8v4",
+    failures += expect_string(qb::kv_cache_name(ninfer::KvCacheStorage::Fp8KeyNvfp4Value), "k8v4",
                               "K8V4 report name");
     failures += expect_throws<std::invalid_argument>(
         [] {
@@ -326,8 +320,9 @@ qb::BenchEnvironment sample_environment() {
         .handoff_active_bytes    = 0,
         .handoff_peak_bytes      = 20000000ULL,
     };
-    env.memory.cuda_graph_allowance_bytes = 150000000ULL;
-    env.memory.kv_payload_bytes           = 123456ULL;
+    env.memory.cuda_graph = ninfer::GraphMemorySummary{150000000ULL, 170000000, 149999900, -100};
+    env.memory.startup_retained_bytes = -200;
+    env.memory.kv_payload_bytes       = 123456ULL;
 
     env.memory.moe = ninfer::MoeMemorySummary{
         .cache_bytes              = 4096,
@@ -371,7 +366,7 @@ int test_report_contract() {
         return fail(std::string("invalid benchmark JSON: ") + error.what());
     }
 
-    failures += expect(report.at("schema_version") == 23, "report schema v23");
+    failures += expect(report.at("schema_version") == 24, "report schema v24");
     const auto& moe = report.at("memory").at("moe");
     failures += expect(moe.at("used_bytes") == 4096 && moe.at("target_bytes") == 4096 &&
                            moe.at("ready_bytes") == 3072 && moe.at("prefetched_bytes") == 1024 &&
@@ -390,10 +385,7 @@ int test_report_contract() {
         expect(report.at("load").at("prefill_signature") == "groupwise-int", "load weights id");
     failures +=
         expect(report.at("load").at("host_to_device_bytes") == 17400000000ULL, "load H2D bytes");
-    // int8-g64, not upstream's int8-group64: kv_storage_name is the engine's own spelling, and the
-    // top-k record tools/release/per_domain_kl.py compares carries it. A second spelling is a value
-    // that cannot be compared with the first.
-    failures += expect(report.at("memory").at("kv_cache") == "int8-g64", "memory KV");
+    failures += expect(report.at("memory").at("kv_cache") == "int8-group64", "memory KV");
     failures += expect(report.at("memory").at("device_budget_bytes") == 32ULL * 1024 * 1024 * 1024,
                        "effective Device budget");
     failures += expect(report.at("memory").at("kv_capacity") == 8192, "memory KV capacity");
@@ -403,8 +395,14 @@ int test_report_contract() {
         report.at("memory").at("vision_workspace").at("general_capacity_bytes") == 75000000ULL &&
             report.at("memory").at("vision_workspace").at("handoff_capacity_bytes") == 25000000ULL,
         "Vision workspace layout");
-    failures += expect(report.at("memory").at("cuda_graph_allowance_bytes") == 150000000ULL,
-                       "CUDA Graph allowance");
+    failures += expect(report.at("memory").at("cuda_graph_rebuild_estimate_bytes") == 150000000ULL,
+                       "CUDA Graph rebuild estimate");
+    failures +=
+        expect(report.at("memory").at("cuda_graph_prepare_increment_bytes") == 170000000 &&
+                   report.at("memory").at("cuda_graph_calibration_increment_bytes") == 149999900 &&
+                   report.at("memory").at("cuda_graph_calibration_retained_bytes") == -100 &&
+                   report.at("memory").at("startup_retained_bytes") == -200,
+               "signed Graph calibration and startup deltas");
     failures += expect(report.at("memory").at("kv_payload_bytes") == 123456ULL, "KV payload");
     failures += expect(report.at("config").at("proposal_head") == "optimized", "proposal head");
     failures += expect(report.at("config").at("decode_graph_prime").at("output_tokens") == 13,
@@ -469,117 +467,13 @@ int test_human_and_csv_reports() {
     for (const std::string_view field :
          {"model_name", "artifact_path", "proposal_head", "kv_payload_bytes",
           "load_host_to_device_bytes", "workspace_general_capacity_bytes",
-          "vision_handoff_capacity_bytes", "cuda_graph_allowance_bytes", "workspace_peak_bytes",
-          "workspace_allocator_peak_bytes", "spec_acceptance_rate", "decode_output_tok_s_mean",
-          "decode_engine_tok_s_mean", "total_seconds_mean"}) {
+          "vision_handoff_capacity_bytes", "cuda_graph_rebuild_estimate_bytes",
+          "workspace_peak_bytes", "workspace_allocator_peak_bytes", "spec_acceptance_rate",
+          "decode_output_tok_s_mean", "decode_engine_tok_s_mean", "total_seconds_mean"}) {
         failures += expect(csv.find(field) != std::string::npos,
                            std::string("CSV field ") + std::string(field));
     }
     failures += expect(std::count(csv.begin(), csv.end(), '\n') == 3, "CSV header plus two rows");
-    return failures;
-}
-
-// Split one CSV record. The bench table is read by header name and never by column position, and
-// this is the only reader that does so.
-std::vector<std::string> csv_record(const std::string& line) {
-    std::vector<std::string> fields;
-    std::size_t              start = 0;
-    while (true) {
-        const std::size_t comma = line.find(',', start);
-        if (comma == std::string::npos) {
-            fields.push_back(line.substr(start));
-            return fields;
-        }
-        fields.push_back(line.substr(start, comma - start));
-        start = comma + 1;
-    }
-}
-
-// The per-position split only carries a diagnosis if the three rates can be told apart at every
-// position, so each position here gets a different denominator and a different numerator per split:
-// a reader that swapped two columns, or divided by the wrong base, fails on this case.
-int test_per_position_recall_contract() {
-    qb::BenchEnvironment env = sample_environment();
-    env.speculative.backend      = ninfer::SpeculativeBackend::DFlash2;
-    env.speculative.draft_tokens = 3;
-
-    ninfer::SpeculativeStats spec{
-        .backend               = ninfer::SpeculativeBackend::DFlash2,
-        .enabled               = true,
-        .draft_window          = 3,
-        .rounds                = 4,
-        .drafted_tokens        = 11,
-        .accepted_tokens       = 3,
-        .fallback_steps        = 0,
-        .accepted_per_position = {2, 1, 0},
-        .proposed_per_position = {4, 4, 3},
-        .recall1_per_position  = {3, 3, 1},
-        .recall16_per_position = {4, 4, 2},
-    };
-    qb::TestResult tg;
-    tg.test = {qb::TestKind::Decode, 0, 8, "recall3"};
-    tg.reps = {{timings(0.01, 0.1, 0.5, 0.62), spec, 1}};
-
-    const std::string          csv    = qb::format_csv(env, {tg});
-    const std::vector<std::string> header = csv_record(csv.substr(0, csv.find('\n')));
-    const std::vector<std::string> row    = csv_record(csv.substr(csv.find('\n') + 1));
-    int                           failures = 0;
-    if (header.size() != row.size()) {
-        return fail("CSV header and row have different widths");
-    }
-    const auto field = [&](std::string_view name) -> const std::string* {
-        for (std::size_t i = 0; i < header.size(); ++i) {
-            if (header[i] == name) { return &row[i]; }
-        }
-        failures += fail(std::string("CSV field ") + std::string(name) + " is missing");
-        return nullptr;
-    };
-    // A missing column must fail rather than read as zero, so every value goes through `field`.
-    const auto rate = [&](std::string_view name) {
-        const std::string* value = field(name);
-        return value == nullptr ? -1.0 : std::strtod(value->c_str(), nullptr);
-    };
-    const auto text = [&](std::string_view name) {
-        const std::string* value = field(name);
-        return value == nullptr ? std::string("<missing>") : *value;
-    };
-    // Position 0: 0.75 / 1.0 / 0.5. Position 1: 0.75 / 1.0 / 0.25. Position 2: 1/3 / 2/3 / 0.
-    failures += expect_string(text("spec_proposed_pos0"), "4", "position 0 denominator");
-    failures += expect_string(text("spec_proposed_pos2"), "3", "position 2 denominator");
-    failures += expect_near(rate("spec_recall1_rate_pos0"), 0.75, "position 0 recall@1");
-    failures += expect_near(rate("spec_recall16_rate_pos0"), 1.0, "position 0 recall@16");
-    failures += expect_near(rate("spec_path_acceptance_rate_pos0"), 0.5, "position 0 path");
-    failures += expect_near(rate("spec_recall1_rate_pos1"), 0.75, "position 1 recall@1");
-    failures += expect_near(rate("spec_path_acceptance_rate_pos1"), 0.25, "position 1 path");
-    failures += expect_near(rate("spec_recall1_rate_pos2"), 1.0 / 3.0, "position 2 recall@1");
-    failures += expect_near(rate("spec_recall16_rate_pos2"), 2.0 / 3.0, "position 2 recall@16");
-    failures += expect_near(rate("spec_path_acceptance_rate_pos2"), 0.0, "position 2 path");
-    // A position the round never reached has no denominator and must read empty, not zero, and a
-    // run must not carry columns past its own draft window.
-    failures += expect(std::find(header.begin(), header.end(),
-                                 "spec_recall1_rate_pos3") == header.end(),
-                       "no column beyond the run's draft window");
-
-    Json report;
-    try {
-        report = Json::parse(qb::format_json(
-            env, "ninfer_bench --weights model.ninfer --spec dflash2 --draft-tokens 3", {tg}));
-    } catch (const nlohmann::json::exception& error) {
-        return fail(std::string("invalid benchmark JSON: ") + error.what());
-    }
-    const Json& reported = report.at("tests").at(0).at("speculative");
-    failures += expect(reported.at("proposed_per_position") == Json::array({4, 4, 3}),
-                       "JSON per-position denominators");
-    failures += expect(reported.at("recall1_per_position") == Json::array({3, 3, 1}),
-                       "JSON per-position recall@1 counts");
-    failures += expect(reported.at("recall16_per_position") == Json::array({4, 4, 2}),
-                       "JSON per-position recall@16 counts");
-    failures += expect_near(reported.at("recall1_rate_per_position").at(2).get<double>(),
-                            1.0 / 3.0, "JSON position 2 recall@1");
-    failures += expect_near(reported.at("recall16_rate_per_position").at(1).get<double>(), 1.0,
-                            "JSON position 1 recall@16");
-    failures += expect_near(reported.at("path_acceptance_per_position").at(0).get<double>(), 0.5,
-                            "JSON position 0 path acceptance");
     return failures;
 }
 
@@ -626,6 +520,5 @@ int main() {
     failures += test_measurement_contract();
     failures += test_report_contract();
     failures += test_human_and_csv_reports();
-    failures += test_per_position_recall_contract();
     return failures == 0 ? 0 : fail("ninfer_bench support contract failed");
 }

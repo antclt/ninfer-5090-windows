@@ -1,10 +1,8 @@
 #include "models/qwen3_5/execution/attention.h"
 #include "models/qwen3_5/execution/dense_mlp.h"
 #include "models/qwen3_5/execution/gdn.h"
-#include "models/qwen3_5/execution/moe.h"
+#include "models/common/moe/execution.h"
 #include "models/qwen3_5/execution/mtp.h"
-#include "models/qwen3_5/program/planning/graph_profiles.h"
-#include "models/qwen3_5/program/round_buffers.h"
 #include "models/qwen3_5/program/internal.h"
 #include "models/qwen3_5/program/planning/startup.h"
 #include "models/qwen3_5/execution/vision.h"
@@ -15,7 +13,6 @@
 #include "ninfer/ops/context_kv_materialize.h"
 #include "ninfer/ops/dynamic_grouped_conv.h"
 #include "ninfer/ops/linear_topk.h"
-#include "ninfer/ops/topk_logprobs.h"
 #include "ninfer/ops/gdn_control.h"
 #include "ninfer/ops/gdn_input_proj.h"
 #include "ninfer/ops/linear_add.h"
@@ -38,7 +35,6 @@ namespace {
 using execution::dimension;
 namespace workspace = execution::workspace;
 
-constexpr std::size_t kMiB        = 1024ULL * 1024ULL;
 constexpr std::size_t kArenaAlign = 256ULL;
 
 enum class GdnWorkspacePath : std::uint8_t {
@@ -70,30 +66,6 @@ std::int32_t checked_i32(std::uint64_t value, const char* label) {
 std::uint32_t page_count(std::uint32_t capacity) {
     if (capacity == 0) { throw std::invalid_argument("Paged KV capacity must be positive"); }
     return 1U + (capacity - 1U) / static_cast<std::uint32_t>(kPagedKVPageSize);
-}
-
-template <class ProfileAllowance>
-std::size_t graph_topology_allowance(const std::vector<GraphExecutionProfile>& profiles,
-                                     ProfileAllowance&& profile_allowance, const char* label) {
-    std::vector<std::pair<std::uint32_t, std::size_t>> classes;
-    for (const GraphExecutionProfile profile : profiles) {
-        const std::size_t allowance = profile_allowance(profile);
-        const auto existing = std::find_if(classes.begin(), classes.end(), [&](const auto& entry) {
-            return entry.first == profile.topology_class;
-        });
-        if (existing == classes.end()) {
-            classes.emplace_back(profile.topology_class, allowance);
-        } else {
-            existing->second = std::max(existing->second, allowance);
-        }
-    }
-
-    std::size_t total = 0;
-    for (const auto& [topology_class, allowance] : classes) {
-        (void)topology_class;
-        total = checked_add(total, allowance, label);
-    }
-    return total;
 }
 
 TensorLayout add_tensor(LayoutBuilder& builder, DType dtype,
@@ -186,14 +158,21 @@ PersistentLayout persistent_layout(const SequencePlanImpl& plan) {
             if (draft->full_layer_count() != 0) {
                 const PagedKVStorageLayout full_storage = paged_kv_storage_layout(
                     KvCacheStorage::BFloat16, dimension(draft->attention.head_dim));
-                const std::vector<KVPlaneGeometry> per_layer =
-                    storage_planes(full_storage, dimension(draft->attention.num_key_value_heads));
-                KVPageGeometry full_geometry{.page_tokens        = kPagedKVPageSize,
-                                             .device_plane_order = PagedKVPlaneOrder::HeadMajor};
-                full_geometry.planes.reserve(per_layer.size() * draft->full_layer_count());
-                for (std::uint32_t layer = 0; layer < draft->full_layer_count(); ++layer) {
-                    full_geometry.planes.insert(full_geometry.planes.end(), per_layer.begin(),
-                                                per_layer.end());
+                KVPageGeometry full_geometry{
+                    .page_tokens        = kPagedKVPageSize,
+                    .device_plane_order = PagedKVPlaneOrder::HeadMajor,
+                    .planes =
+                        {
+                            {full_storage.key.data_dtype, full_storage.key.data_leading_extent,
+                             dimension(draft->attention.num_key_value_heads), 256},
+                            {full_storage.value.data_dtype, full_storage.value.data_leading_extent,
+                             dimension(draft->attention.num_key_value_heads), 256},
+                        },
+                };
+                const auto planes = full_geometry.planes;
+                for (std::uint32_t layer = 1; layer < draft->full_layer_count(); ++layer) {
+                    full_geometry.planes.insert(full_geometry.planes.end(), planes.begin(),
+                                                planes.end());
                 }
                 dflash.full = qwen3_5::PagedKVCacheLayout{
                     .pages = plan_device_kv_page_pool(
@@ -360,18 +339,17 @@ WorkspacePlan build_workspace_plan(const SequencePlanImpl& plan) {
                                                                      execution::DenseMlpUse::Text));
             } else {
                 const auto& p = std::get<execution::MoeLayerProfile>(block.ffn);
-                auto bytes    = execution::moe_workspace_bytes(p.math, first, last);
+                auto bytes =
+                    moe::workspace_bytes(p.math, ops::MoeEpilogue::AddResidual, first, last);
                 if (plan.moe) {
-                    const auto index =
-                        static_cast<std::size_t>(&block - profile.text.layers.data());
-                    const auto& layer = plan.moe->layers.at(index);
+                    const auto& layer = plan.moe->layer(p.bank);
                     const auto end    = std::min(last, layer.hybrid_max_tokens);
                     if (first <= end) {
                         // The masked route also bounds the no-GPU-assignment route.
-                        bytes =
-                            std::max(bytes, execution::describe_moe_execution(
-                                                p.math, ops::ExpertSubsetKind::MaskOnes, first, end)
-                                                .gpu_workspace_bytes);
+                        bytes = std::max(bytes, moe::describe_execution(
+                                                    p.math, ops::ExpertSubsetKind::MaskOnes,
+                                                    ops::MoeEpilogue::AddResidual, first, end)
+                                                    .gpu_workspace_bytes);
                     }
                 }
                 scratch(layout, bytes);
@@ -385,9 +363,9 @@ WorkspacePlan build_workspace_plan(const SequencePlanImpl& plan) {
             scratch(layout, execution::dense_mlp_workspace_bytes(*dense, first, last,
                                                                  execution::DenseMlpUse::Mtp));
         } else {
-            scratch(layout,
-                    execution::moe_workspace_bytes(
-                        std::get<execution::MoeLayerProfile>(profile.mtp->ffn).math, first, last));
+            scratch(layout, moe::workspace_bytes(
+                                std::get<execution::MoeLayerProfile>(profile.mtp->ffn).math,
+                                ops::MoeEpilogue::AddResidual, first, last));
         }
     };
     const auto proposal_scratch = [&](WorkspaceLayoutBuilder& layout, std::int32_t columns) {
@@ -480,17 +458,6 @@ WorkspacePlan build_workspace_plan(const SequencePlanImpl& plan) {
                static_cast<std::int32_t>(kCausalScoreTile));
         matrix(causal_score, DType::I32, 1, static_cast<std::int32_t>(kCausalScoreTile));
         matrix(causal_score, DType::FP32, 1, static_cast<std::int32_t>(kCausalScoreTile));
-        // The top-k route's two outputs, [tile, kTopkLogprobsMaxK] with the scored positions as the
-        // slower axis, which is the layout ops::topk_logprobs takes. Planned at the Op's documented
-        // maximum K rather than at a caller's k, because k is a runtime choice on the scoring path
-        // and threading it through sequence planning would touch every scoring entry point to save
-        // 2 MiB on an offline evaluator. Nothing is allocated for a generation Program: both of
-        // these sit inside the `plan.causal_scoring` branch, so the serving workspace is unchanged
-        // by their presence.
-        matrix(causal_score, DType::I32, static_cast<std::int32_t>(kCausalScoreTile),
-               ops::kTopkLogprobsMaxK);
-        matrix(causal_score, DType::FP32, static_cast<std::int32_t>(kCausalScoreTile),
-               ops::kTopkLogprobsMaxK);
         linear_scratch(causal_score, profile.text.output_head, 1, kCausalScoreTile);
         out.causal_score = finish(causal_score);
     }
@@ -869,59 +836,11 @@ std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlannin
                         "Host context default overflow");
     }
     impl->workspace = build_workspace_plan(*impl);
-    if (impl->use_cuda_graph) {
-        // Definitions remain per execution profile, but only one executable is instantiated for
-        // each reachable node-topology class. These bounds cover the largest profile installed in
-        // each class and the driver/module state materialized while qualifying all definitions.
-        if (impl->speculative_backend == SpeculativeBackend::None) {
-            impl->graph_allowance_bytes = checked_mul(12ULL * kMiB, impl->max_concurrency,
-                                                      "ordinary exact-b graph allowance");
-        } else if (impl->speculative_backend == SpeculativeBackend::Mtp) {
-            const auto profiles = mtp_graph_profiles(impl->capacity, impl->draft_window);
-            const std::size_t per_batch_allowance = graph_topology_allowance(
-                profiles,
-                [&](GraphExecutionProfile profile) {
-                    const std::uint64_t final_visible = std::min<std::uint64_t>(
-                        impl->capacity,
-                        static_cast<std::uint64_t>(profile.max) + 2ULL * impl->draft_window);
-                    return (final_visible <= 4096 ? 12ULL : 82ULL) * kMiB;
-                },
-                "MTP graph allowance");
-            impl->graph_allowance_bytes = checked_mul(per_batch_allowance, impl->max_concurrency,
-                                                      "MTP exact-b graph allowance");
-        } else {
-            // One family, one width, and the profiles no longer depend on batch size, so the
-            // per-class sum is computed once and scaled by the concurrency. This loop was previously
-            // charged twice -- once for a `verify_window` family that the plan provisioned and the
-            // tree never built. Upstream's a012e2bc made the same change independently, by removing
-            // the context-dependent target topology class that the second charge was keyed on.
-            const auto profiles = dflash_graph_profiles(impl->speculative_backend, impl->capacity,
-                                                        impl->draft_window);
-            const auto per_batch_allowance = graph_topology_allowance(
-                profiles,
-                [&](GraphExecutionProfile profile) {
-                    const std::uint64_t final_visible = std::min<std::uint64_t>(
-                        impl->capacity,
-                        static_cast<std::uint64_t>(profile.max) + impl->draft_window + 1ULL);
-                    // Long profiles also materialize driver execution storage; that shared
-                    // cost does not shrink with the number of graph executables.
-                    return (final_visible <= 4096 ? 64ULL : 192ULL) * kMiB;
-                },
-                "DFlash graph allowance");
-            // Forward retains the draft's topology classes; finish has one small executable
-            // per exact B, independently of context length.
-            impl->graph_allowance_bytes =
-                checked_mul(per_batch_allowance + 8ULL * kMiB, impl->max_concurrency,
-                            "DFlash exact-b graph allowance");
-        }
-    }
-
-    impl->device_reservation_bytes = checked_add(
-        checked_add(impl->persistent.bytes, impl->workspace.capacity, "sequence memory plan"),
-        impl->graph_allowance_bytes, "sequence graph allowance");
+    impl->device_reservation_bytes =
+        checked_add(impl->persistent.bytes, impl->workspace.capacity, "sequence device capacity");
     if (impl->moe) {
         impl->device_reservation_bytes = checked_add(
-            impl->device_reservation_bytes, impl->moe->device_bytes, "MoE device reservation");
+            impl->device_reservation_bytes, impl->moe->device_bytes, "MoE device capacity");
     }
     return impl;
 }
@@ -931,7 +850,7 @@ std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlannin
 std::unique_ptr<qwen3_5::detail::SequencePlannerImpl>
 make_sequence_planner_impl(std::shared_ptr<const execution::ModelProfile> profile,
                            DeviceContext& device, const EngineOptions& options,
-                           std::shared_ptr<const MoePlan> moe) {
+                           std::shared_ptr<const moe::Plan> moe) {
     validate_target_options(*profile, device, options);
     SequencePlanningInputs inputs{
         .profile         = std::move(profile),
@@ -978,6 +897,17 @@ make_sequence_planner_impl(std::shared_ptr<const execution::ModelProfile> profil
             adjacent->device_reservation_bytes - planner->minimum->device_reservation_bytes;
     }
     return planner;
+}
+
+std::unique_ptr<SequencePlanImpl>
+make_graph_probe_plan(std::shared_ptr<const execution::ModelProfile> profile, DeviceContext& device,
+                      const EngineOptions& options, std::shared_ptr<const moe::Plan> moe) {
+    auto planner = make_sequence_planner_impl(std::move(profile), device, options, std::move(moe));
+    auto inputs  = std::move(planner->inputs);
+    inputs.context_cache.host_capacity_bytes = 0;
+    auto plan         = build_sequence_candidate(inputs, inputs.max_concurrency);
+    plan->graph_probe = true;
+    return plan;
 }
 
 std::unique_ptr<SequencePlanImpl>

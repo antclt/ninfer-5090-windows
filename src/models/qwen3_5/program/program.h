@@ -16,6 +16,10 @@ namespace ninfer {
 struct DeviceContext;
 }
 
+namespace ninfer::models::moe {
+struct Plan;
+}
+
 namespace ninfer::models::qwen3_5 {
 namespace execution {
 class Parameters;
@@ -24,7 +28,6 @@ struct ModelProfile;
 
 namespace detail {
 struct SequencePlanImpl;
-struct MoePlan;
 struct SequencePlannerImpl;
 struct RequestBasePlanImpl;
 struct ResumeStateImpl;
@@ -96,7 +99,7 @@ private:
 
     friend SequencePlanner make_sequence_planner(std::shared_ptr<const execution::ModelProfile>,
                                                  DeviceContext&, const EngineOptions&,
-                                                 std::shared_ptr<const detail::MoePlan>);
+                                                 std::shared_ptr<const moe::Plan>);
 };
 
 class RequestBasePlan {
@@ -410,13 +413,6 @@ public:
                                                const runtime::ResolvedExecutionOptions& options);
     [[nodiscard]] std::vector<float> causal_score(PreparedPrompt&& prompt,
                                                   std::uint32_t first_target);
-   // Per-position top-k logprobs, for the offline scoring route (`ninfer-perplexity
-   // --top-k-records`). Port declaration: upstream b9114396 rewrote this interface and dropped it,
-   // while program_impl.cpp still implements it and src/runtime/engine/causal_score_core.h still calls
-   // it. Recorded top-k is what makes a broken model visible -- a defect otherwise shows only as an
-   // implausibly good perplexity. k must be in [1, ops::kTopkLogprobsMaxK].
-   [[nodiscard]] CausalTopk causal_score_topk(PreparedPrompt&& prompt, std::uint32_t first_target,
-                                              std::int32_t k);
     [[nodiscard]] std::optional<SourceCandidate>
     inspect_source(const RequestBasePlan& base, std::optional<CheckpointHandle> checkpoint,
                    bool consume_source                              = false,
@@ -510,7 +506,7 @@ private:
 
 [[nodiscard]] SequencePlanner make_sequence_planner(std::shared_ptr<const execution::ModelProfile>,
                                                     DeviceContext&, const EngineOptions&,
-                                                    std::shared_ptr<const detail::MoePlan> = {});
+                                                    std::shared_ptr<const moe::Plan> = {});
 
 [[nodiscard]] SequencePlanner make_sequence_planner(const execution::Parameters&, DeviceContext&,
                                                     const EngineOptions&);

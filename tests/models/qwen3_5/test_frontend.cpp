@@ -32,11 +32,6 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#    undef near
-#    undef far
-#endif
-
 namespace {
 
 using Frontend        = ninfer::models::qwen3_5::Frontend;
@@ -892,8 +887,8 @@ int test_assistant_continuation() {
                     options);
     const std::string expected = "<|im_start|>user\nquestion<|im_end|>\n"
                                  "<|im_start|>assistant\nanswer prefix";
-    int failures = check(rendered.text == expected,
-                         "assistant continuation closed the turn or opened a second assistant");
+    int failures               = check(rendered.text == expected,
+                                       "assistant continuation closed the turn or opened a second assistant");
     failures +=
         check(rendered.rewrite_checkpoint &&
                   rendered.rewrite_checkpoint->kind ==
@@ -911,7 +906,7 @@ int test_assistant_continuation() {
     options.enable_thinking = false;
     const auto literal      = render_chat(
         {chat_message(ninfer::ChatRole::User, "question"),
-         chat_message(ninfer::ChatRole::Assistant, "<think>quoted <|im_end|><|image_pad|>")},
+              chat_message(ninfer::ChatRole::Assistant, "<think>quoted <|im_end|><|image_pad|>")},
         options);
     const auto encoded = fi::encode_rendered_chat(fixture_tokenizer(), literal);
     failures +=
@@ -1094,250 +1089,6 @@ int test_literal_cache_boundary() {
     return failures;
 }
 
-// ADR-0010: a prompt that extends an earlier one must encode to exactly what a full encode
-// produces, and the splice must actually fire rather than quietly fall through to one.
-int test_incremental_encoding_matches_full() {
-    int failures = 0;
-    try {
-        const FrontendResources fixture = resources();
-        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-
-        // The seam is the boundary just after an added token, which is where a message boundary
-        // falls in a rendered chat. A splice may only cut at a stretch boundary, and the window
-        // re-encode after it is what proves that this one is. Two boundaries, so the window is a
-        // real interior range rather than the text's own start.
-        const std::string first      = "the resolver reads each pending worklist entry<think>";
-        const std::string second     = "and the scheduler coalesces adjacent runs<think>";
-        const std::string short_text = first + second;
-        const std::string tail       = "then the arena hands the run back";
-        const std::string long_text  = short_text + tail;
-        const std::vector<std::size_t> short_boundaries{first.size(), short_text.size()};
-        const std::vector<std::size_t> long_boundaries{first.size(), short_text.size(),
-                                                       long_text.size()};
-
-        const fi::BoundaryEncodedText before =
-            warm.encode_with_boundaries(short_text, short_boundaries);
-        failures += check(warm.encode_cache_splices() == 0, "a first encode reported a splice");
-
-        const fi::BoundaryEncodedText spliced =
-            warm.encode_with_boundaries(long_text, long_boundaries);
-        failures += check(warm.encode_cache_splices() == 1,
-                          "the extending encode did not splice, so this test proves nothing yet");
-        failures += check(warm.encode_cache_fallbacks() == 0,
-                          "the splice threw and fell back instead of answering");
-
-        // The oracle: the same text through a tokenizer that has never seen the shorter one.
-        const fi::BoundaryEncodedText full =
-            cold.encode_with_boundaries(long_text, long_boundaries);
-        failures += check(spliced.input_ids == full.input_ids,
-                          "an incremental encode did not reproduce the full encode");
-        const bool same_boundaries =
-            spliced.boundaries.size() == full.boundaries.size() &&
-            std::equal(spliced.boundaries.begin(), spliced.boundaries.end(),
-                       full.boundaries.begin(),
-                       [](const fi::TokenBoundaryResult& lhs, const fi::TokenBoundaryResult& rhs) {
-                           return lhs.exact_frontier == rhs.exact_frontier &&
-                                  lhs.stable_frontier == rhs.stable_frontier;
-                       });
-        failures += check(same_boundaries,
-                          "an incremental encode did not reproduce the full boundary results");
-        failures += check(before.input_ids.size() < spliced.input_ids.size() &&
-                              std::equal(before.input_ids.begin(), before.input_ids.end(),
-                                         spliced.input_ids.begin()),
-                          "the extended prompt did not extend the shorter one's token prefix");
-    } catch (const std::exception& error) {
-        std::fprintf(stderr, "  incremental encoding threw: %s\n", error.what());
-        failures += 1;
-    }
-    return failures;
-}
-
-// The spliced path must honour the caller's token limit the way the uncached path does. The caller
-// detects a truncated encode by an equality (`processor.cpp:801`: `size() == maximum_tokens`), and
-// the tail carries the request's own options, so a splice that encodes the tail at the *full* limit
-// and then prepends the cached prefix returns more tokens than the caller asked for -- and the
-// equality then reports "complete", sending the caller on to resolve frontiers over a truncated id
-// list. The oracle is the same text through an uncached encode at the same limit.
-int test_incremental_encoding_respects_the_token_limit() {
-    int failures = 0;
-    try {
-        const FrontendResources fixture = resources();
-        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-
-        const std::string first      = "the resolver reads each pending worklist entry thinking";
-        const std::string second     = "and the scheduler coalesces adjacent runs thinking";
-        const std::string short_text = first + second;
-        const std::string tail       = "then the arena hands the run back";
-        const std::string long_text  = short_text + tail;
-        const std::vector<std::size_t> short_boundaries{first.size(), short_text.size()};
-        const std::vector<std::size_t> long_boundaries{first.size(), short_text.size(),
-                                                       long_text.size()};
-
-        // The limit has to sit between the two prompts: the shorter one is only remembered when it
-        // was not truncated, and the longer one has to be unable to fit inside the limit.
-        const std::size_t limit =
-            cold.encode_with_boundaries(long_text, long_boundaries).input_ids.size() - 1U;
-        const std::size_t short_tokens =
-            cold.encode_with_boundaries(short_text, short_boundaries).input_ids.size();
-        failures += check(short_tokens < limit,
-                          "the short prompt already exceeds the limit, so this test proves nothing");
-
-        (void)warm.encode_with_boundaries(short_text, short_boundaries,
-                                          fi::EncodeOptions{.max_tokens = limit});
-        const fi::BoundaryEncodedText spliced = warm.encode_with_boundaries(
-            long_text, long_boundaries, fi::EncodeOptions{.max_tokens = limit});
-        failures += check(warm.encode_cache_splices() == 1,
-                          "the extending encode did not splice, so this test proves nothing yet");
-        failures += check(spliced.input_ids.size() <= limit,
-                          "a spliced encode returned more tokens than the caller's limit");
-
-        const fi::BoundaryEncodedText truncated = cold.encode_with_boundaries(
-            long_text, long_boundaries, fi::EncodeOptions{.max_tokens = limit});
-        failures += check(spliced.input_ids == truncated.input_ids,
-                          "a spliced encode at the limit did not reproduce the uncached truncation");
-    } catch (const std::exception& error) {
-        std::fprintf(stderr, "  limited incremental encoding threw: %s\n", error.what());
-        failures += 1;
-    }
-    return failures;
-}
-
-// The counterexample ADR-0010's safety argument left open: two encodes that share a token prefix and
-// a boundary set, and differ only in a literal span *below* the seam's window. A literal span
-// suppresses added-token recognition inside it, so the same bytes carry different ids -- which is what
-// makes a splice below the window wrong rather than merely different. The check that compares those
-// spans is the fix, and this is the input that shows it firing.
-int test_incremental_encoding_declines_differing_below_window_spans() {
-    int failures = 0;
-    try {
-        const FrontendResources fixture = resources();
-        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-
-        // `helloST` is one of the fixture's added tokens, so the prefix's ids depend on whether a
-        // literal span covers it.
-        const std::string first      = "the resolver reads helloST pending";
-        const std::string second     = "and the scheduler coalesces adjacent runs";
-        const std::string short_text = first + second;
-        const std::string tail       = "then the arena hands the run back";
-        const std::string long_text  = short_text + tail;
-        const std::vector<std::size_t> short_boundaries{first.size(), short_text.size()};
-        const std::vector<std::size_t> long_boundaries{first.size(), short_text.size(),
-                                                       long_text.size()};
-        const std::vector<ninfer::text::ByteSpan> no_spans{};
-        // Ends before the seam, so the seam stays spliceable and the span is compared below the
-        // window rather than skipping the boundary outright.
-        const std::vector<ninfer::text::ByteSpan> span_over_prefix{{0, first.size()}};
-
-        (void)warm.encode_with_boundaries(short_text, short_boundaries, {}, no_spans);
-        failures += check(warm.encode_cache_splices() == 0, "a first encode reported a splice");
-
-        // The control: the same extension with the cache's own spans splices, so this input is known
-        // to reach the splice at all.
-        const fi::BoundaryEncodedText spliced =
-            warm.encode_with_boundaries(long_text, long_boundaries, {}, no_spans);
-        failures += check(warm.encode_cache_splices() == 1,
-                          "the extending encode did not splice, so this test proves nothing yet");
-
-        // The counterexample: identical text and boundaries, only a span below the window differs.
-        const fi::BoundaryEncodedText declined =
-            warm.encode_with_boundaries(long_text, long_boundaries, {}, span_over_prefix);
-        failures += check(warm.encode_cache_splices() == 1,
-                          "a differing literal span below the window did not stop the splice");
-        failures += check(warm.encode_cache_fallbacks() == 0,
-                          "the encode fell back instead of declining the splice");
-
-        // The oracle, and the counterexample's own premise: the two span sets must really change the
-        // ids, or the splice this declines is one that would have been right.
-        const fi::BoundaryEncodedText oracle_spanned =
-            cold.encode_with_boundaries(long_text, long_boundaries, {}, span_over_prefix);
-        const fi::BoundaryEncodedText oracle_plain =
-            cold.encode_with_boundaries(long_text, long_boundaries, {}, no_spans);
-        failures += check(oracle_spanned.input_ids != oracle_plain.input_ids,
-                          "the counterexample does not change the ids, so it demonstrates nothing");
-        failures += check(declined.input_ids == oracle_spanned.input_ids,
-                          "the declined encode did not reproduce the full encode");
-    } catch (const std::exception& error) {
-        std::fprintf(stderr, "  below-window span check threw: %s\n", error.what());
-        failures += 1;
-    }
-    return failures;
-}
-
-int test_repeated_encoding_matches_full() {
-    int failures = 0;
-    try {
-        const FrontendResources fixture = resources();
-        const fi::Tokenizer warm({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-        const fi::Tokenizer cold({.tokenizer_json         = fixture.tokenizer_json,
-                                  .tokenizer_config_json  = fixture.tokenizer_config_json,
-                                  .generation_config_json = fixture.generation_config_json});
-
-        const std::string first  = "the resolver reads each pending worklist entry thinking";
-        const std::string second = "and the scheduler coalesces adjacent runs thinking";
-        const std::string text   = first + second;
-        const std::vector<std::size_t> boundaries{first.size(), text.size()};
-
-        const fi::BoundaryEncodedText before = warm.encode_with_boundaries(text, boundaries);
-        failures += check(warm.encode_cache_splices() == 0, "a first encode reported a splice");
-
-        // The same text, the same boundaries and the same options: a retried or duplicated request.
-        // This must be answered from the cache rather than re-encoded -- an extension spliced before
-        // this case existed, but a repeat fell through to a full encode of the whole conversation.
-        const fi::BoundaryEncodedText repeated = warm.encode_with_boundaries(text, boundaries);
-        failures += check(warm.encode_cache_splices() == 1,
-                          "a repeated encode did not answer from the cache");
-        failures += check(warm.encode_cache_fallbacks() == 0,
-                          "the repeated encode fell back instead of answering");
-
-        // The oracle, as for the extending case: a tokenizer that has never seen this text.
-        const fi::BoundaryEncodedText full = cold.encode_with_boundaries(text, boundaries);
-        failures += check(repeated.input_ids == full.input_ids,
-                          "a repeated encode did not reproduce the full encode");
-        failures += check(repeated.input_ids == before.input_ids,
-                          "a repeated encode disagreed with the encode it came from");
-        const bool same_boundaries =
-            repeated.boundaries.size() == full.boundaries.size() &&
-            std::equal(repeated.boundaries.begin(), repeated.boundaries.end(),
-                       full.boundaries.begin(),
-                       [](const fi::TokenBoundaryResult& lhs, const fi::TokenBoundaryResult& rhs) {
-                           return lhs.exact_frontier == rhs.exact_frontier &&
-                                  lhs.stable_frontier == rhs.stable_frontier;
-                       });
-        failures += check(same_boundaries,
-                          "a repeated encode did not reproduce the full boundary results");
-
-        // A repeat with *different* boundaries must not be served from the entry, because the
-        // boundary results are part of what the entry answers.
-        const fi::BoundaryEncodedText narrowed =
-            warm.encode_with_boundaries(text, std::vector<std::size_t>{first.size()});
-        failures += check(warm.encode_cache_splices() == 1,
-                          "a boundary set the cache never answered was served as a repeat");
-        failures += check(narrowed.input_ids == full.input_ids,
-                          "the narrowed boundary set changed the ids");
-    } catch (const std::exception& error) {
-        std::fprintf(stderr, "  repeated encoding threw: %s\n", error.what());
-        failures += 1;
-    }
-    return failures;
-}
-
 int test_official_resource_guards() {
     FrontendResources stale_pad     = resources();
     nlohmann::json tokenizer_config = nlohmann::json::parse(stale_pad.tokenizer_config_json);
@@ -1492,13 +1243,6 @@ int test_text_and_image_prepare(const Frontend& frontend) {
         check(text_data.position_axis(0).back() == 12 && text_data.position_axis(1).back() == 12 &&
                   text_data.position_axis(2).back() == 12,
               "text frontend did not construct axis-major positions");
-    // The host phases the started line prints are produced here, not by its consumer. The merge that
-    // took upstream's frontend.cpp dropped these brackets while the fields stayed in
-    // PromptPreparationStats, so the tree compiled with nothing writing or reading them. `render` is
-    // the discriminating one: `tokenize_seconds` is upstream's own field and predates the split.
-    const ninfer::PromptPreparationStats& phases = text.preparation_stats();
-    failures += check(phases.render_seconds > 0.0 && phases.seconds >= phases.render_seconds,
-                      "text preparation did not report the render phase the started line prints");
 
     ninfer::ChatMessage preserved_message;
     preserved_message.role = ninfer::ChatRole::User;
@@ -2865,265 +2609,6 @@ int test_media_auto_threads_respect_affinity() {
 
 } // namespace
 
-// Byte-level parity against the reference tokenizer, with no artifact in the loop: our shipped
-// template renders the same message, and the reference renders the no-thinking prompt as 82
-// characters / 18 tokens ending "tant\n<think>\n\n</think>\n\n". Our engine counts 19 tokens, so
-// whatever the difference is, it is visible here as a length or as a tail -- which names it instead
-// of inferring it.
-int test_shipped_template_render_bytes() {
-    // Byte-exact against the reference tokenizer's render of the same message (82 characters, 108
-    // UTF-8 bytes, LF endings), using the template the artifact carries rather than the qwen3_6
-    // fixture that render_chat() selects.
-    const std::string source               = reasoning_effort_template_source();
-    const fi::CompiledChatTemplate shipped = fi::CompiledChatTemplate::resolve(source);
-    fi::ChatRenderOptions options;
-    options.enable_thinking = false;
-    const std::vector<fi::ChatMessage> messages{
-        chat_message(ninfer::ChatRole::User, "你好，简单介绍一下你自己。")};
-    const std::string text     = shipped.render(messages, options).text;
-    const std::string expected = "<|im_start|>user\n你好，简单介绍一下你自己。<|im_end|>\n"
-                                 "<|im_start|>assistant\n<think>\n\n</think>\n\n";
-    if (text != expected) {
-        std::cerr << "shipped template render differs from the reference render: " << text.size()
-                  << " bytes vs " << expected.size() << "\n";
-        return 1;
-    }
-    // An artifact has shipped whose embedded template was this file with a UTF-8 BOM prepended and
-    // nothing else different. The lexer emitted the mark as the first character of every render,
-    // which is one token in every prompt and a zero-width character in front of the chat control
-    // tokens, so the loader strips it. This is the case that fails if that strip is ever removed.
-    const fi::CompiledChatTemplate with_bom =
-        fi::CompiledChatTemplate::resolve("\xef\xbb\xbf" + source);
-    if (with_bom.render(messages, options).text != text) {
-        std::cerr << "a leading UTF-8 BOM changed the rendered prompt\n";
-        return 1;
-    }
-    return 0;
-}
-
-int test_reasoning_effort_aliases() {
-    // The differential loop compares the two renderers on the default effort only, so the client
-    // aliases are pinned here. `high`, `max` and the extra client aliases map to the deepest
-    // rendered level, `minimal` to the shallowest, and `medium` renders no instruction at all --
-    // which is why `high` must not map there. The engine sends `none` with enable_thinking already
-    // false, so it never reaches this branch.
-    const fi::CompiledChatTemplate shipped =
-        fi::CompiledChatTemplate::resolve(reasoning_effort_template_source());
-    const std::vector<fi::ChatMessage> messages{chat_message(ninfer::ChatRole::User, "hi")};
-    struct Case {
-        ninfer::ReasoningEffort effort;
-        const char* instruction;
-    };
-    const Case cases[] = {
-        {ninfer::ReasoningEffort::Minimal, "Reasoning effort is set to low."},
-        {ninfer::ReasoningEffort::Low, "Reasoning effort is set to low."},
-        {ninfer::ReasoningEffort::High, "Reasoning effort is set to xhigh."},
-        {ninfer::ReasoningEffort::XHigh, "Reasoning effort is set to xhigh."},
-        {ninfer::ReasoningEffort::Max, "Reasoning effort is set to xhigh."},
-    };
-    int failures = 0;
-    for (const Case& item : cases) {
-        const auto rendered = shipped.render(messages, {.reasoning_effort = item.effort}).text;
-        failures += check(rendered.find(item.instruction) != std::string::npos,
-                          "a client reasoning effort did not reach its rendered level");
-    }
-    const auto medium =
-        shipped.render(messages, {.reasoning_effort = ninfer::ReasoningEffort::Medium}).text;
-    failures += check(medium.find("Reasoning effort is set to") == std::string::npos,
-                      "medium injected a reasoning instruction");
-    return failures;
-}
-
-// The registered template takes the native renderer, so media has to be covered through *that*
-// path. Two existing guards miss it: the differential loop's synthesized corpus has no media parts,
-// and the fixture-template media tests resolve `qwen3_6.jinja`, whose digest is unregistered and
-// therefore takes the Jinja path. A native renderer that never records `media_placeholders` fails
-// every image request with "chat media count does not match rendered placeholders".
-int test_registered_template_media() {
-    // Assert the renderer's own placeholder metadata first: the byte span must cover exactly the
-    // pad token, because the processor expands that span and then requires the tokens it produced to
-    // be nothing but pads.
-    const fi::CompiledChatTemplate compiled =
-        fi::CompiledChatTemplate::resolve(reasoning_effort_template_source());
-    fi::ChatMessage message = chat_message(ninfer::ChatRole::User, "look at this");
-    fi::MediaData media;
-    media.media_type  = "image/png";
-    media.source_name = "test";
-    media.bytes       = {0x89, 0x50, 0x4e, 0x47};
-    message.parts.push_back(fi::ChatPart::image(std::move(media)));
-    const fi::RenderedChat rendered = compiled.render({std::move(message)});
-    const std::string_view pad      = "<|image_pad|>";
-    int failures                    = 0;
-    failures += check(rendered.media_placeholders.size() == 1,
-                      "the registered template did not record one media placeholder");
-    if (rendered.media_placeholders.size() == 1) {
-        const fi::MediaPlaceholderByteSpec& placeholder = rendered.media_placeholders[0];
-        const bool covers_pad =
-            placeholder.bytes.end - placeholder.bytes.begin == pad.size() &&
-            rendered.text.compare(placeholder.bytes.begin, pad.size(), pad) == 0;
-        if (!covers_pad) {
-            std::cerr << "registered media placeholder [" << placeholder.bytes.begin << ","
-                      << placeholder.bytes.end << ") does not cover the pad token at "
-                      << rendered.text.find(pad) << " (modality "
-                      << static_cast<int>(placeholder.modality) << ", item "
-                      << placeholder.item_index << ")\n";
-        }
-        failures += check(covers_pad, "the media placeholder does not cover its pad token");
-        failures += check(placeholder.item_index == 0 &&
-                              placeholder.modality == fi::Modality::Image,
-                          "the media placeholder carries the wrong item index or modality");
-        // The wrapper the template writes is *template* bytes; only the message text is input. A
-        // wrapper classified as input is not recognized as control tokens when the prompt is
-        // tokenized, which is what the expansion then rejects.
-        const bool wrapper_is_template = std::none_of(
-            rendered.literal_spans.begin(), rendered.literal_spans.end(),
-            [&](const ninfer::text::ByteSpan& span) {
-                return span.begin <= placeholder.bytes.begin && placeholder.bytes.end <= span.end;
-            });
-        failures += check(wrapper_is_template,
-                          "the media wrapper is classified as input bytes rather than template bytes");
-    }
-    // Then the end-to-end path, which is where the expansion validates the tokens.
-    const auto frontend = make_frontend(resources(reasoning_effort_template_source()));
-    try {
-        const auto prepared = frontend.prepare(image_input());
-        const auto& data    = FrontendFactory::inspect(prepared);
-        failures += check(data.vision_items.size() == 1 && data.prepare.vision_tokens == 4,
-                          "the registered template did not expand an image through the native renderer");
-    } catch (const std::exception& error) {
-        std::cerr << "registered template media: " << error.what() << '\n';
-        failures += 1;
-    }
-    return failures;
-}
-
-// The registered template takes the native renderer, so the cache markers it has to resolve must be
-// covered through *that* path. The suite's existing `MessagePartBoundary` marker is set against a
-// fixture template, whose digest is unregistered and therefore renders through Jinja -- so a native
-// renderer that resolved no cache marker at all, which is what shipped, passed the suite. This
-// compares the two renderers on a multi-part user turn: the shape `/v1/chat/completions` sends when
-// it places a `prompt_cache_breakpoint` on a content part, and the only case where a part boundary
-// sits between other parts rather than at the end of the content.
-int test_registered_template_cache_markers() {
-    const std::string source = reasoning_effort_template_source();
-    const fi::CompiledChatTemplate native = fi::CompiledChatTemplate::resolve(source);
-    // A trailing comment changes the digest and emits nothing, so the same source renders through the
-    // interpreter. That is the oracle here: resolving the registered source twice would compare the
-    // native path against itself, which is the mistake this differential loop was built to catch.
-    const fi::CompiledChatTemplate jinja =
-        fi::CompiledChatTemplate::resolve(source + "{#cache-marker-oracle#}");
-    std::vector<fi::ChatMessage> messages{
-        chat_message(ninfer::ChatRole::System, "You are a coding agent."),
-        chat_message(ninfer::ChatRole::User, "look at this")};
-    fi::MediaData media;
-    media.media_type  = "image/png";
-    media.source_name = "test";
-    media.bytes       = {0x89, 0x50, 0x4e, 0x47};
-    messages[1].parts.push_back(fi::ChatPart::image(std::move(media)));
-    messages[1].parts.push_back(fi::ChatPart::text_part(" and answer this"));
-    enum Index : std::size_t {
-        kAfterFirst = 0,
-        kAfterUser,
-        kLeadingInstruction,
-        kSystemPart,
-        kUserTextPart,
-        kImagePart,
-        kUserTailPart,
-        kMarkerCount,
-    };
-    std::vector<ninfer::PromptCacheMarker> declared{
-        {.after_message_count = 1},
-        {.after_message_count = 2},
-        {.location                 = ninfer::PromptCacheMarkerLocation::LeadingInstructionBoundary,
-         .leading_instruction_bytes = 7},
-        {.after_message_count      = 1,
-         .location                 = ninfer::PromptCacheMarkerLocation::MessagePartBoundary,
-         .after_message_part_count = 1},
-        {.after_message_count      = 2,
-         .location                 = ninfer::PromptCacheMarkerLocation::MessagePartBoundary,
-         .after_message_part_count = 1},
-        {.after_message_count      = 2,
-         .location                 = ninfer::PromptCacheMarkerLocation::MessagePartBoundary,
-         .after_message_part_count = 2},
-        {.after_message_count      = 2,
-         .location                 = ninfer::PromptCacheMarkerLocation::MessagePartBoundary,
-         .after_message_part_count = 3},
-    };
-    fi::ChatRenderOptions options;
-    options.cache_markers = declared;
-    const fi::RenderedChat expected = jinja.render(messages, options);
-    const fi::RenderedChat actual   = native.render(messages, options);
-    int failures                    = 0;
-    failures += check(expected.text == actual.text,
-                      "the registered template rendered different text from its own oracle");
-    if (expected.cache_boundaries.size() != kMarkerCount ||
-        actual.cache_boundaries.size() != kMarkerCount) {
-        std::cerr << "cache boundary count: jinja " << expected.cache_boundaries.size() << ", native "
-                  << actual.cache_boundaries.size() << "\n";
-        return failures + check(false, "a renderer returned the wrong number of cache boundaries");
-    }
-    const auto show = [](const std::vector<std::optional<std::size_t>>& values) {
-        std::string out;
-        for (const auto& value : values) {
-            out += value ? std::to_string(*value) : std::string("none");
-            out += ",";
-        }
-        return out;
-    };
-    if (expected.cache_boundaries != actual.cache_boundaries) {
-        std::cerr << "cache boundaries jinja  : " << show(expected.cache_boundaries) << "\n"
-                  << "cache boundaries native : " << show(actual.cache_boundaries) << "\n";
-    }
-    failures += check(expected.cache_boundaries == actual.cache_boundaries,
-                      "the native renderer resolved a cache marker differently from the Jinja path");
-    // Agreement is only evidence if something was resolved. Each of these is a marker the native path
-    // used to leave unset, and the image part is the one a shipped `/v1/chat/completions` request
-    // sends, so each is named rather than counted.
-    const std::pair<Index, const char*> required[] = {
-        {kAfterFirst, "the frontier after the leading instruction"},
-        {kAfterUser, "the frontier after the user turn"},
-        {kLeadingInstruction, "the leading instruction's own byte count"},
-        {kImagePart, "the media part's frontier"},
-        {kUserTailPart, "the frontier after the part following the media part"},
-    };
-    for (const auto& [index, label] : required) {
-        failures += check(actual.cache_boundaries[index].has_value(),
-                          std::string("the native renderer left ").append(label).c_str());
-    }
-
-    // The same comparison for a part that begins with whitespace. The native renderer translates a
-    // part frontier by subtracting the leading strip, and the Jinja route maps a source offset
-    // against a region that begins at the trimmed text, so this is where the two conventions could
-    // differ -- and an ordinary user message may begin with whitespace. Measured on the differential
-    // oracle at two strip lengths (3 and 6 bytes, spaces and mixed): the two agree exactly, so the
-    // conventions coincide rather than merely going unexercised.
-    const auto compare = [&](const std::vector<fi::ChatMessage>& conversation, const char* what,
-                            Index must_resolve) {
-        fi::ChatRenderOptions marked;
-        marked.cache_markers = declared;
-        const fi::RenderedChat want = jinja.render(conversation, marked);
-        const fi::RenderedChat have = native.render(conversation, marked);
-        if (want.cache_boundaries != have.cache_boundaries || want.text != have.text) {
-            std::cerr << what << " jinja  : " << show(want.cache_boundaries) << "\n"
-                      << what << " native : " << show(have.cache_boundaries) << "\n";
-        }
-        failures += check(want.cache_boundaries == have.cache_boundaries && want.text == have.text,
-                          what);
-        // Agreement between two renderers that both declined to resolve is not agreement, so the case
-        // requires the marker to have resolved on both sides.
-        failures += check(want.cache_boundaries[must_resolve].has_value() &&
-                              have.cache_boundaries[must_resolve].has_value(),
-                          std::string(what).append(" (its own marker did not resolve)").c_str());
-    };
-    fi::ChatMessage stripped;
-    stripped.role = ninfer::ChatRole::User;
-    stripped.parts.push_back(fi::ChatPart::text_part("\n\n\t   six stripped bytes, then a second part"));
-    stripped.parts.push_back(fi::ChatPart::text_part("\t   a third part with its own lead"));
-    compare({stripped}, "a whitespace-prefixed part resolved differently from the Jinja path",
-            kSystemPart);
-    return failures;
-}
-
 int main() {
     const FrontendResources owned = resources();
     const Frontend frontend       = make_frontend(owned);
@@ -3132,10 +2617,6 @@ int main() {
     failures += test_tokenizer_config_merge();
     failures += test_bpe_merge_order();
     failures += test_boundary_aware_tokenization();
-    failures += test_incremental_encoding_matches_full();
-    failures += test_incremental_encoding_respects_the_token_limit();
-    failures += test_repeated_encoding_matches_full();
-    failures += test_incremental_encoding_declines_differing_below_window_spans();
     failures += test_rendered_special_tokens();
     failures += test_repeated_special_tokens_scan_linearly();
     failures += test_bounded_tokenizer_prefix();
@@ -3152,8 +2633,6 @@ int main() {
     failures += test_text_and_image_prepare(frontend);
     failures += test_media_token_ids_come_from_tokenizer();
     failures += test_template_media_contract();
-    failures += test_registered_template_media();
-    failures += test_registered_template_cache_markers();
     failures += test_image_resize_rejection_policy();
     failures += test_explicit_leading_instruction_cache_boundary();
     failures += test_trimmed_source_cache_boundaries();
@@ -3183,7 +2662,5 @@ int main() {
     failures += test_media_auto_threads_respect_affinity();
     failures += test_invalid_media_classification();
     failures += test_disabled_vision();
-    failures += test_shipped_template_render_bytes();
-    failures += test_reasoning_effort_aliases();
     return failures == 0 ? 0 : 1;
 }

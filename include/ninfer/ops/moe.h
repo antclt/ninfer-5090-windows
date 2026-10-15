@@ -5,6 +5,7 @@
 #include "core/device.h"
 #include "core/weight_bank.h"
 #include "ninfer/ops/projection_weights.h"
+#include "ninfer/ops/weight_input.h"
 
 #include <optional>
 
@@ -27,8 +28,27 @@ struct RoutedSwiGLUProfile {
     std::int32_t experts = 0, top_k = 0;
 };
 
+// NVFP4 A4 calibration divisors for x and the FP32 SiLU(gate)*up product, respectively.
+// Matrix divisors remain independently addressed by logical expert in the bank.
+// Block-FP8 weights and their dynamic activation groups have no tensor divisors.
 struct ExpertActivationDivisors {
     std::optional<float> gate_up, down;
+};
+
+// Combines activation permissions and calibration across Uses evaluated by one expert call.
+// NVFP4 A4 requires the same positive divisor for every included input.
+class ExpertInputUsage {
+public:
+    void include(const WeightInput&);
+
+    [[nodiscard]] LinearPolicy policy() const noexcept { return policy_; }
+
+    [[nodiscard]] std::optional<float> activation_divisor(QType format) const;
+
+private:
+    LinearPolicy policy_ = LinearPolicy::AllowA4;
+    std::optional<float> divisor_;
+    bool missing_divisor_ = false, unequal_divisors_ = false;
 };
 
 struct CudaSwiGLUExperts {
@@ -38,7 +58,6 @@ struct CudaSwiGLUExperts {
 
 struct CpuSwiGLUExperts {
     WeightBankView gate_up, down;
-    ExpertActivationDivisors activation_divisors;
 };
 
 struct SwiGLUWeights {
@@ -141,6 +160,7 @@ void routed_swiglu(const Tensor& x, const RoutedSwiGLUProfile& profile,
 // introduced. The caller retains banks, tensors and scratch until synchronous return. No hidden
 // allocation, transfer or thread creation occurs. Shared experts and residual addition are
 // separate computations. Requires an AVX2/FMA/F16C worker team for nonempty contributions.
+// NVFP4 consumes the native swizzled scales and each expert's matrix divisor directly.
 // Capacity covers the inclusive token interval from a 256-byte-aligned local cursor; it is
 // independent of worker count and excludes destination storage. None requires no scratch.
 [[nodiscard]] std::size_t routed_swiglu_workspace_capacity_bytes(const RoutedSwiGLUProfile& profile,

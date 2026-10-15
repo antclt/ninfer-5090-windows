@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/dtype.h"
-#include "ninfer/kv_types.h"
+#include "ninfer/types.h"
 
 #include <cstddef>
 #include <cstdint>

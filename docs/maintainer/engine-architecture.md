@@ -116,9 +116,12 @@ Program 将具体状态和物理可行性通过原生合同提供给 runtime。�
 Binder 按架构/config 解析所选功能的逻辑需求，`LoadPlan` 不决定位置。
 `resolve_load` 建立显式放置与 Host/Device 容量，Materializer 按原编码建立稳定 backing。
 同一物理 parent 在各位置分别去重；CPU/GPU 双端需求可由同一次有界 I/O 分发。
-Engine 在大权重读取前消费无地址的 `ModelProfile`，联合规划固定权重、KV/State、workspace、
-Graph allowance 及 MoE 资源。全量 GPU 放置可行时使用 resident 路径；受预算限制的 MoE
-使用 Host 来源及 Program 所有的 GPU 副本，见[Expert 权重缓存](expert-weight-cache.md)。
+Engine 在大权重读取前消费无地址的 `ModelProfile`，规划固定权重与必要的 KV/State、workspace、
+MoE backing。权重加载后以少量物理 KV 页校准完整的 Graph 集合，保留实际 context、batch、
+speculative 配置与拓扑共享关系；临时 Host context cache 为零。校准资源销毁后重新取得可用显存，
+扣除 Graph 重建估计，再确定正式 KV 与 expert cache 容量。静态容量曲线只计算显式 backing。
+全量 GPU 候选不可行时，受支持的 MoE 使用 Host 来源及 Program 所有的 GPU 副本，
+两个候选不同时持有模型，见[Expert 权重缓存](expert-weight-cache.md)。
 `NINFER_VRAM_BUDGET_MIB` 限定引擎 Device 预算，实际可用显存构成另一上限。
 ModelInstance 持有 Model、const Parameters、Frontend 与 Program；Parameters 持有与最终
 容量计划相同的不可变执行 profile。纯逻辑加载不要求建立执行 profile。
@@ -165,6 +168,11 @@ Reader、binder、原生参数准备、容量查询、warmup 和执行各自检�
 MoE 混合执行借用 CPU/CUDA 两端视图。共享专家及其余固定权重留在 GPU，Main routed
 experts 可以使用注册的 CPU 来源；其副本、预取、bridge 与完成依赖由 Program 管理。
 
+`models/common/moe` 提供跨模型的 bank 绑定、缓存规划、混合执行和资源组件。每个 Program
+独占其资源实例；组件消费有序 MoE 调用、计算 profile 和明确策略。模型负责权重角色、
+Main/MTP 放置、整机预算及层连接。`Write` 产出独立 block 输出，`AddResidual` 加回已有
+输出；HC 等模型连接留在对应架构。计算格式、shape 分派和 activation Use 准备归 Ops。
+
 ### 2.7 CPU 执行基础
 
 `CpuTopology` 记录发现线程允许使用的 OS CPU、物理核和可见缓存关系，不改变线程绑定。
@@ -189,7 +197,7 @@ worker 轮询；退出后恢复有限自旋与休眠。它不提交工作，也�
 
 两种执行器共享启动确认、初始化失败清理和线程回收机制。CPU 团队不调用 CUDA，也不持有
 传输槽、模型状态或权重副本。Engine/Scoring 的控制线程继续拥有各自的工作循环。
-CPU 团队用于 eager MoE 混合执行；每个 Program 持有固定团队和交接缓冲。
+CPU 团队用于 MoE 混合执行；每个 Program 持有固定团队和交接缓冲。
 MoE 按实际 token 列数选择混合计算或整层流式 GPU 计算，prefill、Replay、decode、
 control 与 verification 共用这个选择。权重副本不属于请求 StateImage，不随回滚或暂停恢复。
 
@@ -364,6 +372,21 @@ Op 拥有声明执行范围内的 Graph 更新兼容性，Program 在启动时�
 Speculative unit 使用 Forward、Finish 两段 Graph，CPU 在两段之间准备约束 mask，并可与 target
 forward 重叠；两段共享同一个资源预留和提交边界。
 长度档位限制资源范围；Program 不复制 Attention Op 私有 kernel 的分派边界。
+
+MoE offload 使用分段 GPU Graph，控制线程负责 CPU contribution、缓存快照及传输交接。
+稳定缓存合并 mixer 与 MoE GPU 提交；恢复和流式加载时分开，保留 mixer 与上传重叠。
+Graph 校准记录准备前、准备完成、仅销毁 Graph 后的显存快照。释放后仍保留的驱动开销
+已进入新的可用显存基准，不能与重建估计重复扣费。差值使用有符号数；允许重建增量为零。
+`MemorySummary.cuda_graph` 分别报告校准增长、校准释放后的保留量、重建估计和正式准备增长；
+`startup_retained_bytes` 记录正式 Program 分配前、扣除已拥有权重后的总增长。
+这些差值包含 CUDA 延迟加载和驱动缓存，不作为纯 Graph allocation 的精确归因。
+`runtime_reservation_bytes` 仅包含显式 Program backing。
+正式准备的增长单独报告，以实际总占用是否满足 Device 预算判断启动，不要求它小于估计值。
+统一 headroom 是容量规划缓冲，不按拓扑类重复预留。正式分配不足时最多进行一次容量纠偏重建；
+只调整自动 KV 或可选 expert cache，保持显式容量与执行功能。Device 分配不足可以回收，
+执行错误与 Host 内存分配失败不作为缩减 GPU 容量的理由。
+Graph 只记录 GPU 工作，warmup 不绑定运行期控制线程；结束异步工作后先销毁 Graph，
+再释放其引用的 bridge 和 events。具体依赖见 [Expert 权重缓存](expert-weight-cache.md)。
 
 Source 排序使用硬件与实际绑定对应的传输成本、prefill 成本；缺省值用于没有匹配测量的配置。
 实际 reservation 和 stores 决定物理可行性。

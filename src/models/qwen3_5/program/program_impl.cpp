@@ -6,9 +6,9 @@
 #include "core/startup.h"
 #include "core/device.h"
 #include "ninfer/ops/target_logprobs.h"
-#include "ninfer/ops/topk_logprobs.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -33,8 +33,7 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
       kv_storage(plan.kv_storage), proposal_head(plan.proposal_head),
       vision_enabled(plan.features.vision), use_cuda_graph(plan.use_cuda_graph),
       causal_scoring(plan.causal_scoring), kv_payload_bytes(plan.persistent.kv_payload_bytes),
-      graph_allowance_bytes(plan.graph_allowance_bytes), workspace_plan(plan.workspace),
-      persistent(device.device(), plan.persistent.bytes),
+      workspace_plan(plan.workspace), persistent(device.device(), plan.persistent.bytes),
       workspace_storage(device.device(), plan.workspace.capacity),
       work(workspace_storage.span().subspan(0, plan.workspace.general_capacity)),
       round_host(plan.causal_scoring
@@ -43,11 +42,6 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
       score_logprobs_host(plan.causal_scoring ? std::make_optional<PinnedHostBuffer>(
                                                     kCausalScoreTile * sizeof(float))
                                               : std::nullopt),
-      score_topk_host(plan.causal_scoring
-                          ? std::make_optional<PinnedHostBuffer>(
-                                kCausalScoreTile * ops::kTopkLogprobsMaxK *
-                                (sizeof(TokenId) + sizeof(float)))
-                          : std::nullopt),
       ordinary_host(
           !plan.causal_scoring && plan.speculative_backend == SpeculativeBackend::None
               ? std::make_optional<PinnedHostBuffer>(sizeof(qwen3_5::OrdinaryDecodeIngress) +
@@ -228,47 +222,66 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
             cudaMemsetAsync(sampling_config.data, 0, sampling_config.bytes(), device.stream()));
     }
     if (plan.moe) {
-        std::vector<const execution::MoeParameters*> layers;
+        std::vector<const moe::Parameters*> layers;
         for (const auto& block : parameters.text.layers) {
-            layers.push_back(std::get_if<execution::MoeParameters>(&block.ffn));
+            if (const auto* layer = std::get_if<moe::Parameters>(&block.ffn))
+                layers.push_back(layer);
         }
-        moe = std::make_unique<MoeResources>(plan.moe, layers, parameters.model.expert_banks(),
-                                             device);
+        moe = std::make_unique<moe::Resources>(
+            plan.moe, layers, parameters.model.expert_banks(), device,
+            plan.graph_probe ? moe::ResourcePurpose::GraphCalibration
+                             : moe::ResourcePurpose::Execution);
     }
     device.synchronize();
-    if (use_cuda_graph) {
-        StartupPhaseScope graph_phase(startup_observer, StartupPhase::CudaGraphPrepare);
-        prepare_graphs();
-        graph_phase.complete();
-    }
+
     work.reset();
     work.reset_peak();
     workspace_logical_peak_bytes = 0;
 }
 
-ProgramImpl::~ProgramImpl() noexcept {
-    moe.reset();
-    if (device.transfer_stream() != nullptr) {
-        (void)cudaStreamSynchronize(device.transfer_stream());
-    }
-    if (device.stream() != nullptr) { (void)cudaStreamSynchronize(device.stream()); }
+void ProgramImpl::initialize_graphs() {
+    if (!use_cuda_graph) return;
+    device.synchronize();
+    const auto before = device_memory_snapshot(device.device());
+    prepare_graphs();
+    device.synchronize();
+    graph_memory = GraphMemorySummary{.preparation_increment_bytes = device_memory_growth(
+                                          before, device_memory_snapshot(device.device()))};
+    work.reset();
+    work.reset_peak();
+    workspace_logical_peak_bytes = 0;
 }
 
-CausalTopk ProgramImpl::causal_score_topk(PreparedPromptData&& prompt,
-                                           std::uint32_t first_target, std::int32_t topk) {
-    // topk == 0 selects the scalar route: the target token's single log-probability per
-    // position, which is what perplexity aggregates. Anything else is the top-k route, whose
-    // result is the same windows reduced to k entries per position. Both share this loop
-    // because the windows, the staging tile, the KV reservation and the prefill schedule are
-    // identical, and two copies of that loop would be two places for the two routes to disagree
-    // about which positions were scored -- the one property a comparison between them depends on.
-    if (!causal_scoring || !score_hidden || !score_logprobs_host ||
-        (topk != 0 && !score_topk_host) || workspace_plan.causal_score == 0) {
-        throw std::logic_error("Program was not constructed for causal scoring");
+void ProgramImpl::release_graphs() {
+    if (moe) moe->synchronize();
+    CUDA_CHECK(cudaStreamSynchronize(device.transfer_stream()));
+    device.synchronize();
+    ordinary_graphs            = {};
+    speculative_forward_graphs = {};
+    speculative_finish_graphs  = {};
+}
+
+ProgramImpl::~ProgramImpl() noexcept {
+    if (moe) {
+        try {
+            moe->synchronize();
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "MoE teardown synchronization: %s\n", error.what());
+        }
     }
-    if (topk < 0 || topk > ops::kTopkLogprobsMaxK) {
-        throw std::invalid_argument("causal score top-k must be in [0," +
-                                      std::to_string(ops::kTopkLogprobsMaxK) + "]");
+    if (device.transfer_stream() != nullptr) (void)cudaStreamSynchronize(device.transfer_stream());
+    if (device.stream() != nullptr) (void)cudaStreamSynchronize(device.stream());
+    ordinary_graphs            = {};
+    speculative_forward_graphs = {};
+    speculative_finish_graphs  = {};
+    moe.reset();
+}
+
+std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
+                                             std::uint32_t first_target) {
+    if (!causal_scoring || !score_hidden || !score_logprobs_host ||
+        workspace_plan.causal_score == 0) {
+        throw std::logic_error("Program was not constructed for causal scoring");
     }
     if (speculative_backend != SpeculativeBackend::None || vision_enabled || use_cuda_graph ||
         context_cache.enabled) {
@@ -307,15 +320,8 @@ CausalTopk ProgramImpl::causal_score_topk(PreparedPromptData&& prompt,
         if (!released) { throw std::logic_error("causal score resources could not be released"); }
     };
 
-    CausalTopk result;
-    result.k = topk;
-    result.logprobs.reserve(token_count_size - first_target);
-    if (topk > 0) {
-        result.indices.reserve(
-            (token_count_size - first_target) * static_cast<std::size_t>(topk));
-        result.logprobs.reserve(
-            (token_count_size - first_target) * static_cast<std::size_t>(topk));
-    }
+    std::vector<float> output;
+    output.reserve(token_count_size - first_target);
     std::vector<TokenId> staged_targets;
     staged_targets.reserve(kCausalScoreTile);
     std::uint32_t staged_columns = 0;
@@ -348,50 +354,15 @@ CausalTopk ProgramImpl::causal_score_topk(PreparedPromptData&& prompt,
             const auto public_tokens = dimension(parameters.model.resources().public_token_count);
             execution::project(hidden, parameters.text.output_head, logits, work,
                                device.execution_view());
-            if (topk > 0) {
-                        // [columns, topk] with columns the slower axis, which is the Op's layout: the
-                // rows are the scored positions and each holds that position's k entries in
-                // descending log-probability. valid_rows is the public token count rather than
-                // the padded physical rows, so the log-partition each column is normalized by
-                // excludes the padding -- the same value target_logprobs divides by, so the two
-                // routes agree on any token both of them return.
-                Tensor topk_indices  = work.alloc(DType::I32, {columns, topk});
-                Tensor topk_logprobs = work.alloc(DType::FP32, {columns, topk});
-                ops::topk_logprobs(
-                    logits, dimension(parameters.model.resources().public_token_count), topk,
-                    topk_indices, topk_logprobs, device.stream());
-                const auto entry_bytes =
-                    static_cast<std::size_t>(staged_columns) * static_cast<std::size_t>(topk);
-                CUDA_CHECK(cudaMemcpyAsync(score_topk_host->data(), topk_indices.data,
-                                           entry_bytes * sizeof(TokenId),
-                                           cudaMemcpyDeviceToHost, device.stream()));
-                CUDA_CHECK(cudaMemcpyAsync(
-                    static_cast<std::byte*>(score_topk_host->data()) +
-                        entry_bytes * sizeof(TokenId),
-                    topk_logprobs.data, entry_bytes * sizeof(float), cudaMemcpyDeviceToHost,
-                    device.stream()));
-                device.synchronize();
-                const auto* host_indices =
-                    static_cast<const TokenId*>(score_topk_host->data());
-                const auto* host_logprobs = reinterpret_cast<const float*>(
-                    static_cast<const std::byte*>(score_topk_host->data()) +
-                    entry_bytes * sizeof(TokenId));
-                result.indices.insert(result.indices.end(), host_indices,
-                                      host_indices + entry_bytes);
-                result.logprobs.insert(result.logprobs.end(), host_logprobs,
-                                       host_logprobs + entry_bytes);
-            } else {
-                CUDA_CHECK(cudaMemcpyAsync(target_ids.data, staged_targets.data(), target_ids.bytes(),
-                                           cudaMemcpyHostToDevice, device.stream()));
-                ops::target_logprobs(logits, target_ids, public_tokens, logprobs,
-                                     device.execution_view());
-                CUDA_CHECK(cudaMemcpyAsync(score_logprobs_host->data(), logprobs.data,
-                                           logprobs.bytes(), cudaMemcpyDeviceToHost,
-                                           device.stream()));
-                device.synchronize();
-                const auto* host = static_cast<const float*>(score_logprobs_host->data());
-                result.logprobs.insert(result.logprobs.end(), host, host + staged_columns);
-            }
+            CUDA_CHECK(cudaMemcpyAsync(target_ids.data, staged_targets.data(), target_ids.bytes(),
+                                       cudaMemcpyHostToDevice, device.stream()));
+            ops::target_logprobs(logits, target_ids, public_tokens, logprobs,
+                                 device.execution_view());
+            CUDA_CHECK(cudaMemcpyAsync(score_logprobs_host->data(), logprobs.data, logprobs.bytes(),
+                                       cudaMemcpyDeviceToHost, device.stream()));
+            device.synchronize();
+            const auto* host = static_cast<const float*>(score_logprobs_host->data());
+            output.insert(output.end(), host, host + staged_columns);
             staged_targets.clear();
             staged_columns = 0;
             work.reset();
@@ -448,17 +419,11 @@ CausalTopk ProgramImpl::causal_score_topk(PreparedPromptData&& prompt,
             }
         }
         flush();
-        if (topk > 0) {
-            if (result.indices.size() !=
-                    (token_count_size - first_target) * static_cast<std::size_t>(topk) ||
-                result.logprobs.size() != result.indices.size()) {
-                throw std::logic_error("causal score produced the wrong number of top-k entries");
-            }
-        } else if (result.logprobs.size() != token_count_size - first_target) {
+        if (output.size() != token_count_size - first_target) {
             throw std::logic_error("causal score produced the wrong number of logprobs");
         }
         cleanup();
-        return result;
+        return output;
     } catch (...) {
         try {
             device.synchronize();
@@ -525,7 +490,7 @@ MemorySummary ProgramImpl::memory_summary() const {
             summary.fixed_experts_per_layer.push_back(layer.fixed_experts);
             summary.target_experts_per_layer.push_back(layer.cache_experts);
             summary.ready_experts_per_layer.push_back(
-                layer.experts ? usage.ready_experts_per_bank.at(layer.bank.index) : 0);
+                usage.ready_experts_per_bank.at(layer.spec.bank.index));
         }
         summary.bridge_device_bytes = plan.bridge.device_frame_bytes;
         summary.bridge_pinned_bytes = plan.bridge.pinned_frame_bytes;
@@ -572,7 +537,7 @@ MemorySummary ProgramImpl::memory_summary() const {
         };
     }
     out.workspace_logical_peak_bytes = workspace_logical_peak_bytes;
-    out.cuda_graph_allowance_bytes   = graph_allowance_bytes;
+    out.cuda_graph                   = graph_memory;
     out.kv_payload_bytes             = kv_payload_bytes;
     if (host_state_images) { out.host_state_occupied_slots = host_state_images->occupied(); }
     if (host_kv_arena) { out.host_kv_occupied_bytes = host_kv_arena->occupied_bytes(); }
@@ -606,10 +571,4 @@ void ProgramImpl::reset_memory_peaks() noexcept {
     }
 }
 
-
-
-std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
-                                            std::uint32_t first_target) {
-    return causal_score_topk(std::move(prompt), first_target, 0).logprobs;
-}
 } // namespace ninfer::models::qwen3_5::detail

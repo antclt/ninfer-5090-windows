@@ -1,9 +1,18 @@
 # Immutable loading and mutable execution have separate compile owners.
 add_library(ninfer_model_loading STATIC registry.cpp)
+target_sources(ninfer_model_loading PRIVATE
+  qwen4_exp/ple/parameters.cpp
+  qwen4_exp/ple/disk/table.cpp)
 ninfer_internal_includes(ninfer_model_loading)
 target_link_libraries(ninfer_model_loading PUBLIC ninfer_artifact ninfer_text ninfer_ops)
 
 add_library(ninfer_model_runtime STATIC)
+target_sources(ninfer_model_runtime PRIVATE
+  qwen4_exp/ple/hash.cpp
+  qwen4_exp/ple/upload.cpp
+  qwen4_exp/ple/disk/row_reader.cpp
+  qwen4_exp/ple/disk/prepare.cpp
+)
 ninfer_internal_includes(ninfer_model_runtime)
 target_link_libraries(ninfer_model_runtime
   PUBLIC ninfer_model_loading ninfer_ops ninfer_runtime_support
@@ -12,6 +21,12 @@ target_include_directories(ninfer_model_runtime PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/xgrammar/cpp)
 target_include_directories(ninfer_model_runtime SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/xgrammar/3rdparty/picojson)
+
+target_sources(ninfer_model_loading PRIVATE common/moe/weights.cpp)
+target_sources(ninfer_model_runtime PRIVATE
+  common/moe/plan.cpp
+  common/moe/execution.cpp
+  common/moe/resources.cpp)
 
 include(qwen3_5/loading_sources.cmake)
 include(qwen3_5/frontend_sources.cmake)

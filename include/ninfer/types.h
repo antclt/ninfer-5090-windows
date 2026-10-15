@@ -1,7 +1,5 @@
 #pragma once
 
-#include "ninfer/kv_types.h"
-
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -28,18 +26,12 @@ inline constexpr std::size_t kMaximumPromptMediaBytes = 256ULL << 20;
 inline constexpr std::size_t kDefaultMediaCacheBytes  = 1ULL << 30;
 inline constexpr std::size_t kDefaultMediaLiveBytes   = 2ULL << 30;
 
-// Top-k logprobs and indices per position, for a scored sequence. Port type: `ninfer-perplexity`
-// reads it (apps/perplexity/topk_record.cpp) and `Engine::score_topk` returns it, neither of which
-// upstream owns. Upstream b9114396 rewrote this header and did not carry it, so the offline scoring
-// route lost its declaration until it was restored here.
-struct CausalTopk {
-    std::vector<TokenId> indices;
-    std::vector<float> logprobs;
-    std::int32_t k = 0;
-
-    [[nodiscard]] std::size_t positions() const noexcept {
-        return k > 0 ? indices.size() / static_cast<std::size_t>(k) : 0;
-    }
+enum class KvCacheStorage : std::uint8_t {
+    BFloat16,
+    Int8Group64,
+    Fp8E4M3Row256,
+    Nvfp4Group16,
+    Fp8KeyNvfp4Value,
 };
 
 enum class EnginePurpose : std::uint8_t {
@@ -101,6 +93,7 @@ enum class StartupPhase : std::uint8_t {
     ProgramInitialize,
     HostContextPin,
     CudaGraphPrepare,
+    CudaGraphCalibration,
     EngineFinalize,
 };
 
@@ -395,14 +388,6 @@ struct ToolCallParseDiagnostics {
     std::uint32_t empty_arguments_omitted       = 0;
     std::uint32_t schema_mismatch_arguments     = 0;
     ToolCallParseFallbackReason fallback_reason = ToolCallParseFallbackReason::None;
-    // Why a tool call fell back, and what was rejected. `rejected_tool_name` is set only when the
-    // rejected text is a valid identifier, so the log gains a subject for the reason without ever
-    // carrying arbitrary model text. Port fields: upstream b9114396 rewrote this struct wholesale
-    // and did not carry them, while frontend/tool_call_parser.cpp (which upstream does not own) still
-    // writes them and src/serve/operational_log.cpp still reads them.
-    std::uint32_t rejected_tool_name_length = 0;
-    std::string rejected_tool_name;
-    std::string rejected_tool_near_match;
 
     [[nodiscard]] friend constexpr bool
     operator==(const ToolCallParseDiagnostics&, const ToolCallParseDiagnostics&) noexcept = default;
@@ -604,16 +589,6 @@ struct PromptPreparationStats {
     double media_preprocess_seconds      = 0.0;
     double media_preprocess_work_seconds = 0.0;
     double tokenize_seconds              = 0.0;
-    // Host phases of preparation other than tokenization. `seconds` covers the whole call, so these
-    // exist to keep the remainder attributable: a growing conversation's time to first token cannot
-    // be acted on while "not tokenization" is one unmeasured term. The host-only chat render bench
-    // puts the template render at ~80 ms for a 229-message, 690 KB conversation, so a preparation
-    // that far exceeds that has to be read against these brackets rather than against the render.
-    double render_seconds                = 0.0;
-    double context_cache_seconds         = 0.0;
-    double convert_seconds               = 0.0;
-    double contract_seconds              = 0.0;
-    double positions_seconds             = 0.0;
     std::size_t media_items              = 0;
     std::size_t media_bytes              = 0;
     std::uint64_t raw_patches            = 0;
@@ -865,21 +840,6 @@ struct SpeculativeStats {
     std::uint64_t accepted_tokens = 0;
     std::uint64_t fallback_steps  = 0;
     std::vector<std::uint64_t> accepted_per_position;
-
-    // Drafter recall against the target's own pick at each draft position, indexed like
-    // `accepted_per_position`. `recall1_per_position[i]` counts the rounds whose target pick at
-    // position i was the drafter's top-1 candidate, `recall16_per_position[i]` the rounds whose
-    // target pick was anywhere in the drafter's 16, and `proposed_per_position[i]` the rounds
-    // that proposed position i at all. `proposed_per_position` is the denominator for all three,
-    // so the three are published as a set rather than one at a time.
-    //
-    // Port fields: added 2026-10-01 for the recall@1/@16 split, which needed per-position recall to tell
-    // "the drafter is wrong" from "the target changed its mind". Upstream b9114396 rewrote this
-    // struct and did not carry them; generation_service.cpp populates them and
-    // src/serve/request_log.cpp publishes them.
-    std::vector<std::uint64_t> proposed_per_position;
-    std::vector<std::uint64_t> recall1_per_position;
-    std::vector<std::uint64_t> recall16_per_position;
 };
 
 struct ThinkingBudgetStats {
@@ -999,6 +959,14 @@ struct MoeMemorySummary {
     std::uint64_t prefetched_bytes  = 0;
 };
 
+struct GraphMemorySummary {
+    std::size_t rebuild_estimate_bytes = 0;
+    // Signed free-memory deltas; calibration holds its backing while releasing graphs.
+    std::int64_t preparation_increment_bytes = 0;
+    std::int64_t calibration_increment_bytes = 0;
+    std::int64_t calibration_retained_bytes  = 0;
+};
+
 struct MemorySummary {
     int device                      = 0;
     std::uint32_t max_context       = 0;
@@ -1016,14 +984,17 @@ struct MemorySummary {
     std::optional<VisionWorkspaceMemorySummary> vision_workspace;
     std::size_t minimum_runtime_reservation_bytes = 0;
     std::size_t kv_capacity_increment_bytes       = 0;
-    std::size_t runtime_reservation_bytes         = 0;
-    std::size_t available_after_weights_bytes     = 0;
-    std::size_t available_after_startup_bytes     = 0;
-    std::size_t kv_capacity_headroom_bytes        = 0;
-    std::size_t planned_slack_bytes               = 0;
-    std::size_t workspace_logical_peak_bytes      = 0;
-    std::size_t cuda_graph_allowance_bytes        = 0;
-    std::size_t kv_payload_bytes                  = 0;
+    // Explicit Program backing, excluding Graphs.
+    std::size_t runtime_reservation_bytes     = 0;
+    std::size_t available_after_weights_bytes = 0;
+    std::size_t available_after_startup_bytes = 0;
+    std::size_t kv_capacity_headroom_bytes    = 0;
+    std::size_t planned_slack_bytes           = 0;
+    std::size_t workspace_logical_peak_bytes  = 0;
+    std::optional<GraphMemorySummary> cuda_graph;
+    // Growth before final Program backing, minus owned weights.
+    std::int64_t startup_retained_bytes = 0;
+    std::size_t kv_payload_bytes        = 0;
     // One shared physical Host context backing. Reserved bytes are included in occupied bytes;
     // State/KV occupancy below is a breakdown and must not be added to this ledger again.
     std::size_t host_context_capacity_bytes = 0;

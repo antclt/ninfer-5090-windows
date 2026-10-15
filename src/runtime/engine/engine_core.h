@@ -7,7 +7,6 @@
 #include "ninfer/types.h"
 #include "runtime/contract/execution.h"
 #include "runtime/contract/resources.h"
-#include "runtime/engine/kv_capacity.h"
 #include "runtime/engine/request_record.h"
 #include "runtime/engine/context_cache/resource_manager.h"
 #include "runtime/engine/scheduler.h"
@@ -251,9 +250,21 @@ public:
 
     [[nodiscard]] MemorySummary memory_summary() const {
         std::scoped_lock lock(execution_mutex_);
-        MemorySummary out = instance_.program->memory_summary();
-        publish_kv_capacity(instance_.kv_capacity_resolution, out);
-        out.device_budget_bytes = instance_.device_budget_bytes;
+        MemorySummary out                      = instance_.program->memory_summary();
+        out.device_budget_bytes                = instance_.device_budget_bytes;
+        out.startup_retained_bytes             = instance_.startup_retained_bytes;
+        out.cuda_graph                         = instance_.cuda_graph;
+        const KvCapacityResolution& resolution = instance_.kv_capacity_resolution;
+        out.kv_capacity_mode                   = resolution.mode;
+        out.kv_capacity_page_groups            = resolution.main_page_groups;
+        out.kv_capacity_max_page_groups        = resolution.maximum_main_page_groups;
+        out.minimum_runtime_reservation_bytes  = resolution.minimum_runtime_reservation_bytes;
+        out.kv_capacity_increment_bytes        = resolution.bytes_per_additional_main_page_group;
+        out.runtime_reservation_bytes          = resolution.runtime_reservation_bytes;
+        out.available_after_weights_bytes      = resolution.available_after_weights_bytes;
+        out.available_after_startup_bytes      = resolution.available_after_startup_bytes;
+        out.kv_capacity_headroom_bytes         = resolution.automatic_headroom_bytes;
+        out.planned_slack_bytes                = resolution.planned_slack_bytes;
         return out;
     }
 
@@ -874,25 +885,21 @@ private:
             request->terminal_reason.reset();
 
             finish_engine_phase(boundary, EngineHostPhase::Boundary);
-            // Free the slot and publish the post-release snapshot before waking the caller, so a
-            // runtime_stats() read after generate() returns reflects the released lane instead of
-            // the last decode boundary.
-            remove_completed_slot(lane);
-            publish_runtime_stats();
             complete_success(request, reason);
+            remove_completed_slot(lane);
             boundary = begin_host_phase();
             changed  = true;
         }
+        if (changed) { publish_runtime_stats(); }
         return changed;
     }
 
     void cancel_active_requests(const std::array<bool, kMaximumConcurrency>& cancelled_at_boundary,
                                 HostPhaseMeasurement& boundary) {
         if (instance_.program->has_context_transaction()) { return; }
+        bool changed = false;
         for (std::uint32_t lane = 0; lane < max_concurrency_; ++lane) {
-            // Copy the slot before remove_completed_slot below resets it, so complete_success keeps
-            // the record alive across the release.
-            const auto request = slots_[lane];
+            const auto& request = slots_[lane];
             if (request == nullptr || !cancelled_at_boundary[lane]) { continue; }
             if (request->capture_pending) { continue; }
             if (!request->sequence || !request->lane || request->lane->value != lane) {
@@ -904,14 +911,12 @@ private:
             request->speculative_stats  = std::move(aborted.speculative);
             finish_engine_phase(boundary, EngineHostPhase::Boundary);
             append_output(request, request->output.commit_preview());
-            // Free the slot and publish the post-release snapshot before waking the caller, so a
-            // runtime_stats() read after generate() returns reflects the released lane instead of
-            // the last decode boundary.
-            remove_completed_slot(lane);
-            publish_runtime_stats();
             complete_success(request, FinishReason::Cancelled);
+            remove_completed_slot(lane);
             boundary = begin_host_phase();
+            changed  = true;
         }
+        if (changed) { publish_runtime_stats(); }
     }
 
     [[nodiscard]] bool expire_pending_requests() {
@@ -1194,22 +1199,15 @@ private:
         } catch (...) {
             phase.finish();
             for (std::size_t index = 0; index < terminal_count; ++index) {
-                remove_completed_slot(terminal_lanes[index]);
-                publish_runtime_stats();
                 complete_success(terminal_requests[index], terminal_reasons[index]);
+                remove_completed_slot(terminal_lanes[index]);
             }
             throw;
         }
         phase.finish();
         for (std::size_t index = 0; index < terminal_count; ++index) {
-            // The order the settle path already uses, and for its reason: free the lane and publish the
-            // post-release snapshot before waking the caller, so a runtime_stats() read after
-            // generate() returns reflects the released lane rather than the last decode boundary.
-            // `terminal_requests` holds a shared_ptr copy, which keeps the record alive across the
-            // release -- the same reference `cancel_active_requests` names.
-            remove_completed_slot(terminal_lanes[index]);
-            publish_runtime_stats();
             complete_success(terminal_requests[index], terminal_reasons[index]);
+            remove_completed_slot(terminal_lanes[index]);
         }
     }
 
@@ -1402,13 +1400,7 @@ private:
             owner->speculative_stats  = std::move(progress.request_speculative);
         }
         if (materializing_) {
-            // A copy, not a move. `fail_all_locked`'s cleanup reads this optional to complete the
-            // request, and a moved-from shared_ptr leaves the optional engaged holding
-            // null -- so if any call between here and the reset throws, nothing completes the request:
-            // it was erased from pending_ at admission and reaches slots_ only later, so no lane, queue
-            // or paused list holds it, and its consumer waits on a condition variable that can never
-            // fire. The optional is reset on every path below, so the move bought nothing.
-            const auto control  = *materializing_;
+            const auto control  = std::move(*materializing_);
             const auto& request = control.request;
             if (!progress.published) {
                 complete_detached_cancelled(request);

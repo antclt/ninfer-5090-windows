@@ -4,9 +4,10 @@
 数学与量化布局由 [artifact 格式](artifact-container.md)和各 Op 合同拥有；
 执行与生命周期由 [Engine 架构](engine-architecture.md)拥有。
 
-Engine 支持常驻 GPU，以及受显存预算约束的 eager MoE 混合执行。CPU `routed_swiglu`
-支持 Q4 GU + Q5/Q6 down，直接消费 Host bank 并产生 FP32 分项。GPU 使用同一组
-logical expert ID，既可以计算固定子集，也可以消费补齐后的整层 bank。
+Engine 支持常驻 GPU，以及受显存预算约束的 MoE 混合执行。CPU `routed_swiglu` Op
+支持 Q4 GU + Q5/Q6 down 及 NVFP4 GU/down，直接消费 Host bank 并产生 FP32 分项。
+GPU 使用同一组 logical expert ID，既可以计算固定子集，也可以消费补齐后的整层 bank。
+Qwen4Exp 的模型接入仍待完成。
 
 ## 来源与身份
 
@@ -177,11 +178,12 @@ Host 的 release 不代表 GPU 已完成读取。CUDA 提交失败后停止接�
   它与独立 Op 共用 kernel 机制，保有自己的格式/shape 分派和调优策略；全 GPU Main/MTP
   通过这一入口执行。
 
-当前 CUDA 数学支持 35B 的 Q4+Q5、Q4+Q6 和 Q8+Q8 expert profile，shared 为 Q8。
-CPU 支持 Q4+Q5、Q4+Q6，输入为 BF16，SiLU 与 down 输入保持 FP32，不量化激活。
-NVFP4/Block-FP8 的来源与寻址可描述，不表示这些 expert 数学已实现。
+CUDA 数学支持 35B 的整数 expert profiles，以及 [Qwen4Exp GPU MoE](qwen4_exp-moe-gpu.md)
+的 NVFP4、block-FP8 profiles。CPU 支持 Q4+Q5、Q4+Q6 和 Main NVFP4，输入为 BF16，
+SiLU 与 down 输入保持 FP32，不量化激活；CPU block-FP8 尚未实现。
 `CudaSwiGLUExperts` 借用 affine 或 indexed GPU bank；`CpuSwiGLUExperts` 借用完整原生 Host bank，
-直接按各 plane 的偏移和步长消费。activation divisor 属于 Use，matrix divisor 属于权重表示，二者不互相替代。
+直接按各 plane 的偏移和步长消费，NVFP4 使用每个 expert 自己的 matrix divisor。
+CPU 权重接口不携带 activation divisor。GPU activation divisor 属于 Use，matrix divisor 属于权重表示，二者不互相替代。
 融合 GU/down 分别取相关 Use 的 activation policy 交集；NVFP4 A4 需要共同的正值 activation divisor。
 
 Op 不分配长期资源或上传权重；CUDA 分支消费 Device 路由，CPU 分支同步消费 Host 路由。
@@ -189,12 +191,14 @@ Program 提供 scratch 和执行 view，负责发布、acquire/release 及 bridg
 固定 profile 的 CUDA Graph 可以重放新的路由、mask 和
 索引内容；更新必须发生在旧消费者结束之后。shared 始终驻留 GPU，不进入动态 expert 集合。
 
-`execution/moe` 的单层执行借用 `MoeExecutionView`。`MoePartition` 从本层已就绪 GPU ID
+`models/common/moe` 的单层执行借用 `moe::ExecutionView`。`moe::Partition` 从本层已就绪 GPU ID
 快照建立互补 mask 与 cache keys，CPU/GPU 在本次调用消费同一快照。mask 在计算流更新，
-pinned staging 在 DMA 完成前不复用。`MoeBridge` 持有 CPU team、普通 Host scratch、
+pinned staging 在 DMA 完成前不复用。`moe::Bridge` 持有 CPU team、普通 Host scratch、
 pinned/Device frame，以及独立的 bridge stream/events。资源查询分别返回两端 frame 和
 scratch 上界，可对多个 profile 取最大值；GPU scratch 由调用者提供，route/routed 顺序复用。
 纯 GPU 分工不建立 CPU team 或 bridge，完整融合调用显式接受 resident/indexed bank。
+公共执行支持 `Write` 和 `AddResidual`；前者不读取旧输出，后者在最终舍入前加入已有
+BF16 输出。Qwen3.5 使用后者，HC 架构可消费前者的独立 block 输出。
 
 调用方先用 cache `prepare/progress` 发布 required。混合调用先在计算流提交 route，
 回传 hidden 和连续的 IDs/coefficients，再提交 GPU routed/shared。小 T 的复制直接按计算流
@@ -228,7 +232,9 @@ Host backing 的子集。MTP、router、shared、Vision 和 draft 始终留在 G
 不强制启用 offload。优先级影响目标集合，实际 GPU 分工由已就绪副本决定。
 `moe.cpu_workers=0` 自动选择物理核并为控制线程留核；非零指定团队规模。
 
-`MoeResources` 由 Program 持有。扣除固定资源、KV、workspace、bridge/masks 和索引后，
+`moe::Resources` 由 Program 持有。公共 plan 按实际 MoE 调用顺序组织，bank ID 与模型层号
+独立。模型提供 Main/MTP 的 bank 放置与优先级；混合计算阈值及参考 CPU 团队规模作为
+计算 profile 的策略输入，缓存规划不固定任何模型几何。扣除固定资源、KV、workspace、bridge/masks 和索引后，
 剩余容量 C 分成固定区 R 和流式窗口。启动时联合求解均衡的固定额度及窗口容量：每层完整
 bank 为 W_l，固定 expert 为 R_l，每个窗口必须容纳 `max_l(W_l-R_l)`。不先扣除两个完整 bank。
 规划枚举完整 expert 的额度边界，并利用取整余量；固定集合取各层优先级前缀，数量和地址终身稳定。
@@ -260,7 +266,23 @@ MemorySummary 报告池容量、固定区、窗口总容量与数量、实际占
 受 context 剩余长度限制。测量签名包含优先级、各层缓存额度、团队、池容量和 chunk，
 不把常驻模型的重算成本标定直接套给 offload。
 
-常驻执行保留 CUDA Graph。当前混合执行要求 `use_cuda_graph=false`；MTP 的 Main
-verification 和 DFlash 的 target 使用相同调度，MTP 自身及 draft 延续常驻路径。
+常驻执行使用整段 CUDA Graph；混合执行支持分段 Graph，也保留 eager 提交。
+稳定小 T 将 mixer 与 MoE GPU 前段合并；窗口流式加载或额外缓存恢复期间分开提交，
+在 mixer 之后取得快照和加入权重就绪依赖。CPU 等待图中的输入就绪 external event，
+与 GPU routed/shared 并行计算；本轮没有 CPU contribution 时跳过 collective 和回传。
+捕获路径把输入 D2H 排在 GPU experts 前，避免独立拷贝分支被延后；较大 T 的结果 H2D
+仍使用 bridge stream。Eager 保留较大 T 的输入拷贝分支。
+缓存交接和预取留在图外，lease 释放排在最后一个 GPU 权重消费者之后。
+
+MTP 的 Main verification 和 DFlash 的 target 使用同一分段调度；MTP 自身及 draft
+延续常驻 Graph。相同 exact-B 的 target executable 在 draft 的不同拓扑间共享，
+每次选择 profile 同时安装对应 target envelope；MoE 段不随 context 档位复制。
+约束 mask 在首个 target GPU 段提交后准备。Graph 实例与 bridge/masks
+均由 Program 持有。启动校准借用已加载的 Host bank，以单层窗口承载权重，但按候选正式计划
+捕获 All/None/MaskOnes 和 steady 段；CPU/GPU 计算仍使用同一组执行原语。
+expert ID 与 offset 改变不要求重新校准，计算变体集合改变时校准对应集合。
+销毁临时资源后扣除重建估计，再确定 expert cache 额度；销毁时先结束设备
+工作并释放 Graph，再释放其引用的事件和存储。Prefill、Replay 延续 eager 提交，MoE
+计算策略仍只依据实际 T。
 
 测试与实测入口分别见 [Tests](../../tests/README.md) 和 [Benchmarks](../../bench/README.md)。
