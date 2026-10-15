@@ -35,7 +35,7 @@ set MKL_NUM_THREADS=4
 ## Upgrade an existing v2 artifact
 
 The offline upgrade tool supports the official Qwen3.6/3.8-27B groupwise-int and NVFP4 artifacts,
-and Qwen3.6-35B-A3B groupwise-int. Update your checkout, [rebuild NInfer](../README.md#windows),
+and Qwen3.6-35B-A3B groupwise-int. Update your checkout, [rebuild NInfer](../README.md),
 then run it with the interpreter above:
 
 ```bash
