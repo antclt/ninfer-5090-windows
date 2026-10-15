@@ -42,7 +42,7 @@
 # registers an ANY-user trigger and is denied ("Access is denied"), while
 # `Register-ScheduledTask -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME)` succeeded
 # from a medium-integrity shell and is registered here as `ninfer-gpu-runner` (state Ready, principal
-# `tobia`, logon Interactive, run level Limited), running `C:\AI\actions-runner\start-if-idle.cmd`.
+# `<runner-user>`, logon Interactive, run level Limited), running `C:\AI\actions-runner\start-if-idle.cmd`.
 # The runner is registered as `5090-box`, online.
 #
 # **The cron is withdrawn, 2026-10-11, on this evidence.** Twelve runs from 2026-10-06 to 10-11: 7

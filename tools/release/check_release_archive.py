@@ -13,6 +13,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -38,7 +39,7 @@ def _noted_version() -> str:
 
 DEFAULT_ARCHIVE = Path(r"C:\AI\releases") / f"ninfer-windows-{_noted_version()}-rtx5090.zip"
 ARCHIVE = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_ARCHIVE
-EXTRACT = Path(r"C:\Users\tobia\AppData\Local\Temp\opencode\release-check")
+EXTRACT = Path(tempfile.gettempdir()) / "opencode" / "release-check"
 PORT = 8086
 BASE = f"http://127.0.0.1:{PORT}"
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -28,7 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 SERVE = REPO / "build" / "apps" / "ninfer-serve.exe"
 SERVE_FALLBACK = Path(r"C:\AI\ninfer-v3-windows\build\apps\ninfer-serve.exe")
 MODEL = Path(r"C:\AI\models\qwen3_8_27b_nvfp4qat.v3.ninfer")
-LOG = Path(r"C:\Users\tobia\AppData\Local\Temp\opencode\check_cache_capacity.jsonl")
+LOG = Path(tempfile.gettempdir()) / "opencode" / "check_cache_capacity.jsonl"
 MODEL_ID = "qwen3.8-27b-quasar-v3-dflash2-vision"
 REQUIRED_HITS = 4
 

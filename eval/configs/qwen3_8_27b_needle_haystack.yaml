@@ -30,7 +30,7 @@ suites:
           subset_list: [english]
           judge_strategy: rule
           dataset_args:
-            local_path: C:/Users/tobia/.cache/modelscope/datasets/AI-ModelScope--Needle-in-a-Haystack-Corpus/snapshots/master
+            local_path: C:/Users/<your-username>/.cache/modelscope/datasets/AI-ModelScope--Needle-in-a-Haystack-Corpus/snapshots/master
             extra_params:
               context_lengths_min: 8192
               context_lengths_max: 8192

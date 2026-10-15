@@ -26,7 +26,7 @@ from v3_profile_matrix import build_args  # noqa: E402
 from bench_opencode_settings import PROFILES as BENCH_PROFILES  # noqa: E402
 
 WT = Path(__file__).resolve().parents[2]
-OPENCODE = Path(r"C:\Users\tobia\.config\opencode\opencode.json")
+OPENCODE = Path.home() / ".config" / "opencode" / "opencode.json"
 
 RETIRED = ["start_ninfer_v3_dflash2.bat", "start_ninfer_v3_mtp5.bat",
            "start_quasar_fp8_vision.bat"]
