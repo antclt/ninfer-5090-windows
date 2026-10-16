@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-15",
+  "recorded": "2026-10-16",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -195,6 +195,12 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
+    "cmake/NinferPlatform.cmake": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "",
+      "reason": ""
+    },
     "docs/README.md": {
       "status": "M",
       "disposition": "windows",
@@ -203,7 +209,7 @@
     },
     "docs/maintainer/build-system.md": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- port: this port. Open it before changing this path."
     },
@@ -224,24 +230,6 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "An anchor fix for the port's own gate: check_doc_links.py resolves every link target including its fragment, and these two maintainer documents are written in Chinese upstream, so the anchors are the full heading text rather than the English stubs the links used."
-    },
-    "docs/maintainer/qwen4_exp-execution.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
-      "reason": "an upstream defect this merge had to resolve to pass check_doc_links.py: the document links its own #implementation-status anchor, and no heading defines it -- in upstream's tree either. The link syntax is dropped and the visible text kept, because there is no heading to point at and inventing one would assert a section upstream did not write. Reported to upstream rather than silently repaired."
-    },
-    "docs/maintainer/qwen4_exp-model.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
-      "reason": "the same upstream defect: it links qwen4_exp-execution.md#implementation-status, an anchor that document does not define. Link syntax dropped, text kept, reported upstream."
-    },
-    "docs/maintainer/qwen4_exp-ple-io.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "a document correction, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- specifically check_doc_links and check_doc_citations, which fail on a link or a citation that does not resolve",
-      "reason": "the same class: it links ../../profiles/bench/ple-io-20261007/REPORT.md, and profiles/ is gitignored in full, so the target cannot exist in any checkout of this repository. Link syntax dropped, text kept, reported upstream."
     },
     "docs/performance.md": {
       "status": "M",
@@ -561,6 +549,54 @@
       "review": "product",
       "reason": "Port change, two defects from the c-review detect pass. (1) The AVIOContext's 32 KiB read buffer was never freed: the FFmpeg header this build compiles against says it must be freed with av_free(), and the pointer is lost once avio_context_free nulls the context. One Decoder is built per image part and two to six per video part, so it leaked unbounded over distinct media -- and MSVC has no LeakSanitizer to see it. (2) Four container-derived double-to-int conversions were unguarded; this toolchain yields INT_MIN rather than saturating, so a crafted frame rate made the frame count the minimum instead of the maximum (192x fewer vision tokens) and a huge duration produced a wrong diagnosis. All four clamp first now."
     },
+    "src/models/common/bindings.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/common/context/kv_history.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/common/qwen/frontend/chat_template.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Cited in the diff -- measure: Measured. Open it before changing this path."
+    },
+    "src/models/common/qwen/frontend/frontend.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Prompt preparation's host phases, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of 1cd70d17. The merge took upstream's frontend.cpp and dropped the five Clock brackets -- contract, convert, render, positions and cache prep -- while prepared_prompt.h kept their fields, so at HEAD nothing wrote or read them. The split is what makes a preparation that is not the render attributable: the render is ~80 ms of a 3.4 s remainder on a real agent session."
+    },
+    "src/models/common/qwen/frontend/prepared_prompt.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "The per-phase timings the request log and the serve phase report read: render_seconds, convert_seconds, contract_seconds and context_cache_seconds. Their definitions are recorded in AGENTS.md -- prepare_seconds spans the whole frontend, so reading one of these as 'the render' was a measured error once."
+    },
+    "src/models/common/qwen/frontend/processor.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "The frontier ledger, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of it. encode_rendered_chat built a bare byte_boundaries vector and read it back with a running boundary_index, so the push order and the read order were two independent traversals of the same fields agreeing only by convention; the port replaced that with a FrontierEntry ledger (kind + ordinal + offset) written and read by label. Upstream's own b9114396 change added a SIXTH field to both traversals (rewrite_checkpoint->recovery_offset), which is the pattern the ledger exists to make safe -- a change reaching one side and missing the other mislabels every later frontier silently, and the count check saw only the totals differing. The restoration carries RewriteRecovery as its own BoundaryKind. Verified by ninfer_qwen3_5_frontend_test, ninfer_qwen3_5_prefix_real_test and the full suite."
+    },
+    "src/models/common/qwen/frontend/tokenizer.cpp": {
+      "status": "M",
+      "disposition": "product",
+      "review": "product",
+      "reason": "ADR-0010 incremental prompt encoding. Restored 2026-10-05 after upstream b9114396's rewrite of this file dropped the port's half: the declarations survived in the port's tokenizer.h, so the tree compiled and linked with the cache dead, encode_cache_splices() stayed 0 and nothing failed. The port's layer is wrapped in NINFER-PORT-BEGIN/END and is byte-identical to c42406ab; encode_with_boundaries_uncached is upstream's own body, renamed, so the port owns no tokenization arithmetic here. Protected by ninfer_qwen3_5_frontend_test. Remove this entry only if the feature is withdrawn and ADR-0010 is superseded."
+    },
+    "src/models/common/qwen/frontend/tokenizer.h": {
+      "status": "M",
+      "disposition": "product",
+      "review": "product",
+      "reason": "Cited in the diff -- ADR: 0010. Open it before changing this path."
+    },
     "src/models/qwen3_5/config.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -591,42 +627,6 @@
       "review": "product",
       "reason": "Part of making the DFlash2 selector's codebooks real weights: they are declared as parameters with the drafter's vocab x selector_rank shape, bound as LinearParameters, and passed to candidate_selector_path as Weight rather than as a raw pointer. That is what lets the codebooks be NVFP4 as well as BF16, which is the route upstream's Q8-only drafter projection cannot serve."
     },
-    "src/models/qwen3_5/frontend/chat_template.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Cited in the diff -- measure: Measured. Open it before changing this path."
-    },
-    "src/models/qwen3_5/frontend/frontend.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Prompt preparation's host phases, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of 1cd70d17. The merge took upstream's frontend.cpp and dropped the five Clock brackets -- contract, convert, render, positions and cache prep -- while prepared_prompt.h kept their fields, so at HEAD nothing wrote or read them. The split is what makes a preparation that is not the render attributable: the render is ~80 ms of a 3.4 s remainder on a real agent session."
-    },
-    "src/models/qwen3_5/frontend/prepared_prompt.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "The per-phase timings the request log and the serve phase report read: render_seconds, convert_seconds, contract_seconds and context_cache_seconds. Their definitions are recorded in AGENTS.md -- prepare_seconds spans the whole frontend, so reading one of these as 'the render' was a measured error once."
-    },
-    "src/models/qwen3_5/frontend/processor.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "The frontier ledger, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of it. encode_rendered_chat built a bare byte_boundaries vector and read it back with a running boundary_index, so the push order and the read order were two independent traversals of the same fields agreeing only by convention; the port replaced that with a FrontierEntry ledger (kind + ordinal + offset) written and read by label. Upstream's own b9114396 change added a SIXTH field to both traversals (rewrite_checkpoint->recovery_offset), which is the pattern the ledger exists to make safe -- a change reaching one side and missing the other mislabels every later frontier silently, and the count check saw only the totals differing. The restoration carries RewriteRecovery as its own BoundaryKind. Verified by ninfer_qwen3_5_frontend_test, ninfer_qwen3_5_prefix_real_test and the full suite."
-    },
-    "src/models/qwen3_5/frontend/tokenizer.cpp": {
-      "status": "M",
-      "disposition": "product",
-      "review": "product",
-      "reason": "ADR-0010 incremental prompt encoding. Restored 2026-10-05 after upstream b9114396's rewrite of this file dropped the port's half: the declarations survived in the port's tokenizer.h, so the tree compiled and linked with the cache dead, encode_cache_splices() stayed 0 and nothing failed. The port's layer is wrapped in NINFER-PORT-BEGIN/END and is byte-identical to c42406ab; encode_with_boundaries_uncached is upstream's own body, renamed, so the port owns no tokenization arithmetic here. Protected by ninfer_qwen3_5_frontend_test. Remove this entry only if the feature is withdrawn and ADR-0010 is superseded."
-    },
-    "src/models/qwen3_5/frontend/tokenizer.h": {
-      "status": "M",
-      "disposition": "product",
-      "review": "product",
-      "reason": "Cited in the diff -- ADR: 0010. Open it before changing this path."
-    },
     "src/models/qwen3_5/load.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -639,11 +639,11 @@
       "review": "product",
       "reason": "Part of making the DFlash2 selector's codebooks real weights: they are declared as parameters with the drafter's vocab x selector_rank shape, bound as LinearParameters, and passed to candidate_selector_path as Weight rather than as a raw pointer. That is what lets the codebooks be NVFP4 as well as BF16, which is the route upstream's Q8-only drafter projection cannot serve."
     },
-    "src/models/qwen3_5/load/prepare.cpp": {
+    "src/models/qwen3_5/measurement.h": {
       "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "The config parser takes artifact::Reader instead of artifact::Directory, so it can reach the artifact's metadata: load.cpp populates EngineInfo::name and metadata_json from reader.metadata(), which Directory does not expose. Both types exist on both sides -- this is a widening for the metadata, not a rename."
+      "disposition": "windows",
+      "review": "",
+      "reason": ""
     },
     "src/models/qwen3_5/program/execution_context.h": {
       "status": "M",
@@ -657,11 +657,11 @@
       "review": "product",
       "reason": "The definition and both call sites of configure_text_card for the TextCallConfig restore: the three setters move to the TextContext constructor and the call sites pass TextCallConfig."
     },
-    "src/models/qwen3_5/program/storage/kv_address_space.h": {
+    "src/models/qwen3_5/program/program.h": {
       "status": "M",
       "disposition": "windows",
-      "review": "windows",
-      "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
+      "review": "",
+      "reason": ""
     },
     "src/models/qwen3_5/state/decoder_state.cpp": {
       "status": "M",
@@ -1089,6 +1089,12 @@
       "review": "product",
       "reason": "A deduplication: the two execution cores held identical copies of this, and the header's own comment says why it lives in one place now -- the resolution is published into the summary both cores report, so two copies could disagree. The same class as ops/common/validation.h and the route catalog."
     },
+    "src/runtime/engine/model_startup.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "src/serve/anthropic_messages_http.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1275,6 +1281,12 @@
       "review": "deleted",
       "reason": "Removed by the port: a sixth copy of the same parser, in namespace ninfer::test. Its three includers call ninfer::parse_kv_storage() now."
     },
+    "tests/models/common/qwen/test_tool_schema.py": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Subprocess call states encoding='utf-8'. Upstream's new tool-schema oracle uses text=True with no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and the payload is deliberately non-ASCII (ensure_ascii=False), so the first case raised UnicodeEncodeError before the probe ran. The same defect and the same fix as tests/text/test_json_schema.py, which upstream wrote the same way; upstream has no CI, so neither had been run anywhere but the maintainer's machine. No assertion changed."
+    },
     "tests/models/qwen3_5/test_engine_dflash2_real.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1298,12 +1310,6 @@
       "disposition": "windows",
       "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. Nothing parses this line; it is printed for a human reading the test output.",
       "reason": "peak_rss_kib() reads PeakWorkingSetSize through GetProcessMemoryInfo on Windows and getrusage elsewhere, so the diagnostic line keeps its field and unit on both. sys/resource.h has no MSVC equivalent and is now included only off _WIN32."
-    },
-    "tests/models/qwen3_5/test_tool_schema.py": {
-      "status": "M",
-      "disposition": "windows",
-      "review": "windows",
-      "reason": "Subprocess call states encoding='utf-8'. Upstream's new tool-schema oracle uses text=True with no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and the payload is deliberately non-ASCII (ensure_ascii=False), so the first case raised UnicodeEncodeError before the probe ran. The same defect and the same fix as tests/text/test_json_schema.py, which upstream wrote the same way; upstream has no CI, so neither had been run anywhere but the maintainer's machine. No assertion changed."
     },
     "tests/models/qwen3_5/tests.cmake": {
       "status": "M",
@@ -1335,29 +1341,17 @@
       "review": "",
       "reason": ""
     },
-    "tests/ops/linear/test_nvfp4_a16.cpp": {
+    "tests/ops/linear/projection/cases_nvfp4.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "product",
-      "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
+      "review": "",
+      "reason": ""
     },
-    "tests/ops/linear/test_split_multi_output.cpp": {
+    "tests/ops/linear/swiglu/cases_nvfp4.cpp": {
       "status": "M",
       "disposition": "unknown",
-      "review": "product",
-      "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
-    },
-    "tests/ops/linear/test_split_two_output.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
-      "reason": "Windows necessity: adds <array>, which this test uses directly and libstdc++ provides transitively; MSVC reports std::array as an undefined type (C2027) without it."
-    },
-    "tests/ops/linear_add/test_nvfp4.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Port change: a T=33 case at the 32/33 seam the schedule change creates. The width list had 32 but not 33, so the boundary the new branch keys on was uncovered."
+      "review": "",
+      "reason": ""
     },
     "tests/ops/linear_attention/gated_delta_net/test_fold.cpp": {
       "status": "M",
@@ -1370,18 +1364,6 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
-    },
-    "tests/ops/linear_swiglu/test_fp8.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Test coverage for the ungated FP8 bands: the token list is the band boundaries themselves (1, 64, 65, 129, 192, 193, 257, 513), so a ladder that reads the wrong bound fails here. That is the defect class the named constants in fp8_linear_add_a8.cu exist to prevent."
-    },
-    "tests/ops/linear_swiglu/test_nvfp4.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "The A16 profile's extent list, extended from 4 extents to 19 so the oracle covers every route boundary (17/24/25/32/33/64/65/96/97/128/129/1024) and the drafter's worst case at k=15, batch=8. Those extents failed this profile's own 6.3e-3 tail bound at 8.1e-3 before the route was fused, so the list is the evidence for the fix. It extends upstream's profile rather than adding a second one, because two profiles would let the criterion drift between them."
     },
     "tests/ops/softmax_attention/causal_cache.cpp": {
       "status": "M",
