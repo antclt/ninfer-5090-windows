@@ -18,27 +18,32 @@ engine rejects v2 artifacts outright, so a v1.0.x user must download a v3 artifa
 
 1. Download the archive attached to the release page and check it against the SHA-256 listed there.
 2. Extract it anywhere. The executables, the launchers and `download_model.bat` sit in the root.
-3. Run `download_model.bat`. It offers the two shipped artifacts, downloads the one you choose, and
-   verifies its size and SHA-256 against the pin in `download_model.py`.
+3. Run `download_model.bat`. It offers the shipped artifacts, fetches the source checkpoints the one
+   you choose is built from at pinned revisions, and builds it with the converter the archive ships.
+   No `.ninfer` file is downloaded prebuilt, so there is no artifact digest pin to go stale.
 4. Double-click a launcher. Each one checks that the engine and the artifact exist before starting,
    and leaves the failure on screen if they do not.
 
 The server then answers on `http://127.0.0.1:<port>/v1` under the model id in that launcher's
-header. `GET /health` answers once the model is loaded. The four launchers and their measured
+header. `GET /health` answers once the model is loaded. The eight launchers and their measured
 figures are under [Profiles and launchers](#profiles-and-launchers); building from source is under
 [Windows](#windows).
 
-Four v3 artifact files define this port's shipped surface. The eight launchers use these four.
+Five v3 artifact files define this port's shipped surface. The eight launchers use these five: the
+unsloth line ships twice, because its DFlash2 lane runs the no-exception image and its MTP lane the
+BF16-exception one.
 
 | Model | Weights | Artifact | Launcher pairs |
 |---|---|---|---|
 | Qwen3.8-27B | `nvfp4qat` (QUASAR) | `qwen3_8_27b_nvfp4qat.v3.ninfer` | DFlash2 + MTP4 |
 | Qwen3.8-27B | `nvfp4nvidia` (ModelOpt) | `qwen3_8_27b_nvfp4nvidia.v3.ninfer` | DFlash2 + MTP4 |
-| Qwen3.8-27B | `nvfp4full` | `qwen3_8_27b_nvfp4full.v3.ninfer` | DFlash2 + MTP4 |
+| Qwen3.8-27B | `nvfp4full` | `qwen3_8_27b_nvfp4full.v3.ninfer` | MTP4 |
+| Qwen3.8-27B | `nvfp4full_noex` | `qwen3_8_27b_nvfp4full_noex.v3.ninfer` | DFlash2 |
 | Qwen3.8-27B | `nvfp4swift15` (Swift 1.5) | `qwen3_8_27b_nvfp4swift15.v3.ninfer` | DFlash2 + MTP4 |
 
-Both are Qwen3.8-27B. Their sizes and full SHA-256 digests are pinned in `download_model.py`, which
-verifies every download against them; a republish upstream means updating that pin.
+All four lines are Qwen3.8-27B, and every shipped artifact is built locally by this port's converter
+from the source checkpoints `download_model.py` fetches at pinned revisions; no `.ninfer` file is
+downloaded prebuilt, so there is no artifact digest pin to go stale.
 
 Upstream publishes artifacts for other checkpoints, which this port neither ships nor measures. The
 engine requires a v3 container, and a copy fetched before the republish must be
@@ -63,7 +68,7 @@ reuse, Host resume, eviction, shared prefixes, scheduling boundaries, and multim
 
 ## Performance
 
-Published measurements use an RTX 5090. The four launchers' figures are in
+Published measurements use an RTX 5090. The eight launchers' figures are in
 [Profiles and launchers](#profiles-and-launchers), each at the exact argument set its launcher
 starts. The [performance index](docs/performance.md) and its
 [measurement rules](docs/performance/methodology.md) hold the engine's per-model run records, which
@@ -111,10 +116,13 @@ Two build notes specific to Windows:
 
 ### Runtime notes
 
-- Artifact I/O uses Win32 memory-mapped and unbuffered positional reads
-  (`CreateFileW` with `FILE_FLAG_NO_BUFFERING`), the counterpart of POSIX `O_DIRECT`/`pread`.
-- The Blackwell NVFP4 TMA kernels pass their descriptor block by **device pointer**, because
-  MSVC cannot pass an `alignas(128)` struct by value as a kernel parameter (`C2719`).
+- Artifact I/O uses Win32 unbuffered positional reads (`CreateFileW` with
+  `FILE_FLAG_NO_BUFFERING`), the counterpart of POSIX `O_DIRECT`/`pread`. Nothing is mapped: the
+  payload is read, never mapped into the address space.
+- The Blackwell TMA kernels pass their descriptor block **by value** in parameter space
+  (`const __grid_constant__`, `alignas(64)`), as upstream does. The port once passed it by device
+  pointer because MSVC rejects a by-value `alignas(128)` parameter with `C2719`; that form broke
+  CUDA Graph capture and was removed.
 - MSVC has no `__int128`; the runtime contract's 128-bit cost arithmetic goes through
   `ninfer::Uint128` (`src/core/uint128.h`).
 
@@ -124,8 +132,8 @@ Eight launchers ship for the RTX 5090 -- the four measured-optimal artifacts, ea
 its DFlash2 and MTP routes (eight profiles total). Every number below was measured on this machine
 with the exact argument set the launcher uses, in one interleaved pass -- absolute decode varies by
 up to ~9% between sessions on a card whose clocks are not pinned, so compare lanes to each other
-and expect your own absolute figures to differ. Both artifacts are vision-only here because Vision
-measured free on both at 262,144; the with/without comparison is recorded in
+and expect your own absolute figures to differ. All four lines are vision-only here because Vision
+measured free on every one at 262,144; the with/without comparison is recorded in
 [ADR-0004](docs/adr/0004-vision-only-and-third-party-artifact.md). No degraded text-only variant
 ships, and every profile reaches the full native context. **Three lanes ship `--kv-dtype k8v4`**
 (QUASAR DFlash2, Swift15 MTP, NVFP4-nvidia MTP); the rest ship `fp8`.
@@ -171,24 +179,29 @@ rate.
   or kernel paths" — the batched verify kernel is not the single-token decode path, so a
   near-tie can flip and the continuation diverges. Speculation measured 3-4x faster; the lane
   table above carries each launcher's own measured decode figure.
-- **Vision is free on both shipped artifacts.** The with/without comparison at 262,144 is recorded
+- **Vision is free on every shipped artifact.** The with/without comparison at 262,144 is recorded
   in [ADR-0004](docs/adr/0004-vision-only-and-third-party-artifact.md), so every profile here carries Vision. The retired NVFP4 image did cost 16,384-27,008 tokens of context, which is
   part of why it was replaced. The Vision runtime still has its own input envelope of 32,768
   merged tokens (131,072 raw patches) per request.
 
 ### Context-cache bounds are set deliberately, and they matter
 
-The launchers pass `--max-shared-prefixes 7 --max-private-continuations 8
---max-long-anchors-per-continuation 4`. At `--max-concurrency 1` the defaults are
-`max(1,4)` shared, 2 private and 2 anchors, and that is quietly expensive: measured on five
-distinct ~530-token prompts sent and then resent, the defaults gave **1/5 round-2 cache hits
-at a 19.8% token-level hit rate**, with four of the five prompts re-prefilling in full on
-every call and no error or degradation signal anywhere. Raising the shared-prefix bound
-alone changed nothing; the anchor and private-continuation bounds were the binding
-constraints. All three together gave **5/5 hits at 99.1%**.
+The launchers pass `--host-context-mib 8192`: one shared Host quota covering StateImages, Main and
+backend KV, pause snapshots and in-flight transfer destinations. Upstream `b9114396` replaced the
+five separate budgets this paragraph used to name (`--host-state-slots`, `--host-kv-mib`,
+`--max-shared-prefixes`, `--max-private-continuations`, `--max-long-anchors-per-continuation`), and
+none of them exists now. The quota is what bounds prefix retention, and the shortfall it prevents is
+silent.
 
-The bounds cost nothing measurable in the profile they were measured on (QUASAR DFlash2 with Vision at 262,144). `--kv-capacity auto` sizes each pool from the VRAM left after weights, so every profile's capacity is its own measured ceiling, not a shared number.
-The failure mode is silent, so it is worth setting these even when a single repeated prompt
+That silence is why it is set rather than left at the default. On the superseded cache, measured on
+five distinct ~530-token prompts sent and then resent, the engine's defaults gave **1/5 round-2 cache
+hits at a 19.8% token-level hit rate**, with four of the five re-prefilling in full on every call and
+no error or degradation signal anywhere; the bounds gave **5/5 at 99.1%**. Those figures describe the
+pre-`b9114396` cache and are kept as the record of why a bounded quota is set at all — the current
+cache has its own accounting and no equivalent re-derivation has been published.
+
+The quota costs nothing measurable in the profile it was measured on (QUASAR DFlash2 with Vision at 262,144). `--kv-capacity auto` sizes each pool from the VRAM left after weights, so every profile's capacity is its own measured ceiling, not a shared number.
+The failure mode is silent, so it is worth setting even when a single repeated prompt
 appears to cache perfectly — a lone resident prefix masks it.
 
 ## Client compatibility and known API limitations
