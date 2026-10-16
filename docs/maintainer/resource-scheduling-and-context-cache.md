@@ -84,7 +84,8 @@ Host allocated bytes。`N` 由原生架构声明，普通执行查询不分配�
 传输需求与观测另外记录 image count、page groups、payload bytes、copy operations；前两项
 是内容范围，Host allocated bytes 包含分配对齐，payload bytes 是实际 DMA 量。
 
-Host 缺省容量为 `8 GiB + 8 × 当前模型 Host StateImage 大小`。它是一个共享 backing，State 与
+RTX 5090 的 Host 缺省容量为 `8 GiB + 8 × 当前模型 Host StateImage 大小`；DGX Spark 的
+Host 容量固定为零，使用 Device 前缀复用和 Replay。Host pool 是一个共享 backing，State 与
 KV 的分项占用用于观测，不能再次相加成额外配额。传输目标从预留时就计费，发布只改变其状态，
 不减少占用。State 副本和传输目的直接持有 Host allocation，capture 预留的 allocation
 直接用于传输。Device 和 Host 的完整 image 使用同一内部布局；复制的对齐间隙计入真实传输
@@ -150,7 +151,9 @@ Frontend 根据模板渲染和 next-user probe 选择 typed R，再独立决定�
 ### 4.2 完整性与身份
 
 检查点包含精确输入身份、Native frontier、不可变 StateImage 和所需的各 typed KV 覆盖。
-StateImage 包括 GDN/conv、continuation hidden，以及所选后端的必要 local state。Main、MTP、
+StateImage 由模型声明，包含 GDN/conv、continuation hidden，以及架构和所选后端的固定状态；
+Qwen4Exp 还包含 QSA raw tail/坐标、PLE conv history 和启用 MTP 时的 conditioning。
+PLE raw-ID tail 与 frontiers 一起保存在 continuation metadata。Main、MTP、
 DFlash 的 frontier 分别解释，由模型代码保证相容。image 身份与执行前沿、RoPE 偏移、各历史
 有效范围和 tail hidden 有效性共同保存在原生 Continuation 中。冻结与复制不改变内容版本；
 完成数学写入才推进版本，未完成的分支目的不能发布为 checkpoint。

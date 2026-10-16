@@ -5,11 +5,13 @@ below is upstream's, kept verbatim. Everything after **Windows port** is this po
 
 ## Product and architecture
 
-NInfer is a C++/CUDA inference engine for maximum single-GPU performance, targeting `sm_120a`
-on NVIDIA GeForce RTX 5090. Choose designs for functional and numerical correctness, clear
-ownership, and the performance goal within the requested scope.
+NInfer is a C++/CUDA inference engine for maximum single-GPU performance. Execution targets are
+selected at compile time: `rtx5090` (Linux x86-64, `sm_120a`) and `dgx_spark` (Linux AArch64,
+`sm_121a`). Follow [Build system](docs/maintainer/build-system.md) for target composition.
+Choose designs for functional and numerical correctness, clear ownership, and the performance goal
+within the requested scope.
 
-It implements `Qwen3_5ForCausalLM`, `Qwen3_5MoeForCausalLM`, and eager Text/Vision/MTP for
+It implements `Qwen3_5ForCausalLM`, `Qwen3_5MoeForCausalLM`, and Text/Vision/MTP for
 `Qwen4ExpForCausalLM`. Checkpoints and recipe combinations
 of existing representations use the same architecture, binding and execution path; do not add
 checkpoint-specific execution registration. Generation uses one GPU, one resident model, and

@@ -24,7 +24,6 @@ endif()
 add_library(ninfer_cpu STATIC
   ${NINFER_CPU_SYSTEM_SOURCE}
   cpu/task_pool.cpp
-  cpu/executor.cpp
 )
 ninfer_internal_includes(ninfer_cpu)
 if(WIN32)
@@ -32,6 +31,19 @@ if(WIN32)
   target_link_libraries(ninfer_cpu PRIVATE Threads::Threads)
 else()
   target_link_libraries(ninfer_cpu PRIVATE PkgConfig::HWLOC Threads::Threads)
+endif()
+
+if(NINFER_TARGET STREQUAL "rtx5090")
+  if(WIN32)
+    # cpu/x86.cpp is the GCC <cpuid.h> implementation of current_cpu_features/current_cpu_identity.
+    # The port supplies those same symbols from cpu/system_windows.cpp (MSVC intrinsics), so the
+    # GCC translation unit is Linux-only here; the executor itself is platform-neutral.
+    add_library(ninfer_cpu_executor STATIC cpu/executor.cpp)
+  else()
+    add_library(ninfer_cpu_executor STATIC cpu/executor.cpp cpu/x86.cpp)
+  endif()
+  ninfer_internal_includes(ninfer_cpu_executor)
+  target_link_libraries(ninfer_cpu_executor PUBLIC ninfer_cpu)
 endif()
 
 add_library(ninfer_core STATIC
@@ -42,6 +54,7 @@ add_library(ninfer_core STATIC
   transfer.cpp
   transfer.cu
   device.cu
+  device_memory.cpp
   dtype.cpp
   nf4.cpp
   io/file.cpp

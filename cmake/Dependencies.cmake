@@ -17,8 +17,7 @@ if(MSVC)
 else()
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(HWLOC REQUIRED IMPORTED_TARGET hwloc>=2.5)
-  pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-    libavformat libavcodec libavutil libswscale)
+  pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing>=2.5)
 endif()
 
 # Repository-pinned header dependencies. No configure-time downloads.
@@ -26,11 +25,17 @@ add_library(ninfer::json INTERFACE IMPORTED GLOBAL)
 target_include_directories(ninfer::json INTERFACE
   ${PROJECT_SOURCE_DIR}/third_party)
 
-# Source base for the custom-template frontend; consumers will link it explicitly.
-add_subdirectory(third_party/llama-jinja EXCLUDE_FROM_ALL)
-
-# CPU grammar source base; consumers will link it explicitly.
-add_subdirectory(third_party/xgrammar EXCLUDE_FROM_ALL)
+if(NINFER_BUILD_ENGINE)
+  if(NOT MSVC)
+    # On Windows the staged-binaries PkgConfig::FFMPEG above is the whole story: there is no
+    # pkg-config here, so the pkg_check_modules call upstream keeps cannot run. Consumers link
+    # the same target name either way.
+    pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
+      libavformat libavcodec libavutil libswscale)
+  endif()
+  add_subdirectory(third_party/llama-jinja EXCLUDE_FROM_ALL)
+  add_subdirectory(third_party/xgrammar EXCLUDE_FROM_ALL)
+endif()
 
 if(NINFER_BUILD_PRODUCT_SUPPORT)
   # Media acquisition uses CURLOPT_PROTOCOLS_STR and CURLOPT_REDIR_PROTOCOLS_STR,

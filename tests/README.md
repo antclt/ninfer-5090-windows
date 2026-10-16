@@ -31,10 +31,12 @@ ownership contracts are defined in [Engine architecture](../docs/maintainer/engi
 Tests are grouped by observable risk, not by mirroring every source file or class.
 `CMakeLists.txt` includes explicit registrations from `cmake/`, `artifact/`, the model directories
 and `ops/`. Registration helpers live in `cmake/NinferTests.cmake`; included manifests keep
-executables and CTest working directories under `build/tests/`.
+executables and CTest working directories under `<build-dir>/tests/`.
 `ops/op_tester.h` and `ops/op_check.h` own reusable device/guard and comparison mechanics.
 `ops/linear_common.h` shares extent checks, explicit sampling recipes, payload preservation and
-0/1/77 entry handling; each projection family keeps its own fixtures and complete oracle.
+0/1/77 entry handling. `ops/linear/support.*` owns Linear case selection and the portable CPU oracle
+executor; `ops/linear/weights.*` owns its shared weight fixtures. Each semantic Op keeps its complete
+oracle and case declarations in its own directory.
 Concrete numerical criteria remain named by the semantic Op suite; there are no cross-Op tolerance
 presets.
 
@@ -44,7 +46,7 @@ Op suites. `ops/quantized_weight.h` owns packed-weight fixtures and independent 
 snapshot reference separately from projection and recurrence mathematical qualification.
 
 For segmented projection, run the original 2560-input suite and the migrated two/multi-output suites:
-`ctest --test-dir build -R '^ninfer_linear_split(_two_output|_multi_output)?_test$' --output-on-failure`.
+`ctest --test-dir build/rtx5090-dev -R '^ninfer_linear_split(_two_output|_multi_output)?_test$' --output-on-failure`.
 `ninfer_qsa_sparse_gqa_test --kv-cache bf16|fp8|int8|nvfp4|k8v4` selects one cache profile;
 the default checks all five. QSA tail, prepare, indexer and sparse-GQA partial-initialization cases
 also check their permitted read footprints under Compute Sanitizer initcheck.
@@ -57,20 +59,21 @@ minor version.
 `Python3_EXECUTABLE` selects the interpreter used by interop and frontend tests explicitly.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+cmake --preset rtx5090-dev \
   -DPython3_EXECUTABLE="$(command -v python3)"
-cmake --build build -j
-ctest --test-dir build --output-on-failure
+cmake --build build/rtx5090-dev -j
+ctest --test-dir build/rtx5090-dev --output-on-failure
 ```
 
-Alternatively, `cmake --preset dev` enables products, tests and benchmarks together.
-After building, `ctest --preset dev` runs the same CTest suite. See
+`rtx5090-dev` enables products, tests and benchmarks together. `rtx5090-ops` and
+`dgx-spark-ops` instead register Core, Artifact and Op tests. Use the selected build directory
+in the commands below; `ctest --preset <preset-name>` runs its registered suite. See
 [Build system](../docs/maintainer/build-system.md) for local interpreter presets.
 
 The chat-template reference test uses Python Jinja2.
 
 PLE reading foundations run with
-`ctest --test-dir build -R 'ninfer_(nf4|read_queue|artifact_backing|ple_(disk|upload))' --output-on-failure`.
+`ctest --test-dir build/rtx5090-dev -R 'ninfer_(nf4|read_queue|artifact_backing|ple_(disk|upload))' --output-on-failure`.
 The NF4 oracle uses exact Python fractions. The PLE fixture includes a row split across three files.
 `ninfer_ple_upload_test` checks exact Host-to-Device E and slot retirement using a direct Host
 producer, without a table or disk service. Disk preparation tests separately cover their composition.
@@ -79,16 +82,20 @@ Real-weight I/O throughput measurements belong to separate, explicitly selected 
 The Host preparation test runs without visible CUDA devices. The GPU test delays upload/consumption,
 injects event-record failures and checks graph consumption against independently reconstructed E.
 
-CPU foundation tests link only the C++ `ninfer_cpu` target and need no GPU:
-`ctest --test-dir build -R '^ninfer_cpu_.*_test$' --output-on-failure`.
-The memory test also exercises CPU Tensor/arena computation. Frontend and HTTP transport tests
+CPU topology/task-pool tests link the C++ `ninfer_cpu` target. The x86 feature and collective
+executor tests link `ninfer_cpu_executor` and are registered only for RTX 5090. None needs a GPU:
+`ctest --test-dir build/rtx5090-dev -R '^ninfer_cpu_.*_test$' --output-on-failure`.
+CPU/GPU MoE composition has its own `ninfer_moe_mixed_test`; pure GPU MoE remains in
+`ninfer_moe_test`. Shared fixtures and mathematical oracles remain common across targets.
+`ninfer_cpu_tensor_test` covers executor-based Tensor/arena computation;
+`ninfer_memory_test` covers portable CPU storage and views. Frontend and HTTP transport tests
 cover the task-pool consumers, including restricted media affinity and HTTP queue saturation.
 
 Run a focused target for a localized change:
 
 ```bash
-cmake --build build --parallel --target ninfer_sampling_test
-ctest --test-dir build -R ninfer_sampling_test --output-on-failure
+cmake --build build/rtx5090-dev --parallel --target ninfer_sampling_test
+ctest --test-dir build/rtx5090-dev -R ninfer_sampling_test --output-on-failure
 ```
 
 ### Windows port recipes
@@ -123,7 +130,7 @@ Enable uniform floating-point error records when establishing or reviewing an Op
 
 ```bash
 NINFER_OP_REPORT_STATS=1 \
-  ctest --test-dir build -V -R '^ninfer_(rmsnorm|softmax_attention)_test$'
+  ctest --test-dir build/rtx5090-dev -V -R '^ninfer_(rmsnorm|softmax_attention)_test$'
 ```
 
 Every participating comparison emits one `OP_ERROR_STATS` record containing the stable case label,
@@ -139,10 +146,10 @@ remain serial. The runner reports elapsed time per KV type.
 Run the RMSNorm and GDN control families together:
 
 ```bash
-cmake --build build -j --target \
+cmake --build build/rtx5090-dev -j --target \
   ninfer_rmsnorm_test ninfer_gated_rmsnorm_test \
   ninfer_gdn_control_test ninfer_gdn_control_proj_test ninfer_gdn_norm_control_proj_test
-ctest --test-dir build --output-on-failure \
+ctest --test-dir build/rtx5090-dev --output-on-failure \
   -R '^ninfer_(rmsnorm|gated_rmsnorm|gdn_control|gdn_control_proj|gdn_norm_control_proj)_test$'
 ```
 
@@ -153,10 +160,10 @@ reports the same suite-owned criteria used by the normal verdict.
 Run the HC residual family:
 
 ```bash
-cmake --build build -j --target \
+cmake --build build/rtx5090-dev -j --target \
   ninfer_hc_expand_norm_test ninfer_hc_grouped_rmsnorm_test \
   ninfer_hc_combine_test ninfer_hc_combine_norm_test ninfer_hc_mix_test
-ctest --test-dir build --output-on-failure \
+ctest --test-dir build/rtx5090-dev --output-on-failure \
   -R '^ninfer_hc_(expand_norm|grouped_rmsnorm|combine|combine_norm|mix)_test$'
 ```
 
@@ -164,31 +171,46 @@ HC suites qualify the public [gated residual forms](../include/ninfer/ops/gated_
 including Mix, using [family-owned criteria](ops/gated_residual/criteria.h). Exact copying and
 mathematical outputs retain their respective references and the public BF16 residual boundary.
 
-PLE GPU Ops run with `ctest --test-dir build -R '^ninfer_ple_(gate|conv|state_extract)_test$'`.
+PLE GPU Ops run with `ctest --test-dir build/rtx5090-dev -R '^ninfer_ple_(gate|conv|state_extract)_test$'`.
 Gate uses an independent FP64 oracle for U and norm(actual BF16 U), including strided projections,
 record windows, masks, Graph replay and the Conv/StateExtract handoff. These tests perform no file I/O.
 
-Linear tests are independently runnable by weight and activation-compute profile:
+The Linear family has six executables under `ops/linear/`: `projection`, `split`, `add`, `swiglu`,
+`pair`, and `topk`. CTest partitions each executable by format without registering an additional
+aggregate run. Dynamic-grouped-convolution fusion remains a separate Op suite.
 
 ```bash
-cmake --build build --parallel --target \
-  ninfer_linear_q4_a16_test ninfer_linear_q5_a16_test \
-  ninfer_linear_q6_a16_test ninfer_linear_q8_a16_test
-ctest --test-dir build -R '^ninfer_linear_(q4|q5|q6|q8)_a16_test$' --output-on-failure
+cmake --build build/rtx5090-dev -j
+ctest --test-dir build/rtx5090-dev -R '^ninfer_linear_.*_test$' --output-on-failure
+./build/rtx5090-dev/tests/ninfer_linear_projection_test --format q8 --shape 6144 5120
+./build/rtx5090-dev/tests/ninfer_linear_split_test --format fp8 --policy a4 --list
+./build/rtx5090-dev/tests/ninfer_linear_swiglu_test --format nvfp4 --policy a4 --execution graph
 ```
 
-For a change confined to one Q8 geometry, use the same public conformance cases with
-`./build/tests/ninfer_linear_q8_a16_test --shape N K`. The default CTest invocation still covers
-all registered Q8 geometries.
+All six accept `--help`, `--list`, `--format FORMAT`, `--policy a16|a8|a4`, `--shape N K`,
+`--t T`, `--case ID`, and `--execution eager|graph`. Filters intersect and select declared cases;
+they do not generate new fixtures. Formats are `bf16`, `q4`, `q5`, `q6`, `q8`, `fp8`, `nvfp4`,
+and `q4_q5` for paired Split parents, where present in the suite. N is the logical weight row count
+(one projection's N for Pair). `--case` accepts an exact ID from `--list`.
 
-For a change confined to one BF16 geometry, use
-`./build/tests/ninfer_linear_bf16_a16_test --shape N K`. The filter covers all registered BF16
-geometries, including the original projections and selector matrix. The default runs all cases.
+Listing and filtering precede CUDA initialization and fixture allocation. Unknown options and empty
+selections fail; exit 77 means no usable CUDA device. IDs distinguish geometry, represented-input
+recipe, policy, call form and execution. Metadata and workspace contract cases use T=0. A Graph
+case includes its whole declared input-update sequence; a policy filter selects a multi-policy
+sequence if any of its calls uses that policy. Each call uses its own policy's numerical criterion.
 
-Linear (including both BF16 fixture recipes), LinearAdd (including FP8/NVFP4) and LinearSwiGLU
-common implementations each compile once into a test support library. Their libraries and CXX Op test executables receive `-fno-fast-math` and `-ffp-contract=off`
-on GNU/Clang. The remaining organization, entry-point and oracle-build work is tracked in the
-[Linear test reorganization requirements](../docs/maintainer/linear-test-reorganization-plan.md).
+Input generation, seeds, packed codes/scales/divisors and sample coordinates belong to the case,
+independently of selection order and acceptance criteria. `AllowA4` always uses the Op's A4
+criterion, even if a higher-precision implementation runs; `AllowA8` similarly uses A8. Oracles
+decode represented weights independently and evaluate the complete FP64 formula without activation
+quantization or intermediate BF16 rounding. Bank row views are layout cases in the four consuming
+suites. Changed-input Graph checks include Pair's separate/shared parents and TopK scores.
+
+Large independent oracle rows reuse a bounded portable CPU task pool; small work remains serial.
+Each dot product retains its K accumulation order. Shared support and all CXX suite targets receive
+`-fno-fast-math` and `-ffp-contract=off` on GNU/Clang. Both build targets use the same mathematical
+criteria and shared case tables. Run the native Spark build with `build/dgx-spark-dev` in the commands
+above; add target-specific boundary tables only when actual dispatch needs them.
 
 Run the native Python suites with the project Python environment:
 
@@ -206,7 +228,7 @@ cover consumption of their resulting representation.
 The real loading test accepts an explicit artifact path and optional component selection:
 
 ```bash
-./build/tests/ninfer_qwen3_5_loading_real_test \
+./build/rtx5090-dev/tests/ninfer_qwen3_5_loading_real_test \
   --artifact out/qwen3_6_27b.ninfer --vision --speculative mtp --proposal optimized
 ```
 
@@ -218,7 +240,7 @@ runs the real engine:
 
 ```bash
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_6_27b.ninfer \
-  ctest --test-dir build -R ninfer_qwen3_5_prefix_real_test --output-on-failure
+  ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_prefix_real_test --output-on-failure
 ```
 
 The causal-scoring integration test uses the same artifact variable and checks a full 1,024-column
@@ -226,7 +248,7 @@ score tile, overlapping target suffixes, and repeated-window State/KV isolation:
 
 ```bash
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
-  ctest --test-dir build -R ninfer_qwen3_5_score_real_test --output-on-failure
+  ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_score_real_test --output-on-failure
 ```
 
 `ninfer_moe_test` qualifies the integer routing, complete MoE and routed SwiGLU profiles.
@@ -265,15 +287,15 @@ transitions through the real cache schedule. The compact Graph calibration stora
 All/None/partial contributions against the same oracle while reusing one bank window.
 
 ```bash
-ctest --test-dir build -R '^ninfer_moe(_block_scaled|_cpu_(groupwise_int|nvfp4)(_avx2|_fma)?)?_test$' --output-on-failure
-ctest --test-dir build -R '^ninfer_moe_execution_test$' --output-on-failure
+ctest --test-dir build/rtx5090-dev -R '^ninfer_moe(_block_scaled|_cpu_(groupwise_int|nvfp4)(_avx2|_fma)?)?_test$' --output-on-failure
+ctest --test-dir build/rtx5090-dev -R '^ninfer_moe_execution_test$' --output-on-failure
 ```
 
 Run the 35B-A3B MoE route independently:
 
 ```bash
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_6_35b_a3b.ninfer \
-  ctest --test-dir build -R ninfer_qwen3_5_moe_real_test --output-on-failure
+  ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_moe_real_test --output-on-failure
 ```
 
 `ninfer_qwen3_5_moe_offload_real_test` uses the same artifact with a 16 GiB Device budget and
@@ -296,7 +318,7 @@ across a resource tier, prefix continuation, and workspace bounds:
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_6_27b.ninfer \
 NINFER_PREFIX_REAL_SCENARIO=attention NINFER_TEST_KV_DTYPE=fp8 \
 NINFER_TEST_SPECULATIVE=mtp NINFER_TEST_BATCH=2 \
-  ./build/tests/ninfer_qwen3_5_prefix_real_test
+  ./build/rtx5090-dev/tests/ninfer_qwen3_5_prefix_real_test
 ```
 
 KV choices are `bf16`, `int8`, `fp8`, `nvfp4`, and `k8v4`; backend choices are `none`, `mtp`,
@@ -309,19 +331,21 @@ Continuation and pressure recovery have dedicated entries:
 
 ```bash
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
-  ctest --test-dir build -R ninfer_qwen3_5_agent_continuation_real_test --output-on-failure
+  ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_agent_continuation_real_test --output-on-failure
 
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
 NINFER_TEST_BACKEND=dflash2 \
-  ctest --test-dir build -R ninfer_qwen3_5_preemption_real_test --output-on-failure
+  ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_preemption_real_test --output-on-failure
 
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
-  ./build/tests/ninfer_qwen3_5_native_transactions_test dflash2
+  ./build/rtx5090-dev/tests/ninfer_qwen3_5_native_transactions_test dflash2
 ```
 
 The agent entry checks multi-turn continuation and branching. The preemption entry exercises
 Snapshot/Replay recovery and cancellation while paused or replaying; `NINFER_PREEMPTION_REAL_SCENARIO`
-selects `all`, `snapshot`, `replay`, `cancel-paused` or `cancel-replay`. Native transaction tests cover
+selects `all`, `snapshot`, `replay`, `cancel-paused` or `cancel-replay`.
+`NINFER_TEST_PROPOSAL_HEAD=full` selects the full head for Qwen4Exp MTP; the default is `optimized`.
+On Spark, use the replay/cancellation cases with Device context storage. Native transaction tests cover
 physical state/KV ownership, binding, capture, reclamation and abort; their positional backend is
 `none`, `mtp`, `dflash` or `dflash2`. Each backend requires an artifact containing that component.
 Public-HTTP latency and output gaps are measured separately by the
@@ -346,6 +370,9 @@ before protocol adapters serialize the schema.
 `NINFER_TEST_ARTIFACT` to check GBNF/JSON/schema/choice/regex content, sampling, thinking, continuation, prefix reuse
 and mixed batches. `ninfer_regex_choice_test` checks literal-set prefix masks and regex edge cases;
 `python3 tests/text/test_regex_choice.py` compares regex membership with independent fullmatch semantics.
+CTest supplies each Python oracle's native probe path. For direct invocation, set
+`NINFER_TOOL_PROBE`, `NINFER_REGEX_PROBE`, or `NINFER_SCHEMA_PROBE` to the corresponding test binary
+under the selected build tree; the scripts have no implicit build-directory choice.
 Set `NINFER_TEST_CONSTRAINT=grammar` or `json_schema` on the preemption test to
 check matcher continuity through Snapshot/Replay and cancellation. `ninfer_grammar_test` and
 `ninfer_json_schema_test` cover CPU language semantics. `ninfer_json_schema_oracle_test` compares
@@ -363,7 +390,7 @@ PYTHONPATH=eval eval/.venv/bin/python -m unittest discover \
 Run the serving contract manually after starting a resident server in another terminal:
 
 ```bash
-./build/apps/ninfer-serve out/qwen3_6_27b.ninfer \
+./build/rtx5090-dev/apps/ninfer-serve out/qwen3_6_27b.ninfer \
   --host 127.0.0.1 --port 18080 --vision
 ```
 
@@ -382,9 +409,11 @@ prefix reuse, speculative execution, frontier bounds and Responses inheritance:
 
 ```bash
 python3 tools/smoke/serve_thinking_preservation.py \
+  --server-bin build/rtx5090-dev/apps/ninfer-serve \
   --artifact out/qwen3_6_27b.ninfer --backend mtp
 
 python3 tools/smoke/serve_thinking_preservation.py \
+  --server-bin build/rtx5090-dev/apps/ninfer-serve \
   --artifact out/qwen3_6_35b_a3b.ninfer --backend dflash
 ```
 
@@ -432,11 +461,11 @@ decode binding, including shortened chunks and oversized local/full KV appends. 
 Program storage and the production prefill route; select the draft component stored in the artifact:
 
 ```bash
-cmake --build build -j --target ninfer_qwen3_5_dflash_prefill_real_test
+cmake --build build/rtx5090-dev -j --target ninfer_qwen3_5_dflash_prefill_real_test
 NINFER_TEST_ARTIFACT=out/qwen3_8_27b_nvfp4.ninfer \
-  build/tests/ninfer_qwen3_5_dflash_prefill_real_test dflash2
+  build/rtx5090-dev/tests/ninfer_qwen3_5_dflash_prefill_real_test dflash2
 NINFER_TEST_ARTIFACT=out/qwen3_6_35b_a3b.ninfer \
-  build/tests/ninfer_qwen3_5_dflash_prefill_real_test dflash
+  build/rtx5090-dev/tests/ninfer_qwen3_5_dflash_prefill_real_test dflash
 ```
 
 The Engine test requires a DFlash2 companion artifact and covers speculative transactions,
@@ -446,13 +475,13 @@ Optional Vision enables image/video and prefix-restore cases. Zero extra Device 
 exercise Host snapshot/restore.
 
 ```bash
-cmake --build build -j --target ninfer_qwen3_5_dflash2_real_test
+cmake --build build/rtx5090-dev -j --target ninfer_qwen3_5_dflash2_real_test
 NINFER_TEST_ARTIFACT=out/qwen3_8_27b.ninfer \
-  build/tests/ninfer_qwen3_5_dflash2_real_test 15 1 1 8
+  build/rtx5090-dev/tests/ninfer_qwen3_5_dflash2_real_test 15 1 1 8
 NINFER_TEST_ARTIFACT=out/qwen3_8_27b.ninfer \
-  build/tests/ninfer_qwen3_5_dflash2_real_test 7 1 0 2 bf16 1 0
+  build/rtx5090-dev/tests/ninfer_qwen3_5_dflash2_real_test 7 1 0 2 bf16 1 0
 NINFER_TEST_ARTIFACT=out/qwen3_8_27b_nvfp4.ninfer \
-  build/tests/ninfer_qwen3_5_dflash2_real_test 2 0 0 2 int8
+  build/rtx5090-dev/tests/ninfer_qwen3_5_dflash2_real_test 2 0 0 2 int8
 ```
 
 Arguments are K, Graph enabled, optimized head enabled, maximum B, target KV (`bf16`, `int8`,
@@ -476,20 +505,22 @@ The opt-in loader test accepts `--host-experts` to put Main experts in registere
 fixed tensors on GPU. This checks storage and binding, not mixed MoE execution:
 
 ```bash
-build/tests/ninfer_qwen3_5_loading_real_test --artifact out/qwen3_6_35b_a3b.ninfer \
+build/rtx5090-dev/tests/ninfer_qwen3_5_loading_real_test --artifact out/qwen3_6_35b_a3b.ninfer \
   --vision --speculative mtp --host-experts
 ```
 
 Qwen4Exp loading/resources can be checked independently of the public Engine route:
 
 ```bash
-./build/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer
-./build/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --materialize
+./build/rtx5090-dev/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --host-experts
+./build/rtx5090-dev/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --host-experts --materialize
 ```
 
 The first command plans component combinations, KV formats and concurrency without loading weight
 payloads. `--materialize` additionally loads one full-component model, checks stored words and
 parameter sharing, constructs its execution resources, and reads/uploads a PLE window. It needs
-about 64 GiB of available Host memory plus system headroom. These are loading/resource checks;
-eager Text/Vision generation and text causal scoring use the public Engine, as described in the
-[CLI guide](../docs/cli.md).
+about 64 GiB of available Host memory plus system headroom with `--host-experts`. For resident
+loading on Spark, use its build directory and omit `--host-experts`. These are loading/resource checks;
+Text/Vision/MTP generation, eager or CUDA Graph decode, and text causal scoring use the public Engine,
+with current support described in the [execution reference](../docs/maintainer/qwen4_exp-execution.md)
+and commands in the [CLI guide](../docs/cli.md).

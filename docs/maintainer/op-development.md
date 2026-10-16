@@ -273,7 +273,7 @@ return a small family-private Plan containing the selected stages and resource f
 choices to allocation and launch instead of repeating the same selection downstream. Capacity
 queries and execution must consume the same selection and allocation rules.
 
-Selection depends on actual operands and execution facts, never target keys, artifact names,
+Runtime selection depends on actual operands and execution facts, never target keys, artifact names,
 converter fields, model roles, Program phases or arbitrary registry strings. A launcher may
 specialize full tiles versus tails and obey CUDA grid limits; performance policy belongs in the
 selector. Device-resident per-row lengths stay Device inputs under the Op's capture contract.
@@ -347,6 +347,30 @@ numerical boundary. The consuming Op chooses its arithmetic profile and tuned im
 
 Preserve per-shape compilation units and explicit template ownership. File organization must not
 silently change RDC mode, architecture, compiler precision options or device-link ownership.
+
+### 4.4 Execution-target ownership
+
+The build selects one native execution target; see [Build system](build-system.md). Keep the
+mathematical interface and caller-owned resources independent of that selection. A small portable
+Op stays in its existing source. Split only where target-specific dispatch, instantiation or launch
+requirements need independent ownership; not every family needs platform subdirectories.
+
+Within an affected Op, `rtx5090/` and `dgx_spark/` own their private shape catalogs, schedules and
+launch bindings. CMake includes the selected source manifest. Shared kernel templates, codecs,
+operand contracts and mathematical oracles remain outside those directories when useful to both.
+Each target owns its tuning independently. The compiled Op defines its supported inputs;
+workspace queries and execution use the same admission rules and report unsupported calls there.
+
+Keep a compatible implementation shared until a target actually needs independent selection or
+launch policy. Creating target directories must not remove an existing supported route. Workspace
+layout consumes the selected implementation's scratch extents; public interfaces remain independent
+of platform selection.
+
+For small compile-time differences, explicitly include `core/platform.h` and use its target or
+capability macros according to the fact being tested. Keep substantial selectors in target-owned
+sources rather than scattering preprocessor branches across kernels. Hardware reference values
+for benchmarks live in `bench/common/roofline.h`; executed arithmetic and tuning decisions remain
+with the affected Op/benchmark. A missing hardware reference leaves the derived utilization empty.
 
 ## 5. State, workspace, naming, and dependencies
 
@@ -457,7 +481,7 @@ Enforce the boundary in code and build ownership:
 The owning family registers its implementation in `src/ops/<family>/sources.cmake`; large families
 delegate to explicit local manifests for their kernel library and semantic implementations.
 Ordinary sources contribute to `ninfer_ops`; NVFP4 sources requiring non-RDC compilation contribute
-to `ninfer_nvfp4_non_rdc` from their owning manifests. Shape files retain their `.cpp` or `.cu`
+to `ninfer_ops_non_rdc` from their owning manifests. Shape files retain their `.cpp` or `.cu`
 language and separate translation units. See [Build system](build-system.md) for the target policy.
 
 ## 6. Qualification
@@ -529,16 +553,20 @@ organization are not qualification subjects.
 ### 6.3 Acceptance criteria
 
 Exact outputs and regions compare every observable bit or byte. Each approximate output or state
-uses a suite-owned named criterion for its real arithmetic or quantization profile; tests do not
-define per-case tolerance overrides.
+uses a suite-owned named criterion for its public numerical policy or representation; tests do not
+define per-case tolerance overrides. For Linear-family Ops, `A16Only`, `AllowA8`, and `AllowA4`
+select the A16, A8, and A4 criteria respectively, regardless of which arithmetic the implementation
+chooses. A permissive policy retains its criterion when a route uses higher precision. Input
+recipes and sampling are separate from that choice; tests must not inspect selectors or infer
+precision from T to select a criterion.
 
 A floating-point criterion states its non-finite policy. Elementwise work uses a pointwise bound.
 Reductions and matrix or attention computations use a normwise bound with a finite gross
 pointwise-error cap so cancellation does not require strict elementwise agreement and isolated
 corruption cannot hide in an aggregate norm.
 
-Different production routes use different criteria only when their arithmetic or quantization
-profiles differ materially. Widening a criterion requires a numerical reason and requalification
+Different public numerical policies or represented formats may require different criteria.
+Widening a criterion requires a numerical reason and requalification
 of its complete affected domain; one failing implementation is not sufficient justification.
 
 ### 6.4 Perturbation coverage

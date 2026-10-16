@@ -275,13 +275,19 @@ Both shipped artifacts carry the DFlash2 companion weights and support
 `--spec dflash2 --draft-tokens 7` on the same Text/Vision Engine path, with draft counts 1..15 and
 either full or optimized proposal heads.
 
+Qwen3.8-Flash-Next uses CPU/GPU Main experts, disk-backed NF4 PLE and segmented CUDA Graph.
+Its native MTP uses the full shared head; DFlash/DFlash2 and optimized proposal heads are not
+supported for this architecture. See the [CLI commands](docs/cli.md),
+[conversion recipe](docs/weight-conversion.md) and
+[current support reference](docs/maintainer/qwen4_exp-execution.md).
+
 The product boundary remains intentionally small:
 
 - one RTX 5090 and one resident model per Engine;
-- a startup-fixed capacity of one to eight active requests with bounded FIFO ingress;
-- no request preemption, priority/QoS, active-request swapping, weight offload, multi-GPU, or
-  distributed serving;
-- one shared startup-fixed KV pool across active requests and retained prefixes;
+- one to eight resident execution lanes with bounded FIFO ingress;
+- resource-pressure preemption with snapshot or token-replay recovery;
+- no priority/QoS, active-request swapping, weight offload, multi-GPU, or distributed serving;
+- startup-fixed typed KV pools shared by active requests and retained prefixes;
 - model architectures and format/shape combinations use explicitly implemented native paths;
 - parsed tool calls are returned to the client; NInfer does not execute tools;
 - the in-tree C++ headers are not distributed as an installed SDK.

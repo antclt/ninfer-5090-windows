@@ -43,7 +43,9 @@ if(NINFER_BENCH_SEGMENT_HEAP)
     "/MANIFESTINPUT:${CMAKE_SOURCE_DIR}/cmake/segment_heap.manifest")
 endif()
 
-add_executable(ninfer_qwen3_5_moe_execution_bench
-  "${CMAKE_CURRENT_LIST_DIR}/moe_execution_bench.cpp")
-ninfer_internal_includes(ninfer_qwen3_5_moe_execution_bench)
-target_link_libraries(ninfer_qwen3_5_moe_execution_bench PRIVATE ninfer_model_runtime)
+if(NINFER_TARGET STREQUAL "rtx5090")
+  add_executable(ninfer_qwen3_5_moe_execution_bench
+    "${CMAKE_CURRENT_LIST_DIR}/moe_execution_bench.cpp")
+  ninfer_internal_includes(ninfer_qwen3_5_moe_execution_bench)
+  target_link_libraries(ninfer_qwen3_5_moe_execution_bench PRIVATE ninfer_model_runtime)
+endif()

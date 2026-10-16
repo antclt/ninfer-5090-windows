@@ -11,8 +11,8 @@ std::uint32_t count(std::uint64_t n) {
 }
 
 ExecutionPlan checked_plan(const execution::Parameters& p, ExecutionPlan plan) {
-    if (plan.profile != p.profile || !plan.moe ||
-        plan.capacity.runtime_reservation_bytes != plan.device_bytes())
+    if (plan.profile != p.profile ||
+        plan.capacity.runtime_reservation_bytes != plan.device_reservation_bytes())
         throw std::invalid_argument("Qwen4Exp resources require the finalized parameter plan");
     return plan;
 }
@@ -66,10 +66,14 @@ Resources::Resources(const execution::Parameters& p, ExecutionPlan input, Device
         gdn_records.emplace(backing, *plan.persistent.buffers.gdn_records);
         gdn_fold.emplace(*gdn_records, states->gdn().all_layers_view());
     }
-    std::vector<const moe::Parameters*> layers;
-    for (const auto& layer : p.text.layers) layers.push_back(&layer.moe);
-    experts    = std::make_unique<moe::Resources>(plan.moe, layers, p.model.expert_banks(), device);
-    ple_upload = std::make_unique<ple::UploadSlots>(device, plan.ple.max_positions, 2);
+    if (plan.moe) {
+        std::vector<const moe::Parameters*> layers;
+        for (const auto& layer : p.text.layers) layers.push_back(&layer.moe);
+        experts = plan.moe->create(layers, p.model.expert_banks(), device,
+                                   plan.graph_probe ? moe::ResourcePurpose::GraphCalibration
+                                                    : moe::ResourcePurpose::Execution);
+    }
+    ple_upload  = std::make_unique<ple::UploadSlots>(device, plan.ple.max_positions, 2);
     ple_prepare = std::make_unique<ple::disk::PrepareService>(
         p.model.ple_table(), p.model.config().text.ple.eos, plan.ple, ple_upload->host_slots());
     if (ple_prepare->memory_bytes() != plan.ple_prepare_bytes ||
@@ -94,8 +98,63 @@ Resources::~Resources() {
     try {
         ple_prepare.reset();
         ple_upload.reset();
-        if (experts) experts->synchronize();
-        device_.synchronize();
+        synchronize();
     } catch (...) { std::terminate(); }
+}
+
+void Resources::synchronize() const {
+    if (experts) experts->synchronize();
+    CUDA_CHECK(cudaStreamSynchronize(ple_transfer_.stream()));
+    device_.synchronize();
+}
+
+Tensor Resources::tensor(const TensorRegion& region) { return region.bind(persistent()); }
+
+Tensor Resources::packed(const TensorRegion& region, std::initializer_list<std::int32_t> shape) {
+    std::int32_t count = 1;
+    for (const auto n : shape) count *= n;
+    auto value = tensor(region);
+    return value.view({static_cast<std::int32_t>(value.numel())}).slice(0, 0, count).view(shape);
+}
+
+namespace {
+template <class Layout>
+execution::BatchView bind_batch(Resources& resources, const Layout& layout,
+                                const TensorRegion& tables, std::int32_t tokens, std::int32_t batch,
+                                std::uint32_t visible) {
+    const auto row = [&](const TensorRegion& r) { return resources.tensor(r).slice(0, 0, batch); };
+    return {tokens,
+            batch,
+            resources.packed(layout.ids, {tokens, batch}),
+            resources.packed(layout.positions, {tokens, batch}),
+            resources.packed(layout.rope_positions, {tokens, 3, batch}),
+            row(layout.valid_columns),
+            row(layout.source_slots),
+            row(layout.destination_slots),
+            row(tables),
+            row(layout.base_positions),
+            row(layout.record_offsets),
+            visible};
+}
+} // namespace
+
+execution::BatchView Resources::main_batch(std::int32_t tokens, std::int32_t batch,
+                                           std::uint32_t visible) {
+    const auto& layout = plan.persistent.buffers.batch;
+    return bind_batch(*this, layout, layout.main_tables, tokens, batch, visible);
+}
+
+execution::BatchView Resources::mtp_batch(const MtpBatchLayout& layout, std::int32_t tokens,
+                                          std::int32_t batch, std::uint32_t visible) {
+    return bind_batch(*this, layout, layout.table_rows, tokens, batch, visible);
+}
+
+ops::QsaTailStateView Resources::mtp_working_tail(std::uint32_t slot, std::int32_t batch) {
+    const auto& frame = *plan.persistent.buffers.mtp;
+    const auto& qsa   = plan.profile->config.text.qsa;
+    const auto width = dimension(qsa.index_key_width()), history = dimension(qsa.compression - 1);
+    return {packed(frame.tail_keys, {width, history, batch, 3}).slice(3, slot, 1),
+            packed(frame.tail_coordinates, {3, batch, 3}).slice(2, slot, 1),
+            tensor(frame.row_indices).slice(0, 0, batch)};
 }
 } // namespace ninfer::models::qwen4_exp

@@ -1,5 +1,6 @@
 #include "ops/gated_residual/mix/select.h"
 #include "ops/gated_residual/mix/workspace.h"
+#include "ops/gated_residual/mix/implementation.h"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -80,7 +81,9 @@ std::size_t capacity(Weights weights, std::int32_t first, std::int32_t last) {
     // Each route's allocation grows monotonically; the complete interval need not.
     for (const auto& route : routes(weights.kind)) {
         if (route.last < first || route.first > last) continue;
-        peak = std::max(peak, layout(weights.kind, route.plan, std::min(last, route.last)).bytes);
+        peak = std::max(
+            peak,
+            layout(weights.kind, std::min(last, route.last), split_factor(route.plan.down)).bytes);
     }
     return peak;
 }

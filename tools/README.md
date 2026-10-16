@@ -11,6 +11,9 @@ written as `python3`, so substitute `%PY%` for `C:\vllm-env\Scripts\python.exe`.
 [Which Python](../docs/weight-conversion.md#which-python).
 
 Python tools are independent of CMake; there is no `NINFER_BUILD_TOOLS` option.
+Tools that launch native binaries require an explicit executable or build-directory argument.
+The stored-scale CUDA quantization extension uses PyTorch's visible-device architecture selection;
+`TORCH_CUDA_ARCH_LIST` can set an explicit architecture list.
 
 ## Release tools
 
@@ -63,22 +66,20 @@ The rest run when their stage calls for them:
 | Measure external Serve TTFT | [`bench/ttft/`](bench/ttft/README.md) |
 | Exercise a resident HTTP server | [`smoke/serve_contract.py`](smoke/serve_contract.py) |
 | Exercise thinking preservation through a managed server | [`smoke/serve_thinking_preservation.py`](smoke/serve_thinking_preservation.py) |
-| Measure the physical HBM read/copy ceiling | [`hbm_bandwidth_probe.cu`](hbm_bandwidth_probe.cu); [build command](#standalone-hbm-probe) |
+| Measure sustained device-memory bandwidth | [`hbm_bandwidth_probe.cu`](hbm_bandwidth_probe.cu); [build command](#memory-bandwidth-probe) |
 | Measure a serving lane's phase split and cache behaviour | [`bench/report_serve_phases.py`](bench/report_serve_phases.py) |
 | Measure `prepared` and TTFT against conversation size | [`bench/warm_lane_sweep.py`](bench/warm_lane_sweep.py) |
 | Decide whether a prefix cache serves a shared prefix, or only exact-request replay | [`bench/check_shared_prefix_reuse.py`](bench/check_shared_prefix_reuse.py) |
 | Decide whether a first request is slower than later identical ones | [`bench/first_request_lane.py`](bench/first_request_lane.py) |
 
-## Standalone HBM probe
+## Memory bandwidth probe
 
-This maintainer probe has an explicit standalone CUDA build, independent of the CMake benchmark
-targets. Build it with the project's CUDA toolkit and run it from the repository root:
+This probe is a CMake benchmark target, using the selected native CUDA architecture and benchmark
+reference table. With a configured development tree (substitute `dgx-spark-dev` on Spark):
 
 ```bash
-mkdir -p build
-nvcc -O3 -std=c++17 -arch=sm_120a tools/hbm_bandwidth_probe.cu \
-  -o build/hbm_bandwidth_probe
-./build/hbm_bandwidth_probe
+cmake --build build/rtx5090-dev -j --target ninfer_memory_bandwidth_bench
+./build/rtx5090-dev/bench/ninfer_memory_bandwidth_bench
 ```
 
 ## Artifact workflow
@@ -100,8 +101,8 @@ Numeric formats, layouts and framing are defined by the references in the
 writes ignored local reports below `profiles/bench/`:
 
 ```bash
-python3 tools/bench/run_ninfer_bench_matrix.py --preset core --dry-run
-python3 tools/bench/run_ninfer_bench_matrix.py --preset core
+python3 tools/bench/run_ninfer_bench_matrix.py --build-dir build/rtx5090-dev --preset core --dry-run
+python3 tools/bench/run_ninfer_bench_matrix.py --build-dir build/rtx5090-dev --preset core
 ```
 
 See [`tools/bench/README.md`](bench/README.md) and [`bench/README.md`](../bench/README.md) for the
@@ -129,5 +130,6 @@ real server and consumes the repository fixture:
 
 ```bash
 python3 tools/smoke/serve_thinking_preservation.py \
+  --server-bin build/rtx5090-dev/apps/ninfer-serve \
   --artifact out/qwen3_6_27b.ninfer --backend mtp
 ```

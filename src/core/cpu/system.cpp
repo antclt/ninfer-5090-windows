@@ -6,12 +6,10 @@
 #include "core/cpu/system_portable.inc"
 
 #include <hwloc.h>
-#include <cpuid.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <condition_variable>
-#include <cstring>
 #include <exception>
 #include <map>
 #include <mutex>
@@ -133,44 +131,9 @@ void bind_current_thread(const CpuTopology& topology, std::span<const std::uint3
 // cpu_detail::usable_features is platform-independent (it masks raw register values) and lives in
 // system_portable.inc.
 
-CpuFeatures current_cpu_features() noexcept {
-    cpu_detail::FeatureRegisters state;
-    unsigned eax, ebx, ecx, edx;
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return {};
-    state.leaf1_ecx = ecx;
-    if ((ecx & ((1U << 26) | (1U << 27))) == ((1U << 26) | (1U << 27))) {
-        unsigned low, high;
-        asm volatile("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
-        state.xcr0 = (static_cast<std::uint64_t>(high) << 32) | low;
-    }
-    if (__get_cpuid_max(0, nullptr) >= 7) {
-        __cpuid_count(7, 0, eax, ebx, ecx, edx);
-        const auto max_subleaf = eax;
-        state.leaf7_0_ebx      = ebx;
-        state.leaf7_0_ecx      = ecx;
-        if (max_subleaf >= 1) {
-            __cpuid_count(7, 1, eax, ebx, ecx, edx);
-            state.leaf7_1_eax = eax;
-        }
-    }
-    return cpu_detail::usable_features(state);
-}
-
-CpuIdentity current_cpu_identity() noexcept {
-    CpuIdentity result;
-    unsigned eax, ebx, ecx, edx;
-    __cpuid(0, eax, ebx, ecx, edx);
-    std::memcpy(result.vendor.data(), &ebx, 4);
-    std::memcpy(result.vendor.data() + 4, &edx, 4);
-    std::memcpy(result.vendor.data() + 8, &ecx, 4);
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return result;
-    const auto family = (eax >> 8) & 15U;
-    result.family     = family + (family == 15 ? (eax >> 20) & 255U : 0);
-    result.model    = ((eax >> 4) & 15U) | ((family == 6 || family == 15) ? (eax >> 12) & 240U : 0);
-    result.stepping = eax & 15U;
-    result.virtualized = (ecx & (1U << 31)) != 0;
-    return result;
-}
+// current_cpu_features and current_cpu_identity read the CPUID leaves directly, so each platform
+// keeps its own implementation: cpu/x86.cpp upstream (GCC <cpuid.h>), the port's
+// cpu/system_windows.cpp (MSVC intrinsics). Neither belongs in this hwloc-backed Linux file.
 
 // cpu_detail::start_workers and cpu_detail::join_workers are platform-independent and live
 // in system_portable.inc.

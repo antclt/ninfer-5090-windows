@@ -1,5 +1,6 @@
+target_sources(ninfer_ops PRIVATE "${CMAKE_CURRENT_LIST_DIR}/q8_dispatch.cpp")
 target_sources(ninfer_ops PRIVATE
-  "${CMAKE_CURRENT_LIST_DIR}/q8_dispatch.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/dispatch.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/shapes/n1024_k2048.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/shapes/n1024_k5120.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/shapes/n10240_k2560.cu"

@@ -17,6 +17,10 @@ Qwen3.6-27B, Qwen3.6-35B-A3B, and the Qwen3.8-27B `groupwise-int` and `nvfp4` im
 ships none of those checkpoints, measures none of them, and keeps no copy of their pages or cards.
 [Upstream's README](https://github.com/Neroued/ninfer#readme) is their authority.
 
+Qwen3.8-Flash-Next is supported, but has no published result page in this campaign.
+The Qwen3.8-27B measurements above describe a different architecture and artifact.
+Flash Next's current execution scope is documented [here](maintainer/qwen4_exp-execution.md).
+
 ## Reading the results
 
 | Question | Metric to use |
@@ -35,5 +39,6 @@ completion.
 
 - [Serving benchmark runners](../tools/bench/README.md#serving-corpus-benchmark): usage and local report files.
 - [Engine and Op benchmarks](../bench/README.md): their separate measurement scopes and commands.
-- [Capability evaluation](../eval/README.md): evaluation workflow.
+- [Capability evaluation](../eval/README.md): evaluation workflow; published scores live in the
+  [model cards](../model-cards/).
 - [Perplexity](perplexity.md): offline causal-scoring measurement and comparison rules.
