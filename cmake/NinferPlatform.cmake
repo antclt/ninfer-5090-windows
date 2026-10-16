@@ -39,7 +39,12 @@ ninfer_validate_cuda_architecture()
 function(ninfer_validate_platform)
   # The toolchain file can change CUDA architectures during project() initialization.
   ninfer_validate_cuda_architecture()
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
+  # The rtx5090 target also builds on Windows with MSVC, which is this port's own gate: the
+  # processor-pattern check below describes upstream's Linux toolchains, and MSVC reports
+  # CMAKE_SYSTEM_PROCESSOR as AMD64, which the rtx5090 pattern accepts.
+  if(WIN32 AND NINFER_TARGET_RTX5090)
+    # Windows/AMD64 is supported for rtx5090 by this port.
+  elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
      NOT CMAKE_SYSTEM_PROCESSOR MATCHES "${NINFER_PROCESSOR_PATTERN}")
     message(FATAL_ERROR
       "${NINFER_TARGET} does not support ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")

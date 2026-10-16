@@ -18,10 +18,10 @@ namespace ninfer::runtime {
 // report zero from the other, and nothing would fail: the value is only ever read out.
 inline void publish_kv_capacity(const KvCapacityResolution& resolution, MemorySummary& out) noexcept {
     out.kv_capacity_mode                  = resolution.mode;
-    out.kv_capacity_page_groups           = resolution.main_page_groups;
-    out.kv_capacity_max_page_groups       = resolution.maximum_main_page_groups;
+    out.kv_capacity_page_groups           = resolution.primary_page_groups;
+    out.kv_capacity_max_page_groups       = resolution.maximum_primary_page_groups;
     out.minimum_runtime_reservation_bytes = resolution.minimum_runtime_reservation_bytes;
-    out.kv_capacity_increment_bytes       = resolution.bytes_per_additional_main_page_group;
+    out.kv_capacity_increment_bytes       = resolution.bytes_per_additional_primary_page_group;
     out.runtime_reservation_bytes         = resolution.runtime_reservation_bytes;
     out.available_after_weights_bytes     = resolution.available_after_weights_bytes;
     out.available_after_startup_bytes     = resolution.available_after_startup_bytes;

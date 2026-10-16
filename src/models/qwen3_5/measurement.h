@@ -5,7 +5,9 @@
 #include <string>
 
 namespace ninfer::models::moe {
-struct Plan;
+// `class`, not `struct`: MSVC mangles the two differently, and schedule.h defines moe::Plan as a
+// class. GCC and Clang mangle them alike, so upstream never sees the mismatch.
+class Plan;
 }
 
 namespace ninfer::models::qwen3_5 {
