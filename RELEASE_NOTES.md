@@ -82,7 +82,7 @@ are new.
   A16 call with T>16 used to project gate/up into a BF16 buffer and apply the nonlinearity to that,
   which measured 8.1e-3 against the profile's own 6.3e-3 tail bound — about 29% over, and identically
   at 17, 32, 64 and 129, so it was the rounding rather than the extent. The route, its `silu_mul` pass
-  and its `[34816,T]` workspace are deleted. The A16 profile in `tests/ops/linear_swiglu/test_nvfp4.cpp`
+  and its `[34816,T]` workspace are deleted. The A16 profile in `tests/ops/linear/swiglu/cases_nvfp4.cpp`
   now runs 19 extents from 1 to 1024 and passes at every one, with no materialised buffer and no second
   pass. Measured, and it is not a uniform speedup: 3-7% slower at T=17-32, even at 64, 8.5% faster at
   129, and a much tighter tail — the old route's p95 at T=64 was nearly twice its median, where the

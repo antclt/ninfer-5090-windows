@@ -3,7 +3,7 @@
 NInfer builds from its source tree with CMake 3.28+ and C++/CUDA 20.
 CUDA 13.4 is the validated development toolkit; this port builds with MSVC and validates against
 CUDA 13.3. Product commands and prerequisites are in the
-[README](../../README.md#quick-start); test and measurement workflows live in
+[README](../../README.md#windows); test and measurement workflows live in
 [tests](../../tests/README.md) and [benchmarks](../../bench/README.md).
 
 ## Execution targets
