@@ -105,11 +105,11 @@ contracts; they are what a later reader needs in order to check a claim instead 
 | [`features/`](features/) | design notes for runtime work this port carries, including the weight-only NVFP4 DFlash2 runtime and the MSVC test-portability change |
 | [`upstream-reports/`](upstream-reports/) | what this port reported or considered reporting upstream, and the fork-divergence record |
 
-## Planned work
+## Architecture integration and planned work
 
-Qwen3.8-Flash-Next uses the Qwen4Exp architecture. Its converter and many supporting Ops are
-implemented; Engine integration remains pending. The execution design owns the current support
-status and remaining requirements. Concrete Op contracts live in `include/ninfer/ops/`.
+Qwen3.8-Flash-Next uses the Qwen4Exp architecture. Its eager Text/Vision/MTP Engine includes CPU/GPU MoE
+and disk-backed PLE; CUDA Graph integration remains planned. The execution document
+owns current support and remaining work. Concrete Op contracts live in `include/ninfer/ops/`.
 
 | Design | Responsibility |
 |---|---|

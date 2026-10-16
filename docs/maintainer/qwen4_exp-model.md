@@ -2,8 +2,9 @@
 
 Qwen3.8-Flash-Next 是本合同的 checkpoint 实例，数学架构为 Qwen4Exp。现有
 `qwen3_8_flash_next` recipe 已完成 Text、可选 Vision 和原生 MTP 的 V3 `.ninfer` 转换；
-Qwen4Exp 尚未接入 Engine。Op 与模型执行的完成范围、状态组合和剩余需求统一见
-`执行进度`，PLE 的 Host 数学和读取流水见
+原生 loader、Parameters、执行资源与 eager Text/Vision/MTP 已接入 Engine。
+Op 与模型执行的完成范围、状态组合和剩余需求统一见
+[执行进度](qwen4_exp-execution.md#implementation-status)，PLE 的 Host 数学和读取流水见
 [PLE I/O](qwen4_exp-ple-io.md)。
 
 本文维护模型结构、实例 recipe、物理 parent 和驻留方案。通用表示值由
@@ -188,7 +189,7 @@ Recipe 与产物的 MTP expert Uses 使用 `AllowA8`。GPU 计算目标为 W8A8�
 PLE 使用 [stored_scale_mse](tensor-formats.md#36-stored_scale_mse-conversion-method)，
 每个原始 shard 独立计算完整 `amax` 与 divisor。固定 codebook、完整 scale 候选域、
 FP64 误差和平局规则由该通用合同维护。分块只改变工作集，不能改变分组或 divisor。
-完整量化组合的模型质量及 MTP 接受率在模型接入后验证。
+接受率与端到端延迟按实际语料、draft 数和 Main expert 驻留容量评估。
 
 ## 3. 物理 parent 与行顺序
 
@@ -309,7 +310,8 @@ A16/A4 共用同一份 NVFP4 编码。对象允许跨 V3 续卷，文件名不�
 
 ## 5. 驻留与容量
 
-以下是原生执行的既定驻留方案，尚未由 Qwen4Exp loader/Program 实现：
+以下驻留方案由 [loader](../../src/models/qwen4_exp/load.cpp) 和
+[执行资源](../../src/models/qwen4_exp/program/resources.h)实现，并用于 Main eager 执行：
 
 | 数据 | 驻留与所有权 |
 |---|---|

@@ -22,7 +22,8 @@ Program，窗口使用临时 State 与 Main KV，不进入 Generation Scheduler 
 ### 1.1 架构、实例与权重
 
 模型代码拥有数学公式、调用顺序、组件交接和状态转移。Config 提供层数、维度、Attention/GDN
-分布和 expert 几何等实例参数。架构入口为 `Qwen3_5ForCausalLM` 与 `Qwen3_5MoeForCausalLM`；
+分布和 expert 几何等实例参数。架构入口为 `Qwen3_5ForCausalLM`、`Qwen3_5MoeForCausalLM`
+与 `Qwen4ExpForCausalLM`；后者当前支持 eager Text/Vision/MTP。
 训练实例和物理权重分配作为数据进入对应实现。
 
 V3 artifact 保存配置、物理对象、逻辑参数 Binding、使用位置的 Use 和 Frontend 资源。
@@ -67,6 +68,10 @@ Frontend 拥有 tokenizer、chat template、Vision preprocessing、MRoPE prompt 
 owning `PreparedPrompt`；每个请求独占一个 `OutputSession`，解释 stop、thinking/content channel、
 detokenization 及模型私有结构化输出。它还提供能够由模板历史精确重建的输出边界语义。
 
+现有 Qwen 架构共用 `models/common/qwen/frontend`，直接执行产物或启动覆盖指定的模板。
+模型侧明确提供采样默认值、embedding 词表范围和启用的媒体几何；Frontend 不根据架构名称
+推断这些参数。媒体预处理与 Program 消费同一组 `VisionItem`、grid、token span 描述。
+
 Frontend 可以预览一次模型输出的语义效果，Engine 提交后才发布。等待顺序和物理缓存均由下层拥有。
 
 GBNF、JSON、JSON Schema、choice、regex 和工具约束的 compiled grammar 在 Frontend 内按词表共享，matcher 由每请求的 OutputSession 持有。
@@ -98,7 +103,32 @@ ResourceManager 的索引和保留记录不构成第二份物理账本。
 ### 2.4 Model 与 Program
 
 Model 拥有 config、绑定、Use、权重 backing 和只读资源。ModelInstance 的 const Parameters 借用
-这些资源，规划和执行消费同一份参数。
+这些资源，规划和执行消费同一份参数。`ModelInstance<RuntimeTypes>` 使用原生 Model、Parameters
+和 Program 类型；Engine 在构建入口按架构作有限分派，执行循环继续静态调用原生 Program。
+公共 PreparedPrompt 承载共享 Qwen 输入合同，不引用具体 Text 架构。
+
+`models/common` 只提供明确的可复用能力：权重 ID/Use 与绑定、Qwen Frontend/Vision、逻辑上下文
+存储和 MoE 执行。Vision 编码器接收自己的 config、参数、workspace 和 CUDA 执行视图；特征交接
+按请求建立，资源由 Program 持有。架构声明 StateImage 的字段、dtype、形状与层数；Core
+`StateImageStorage` 将每个 slot 的完整 image 连续存放，Host 使用相同内部布局。类型化的
+GDN、循环 KV 等视图只表达计算几何，Op 从 Tensor 的实际 slot stride 寻址。
+
+公共 `StateImageStore` 管理逻辑身份、写入预留及 Device/Host 副本，Host 副本直接持有共享
+arena 的 allocation。预留、原生初始化、写入完成与副本物化是不同动作；分支目的在完成写入前
+不成为活动内容。唯一写入者原位推进，共享来源通过独立目的或保留 Host 副本后的 Device 交接
+继续执行。完整复制为一次连续 image 复制，DFlash local 字段组可独立复制。
+
+`Continuation<Metadata>` 将 image 身份与原生续算 metadata 放在一起，供活动执行、候选提交和
+checkpoint 使用；lane 不持有可能随换槽失效的状态 Tensor。Replay 中的 Continuation 记录
+实际已重建的输入位置，恢复目标单独保存在请求控制中；已提交的账本与采样计数保持不变。
+各历史前沿的数学关系仍由模型决定。
+`KVHistory` 是单个 pool 的唯一可写历史，`KVPrefixRef` 持有该历史的精确只读前缀。
+`KVHistoryStore` 随引用增减局部维护保护和有效 coverage，保存前缀不复制尾页；独立写入发生
+冲突时才分支目录并 COW。Device 与 Host 可以覆盖不同长度，迁移按实际所需前缀检查副本。
+`ContextSnapshot<Metadata, Identity>` 一起持有 Continuation、各 pool 的前缀与输入身份，
+`CheckpointStore` 管理用途记录的发布、generation 与读者 lease。原生模型决定各 pool 的位置关系、
+保存机会和采用规则；公共层不推导 Main/MTP/DFlash 的数学前沿。
+具体层连接、状态推进及 speculative 提交保留原生实现。
 
 每个 Program 独占：
 
@@ -123,6 +153,8 @@ speculative 配置与拓扑共享关系；临时 Host context cache 为零。校
 全量 GPU 候选不可行时，受支持的 MoE 使用 Host 来源及 Program 所有的 GPU 副本，
 两个候选不同时持有模型，见[Expert 权重缓存](expert-weight-cache.md)。
 `NINFER_VRAM_BUDGET_MIB` 限定引擎 Device 预算，实际可用显存构成另一上限。
+Runtime 的 `model_startup.h` 统一预算、候选选择、校准收敛和有界重建；模型侧 `Startup` 提供
+权重放置、容量计划、Frontend 构造和 Graph 校准合同。公共启动流程不解释具体层布局。
 ModelInstance 持有 Model、const Parameters、Frontend 与 Program；Parameters 持有与最终
 容量计划相同的不可变执行 profile。纯逻辑加载不要求建立执行 profile。
 
@@ -295,7 +327,7 @@ Admission 检查由等待队列、容量释放、资源事务完成等事件启�
 
 ### 5.1 上下文事务
 
-Bind、Capture、Demote、Pause 使用同一事务驱动：
+Bind、Capture、Demote、Pause 是独立的原生操作，由一个固定操作槽驱动：
 
 ```text
 选择操作与 source
@@ -305,8 +337,19 @@ Bind、Capture、Demote、Pause 使用同一事务驱动：
   -> Engine / ResourceManager 采用结果
 ```
 
-Program 持有事务期间的物理所有权，返回新 sequence、恢复点、已退役 checkpoint、暂停状态和 transfer
-观测。Source 在所需数据复制与验证完成前有效；abort 清理预留和传输，不发布不完整 destination。
+公共 `MigrationBatch` 持有 State/KV 来源读者、目的 reservation、复制计划、execution row 与完成
+依赖。`MigrationContext` 在启动时准备可复用的事件与计时存储。恢复、尾页 COW 和 mapping 上传
+在同一 stream 顺序提交；未发布的恢复页可以被本批次的 COW 使用，外部消费者只取得已完成结果。
+
+Program 返回新 sequence、恢复点、已退役 checkpoint、暂停状态和实际传输观测。取消先撤销发布
+意图，worker 继续轮询本批次的事件；事件完成后才释放空间和 lane、通知容量变化。取消中的
+批次继续占用唯一操作槽，不阻塞无依赖的 resident。普通取消与资源析构不做 stream 同步；
+部分提交异常和销毁路径显式结束实际设备访问，再退役所持资源。
+
+State 采用方式用 Root、Move、Fork、Restore、Split、BackupSplit 表达。目的 image 由 owning reservation
+管理，采用后才转交 continuation。Pause 在释放活动状态前结束可能尚未完成的 hidden-tail
+publication；DFlash normalization 也保留独立的数学完成边界，其共享 Host ingress 与执行行在
+producer 完成前不能复用。迁移完成不代替 MTP bridge 或模型接续。
 已安全完成的回收或降级可以保留，结果必须与最终实际占用一致。
 
 ### 5.2 模型 unit 事务
@@ -375,6 +418,9 @@ forward 重叠；两段共享同一个资源预留和提交边界。
 
 MoE offload 使用分段 GPU Graph，控制线程负责 CPU contribution、缓存快照及传输交接。
 稳定缓存合并 mixer 与 MoE GPU 提交；恢复和流式加载时分开，保留 mixer 与上传重叠。
+`models/common/moe/graph` 负责单层 GPU subset 图及 CPU/cache 交接；调用方提供 mixer、MoE 和
+可选 feature 的 GPU body。Text 与 speculative 的 prefix/suffix、层遍历及跨拓扑共享关系仍由原生
+Program 定义。
 Graph 校准记录准备前、准备完成、仅销毁 Graph 后的显存快照。释放后仍保留的驱动开销
 已进入新的可用显存基准，不能与重建估计重复扣费。差值使用有符号数；允许重建增量为零。
 `MemorySummary.cuda_graph` 分别报告校准增长、校准释放后的保留量、重建估计和正式准备增长；
@@ -382,8 +428,10 @@ Graph 校准记录准备前、准备完成、仅销毁 Graph 后的显存快照�
 这些差值包含 CUDA 延迟加载和驱动缓存，不作为纯 Graph allocation 的精确归因。
 `runtime_reservation_bytes` 仅包含显式 Program backing。
 正式准备的增长单独报告，以实际总占用是否满足 Device 预算判断启动，不要求它小于估计值。
-统一 headroom 是容量规划缓冲，不按拓扑类重复预留。正式分配不足时最多进行一次容量纠偏重建；
-只调整自动 KV 或可选 expert cache，保持显式容量与执行功能。Device 分配不足可以回收，
+显式与自动 KV 容量统一使用至少 1 GiB headroom，自动容量显式要求更大余量时取其值。
+这部分是容量规划缓冲，用于容纳未精确计入的开销，不要求初始化后仍完整空闲，也不按拓扑类重复预留。
+正式分配不足时最多进行一次容量纠偏重建；只调整自动 KV 或可选 expert cache，保持显式容量与执行功能。
+Device 分配不足可以回收，
 执行错误与 Host 内存分配失败不作为缩减 GPU 容量的理由。
 Graph 只记录 GPU 工作，warmup 不绑定运行期控制线程；结束异步工作后先销毁 Graph，
 再释放其引用的 bridge 和 events。具体依赖见 [Expert 权重缓存](expert-weight-cache.md)。
@@ -408,13 +456,16 @@ continuation 或 checkpoint。
 |---|---|
 | 公共 Engine facade | `include/ninfer/engine.h`, `src/runtime/engine/engine.cpp` |
 | 请求生命周期、调度与观测 | `src/runtime/engine/engine_core.h`, `request_record.h`, `scheduler.h`, `engine_metrics.inl` |
-| 实例构造 | `src/runtime/engine/model_instance.*` |
+| 实例构造与启动策略 | `src/runtime/engine/model_construction.*`, `model_instance.h`, `model_startup.h` |
 | 缓存 owner、索引与成本 | `src/runtime/engine/context_cache/` |
 | 公共请求、执行与资源合同 | `src/runtime/contract/` |
-| 模型 config、绑定与只读数据 | `src/models/qwen3_5/config.*`, `load/`, `model.*` |
-| 原生参数与固定模型调用 | `src/models/qwen3_5/execution/` |
-| Program 规划、存储、上下文及模型事务 | `src/models/qwen3_5/program/` |
-| Frontend 与模型状态布局 | `src/models/qwen3_5/frontend/`, `state/` |
+| 模型 config、绑定与只读数据 | `src/models/{qwen3_5,qwen4_exp}/config.*`, `load/`, `model.*` |
+| 原生参数与固定模型调用 | `src/models/{qwen3_5,qwen4_exp}/execution/` |
+| Program 规划、存储、上下文及模型事务 | `src/models/{qwen3_5,qwen4_exp}/program/` |
+| Qwen Frontend、Vision 与输入身份 | `src/models/common/qwen/` |
+| 逻辑上下文存储 | `src/models/common/context/` |
+| 原生启动与状态布局 | `src/models/{qwen3_5,qwen4_exp}/startup.*`, `state/` |
+| 共享权重绑定与 MoE | `src/models/common/bindings.*`, `weights.*`, `moe/` |
 | Tensor、arenas、graphs、物理 KV 与 raw transfers | `src/core/` |
 | 通用 artifact framing 与 materialization | `src/artifact/` |
 | 闭合计算与状态转移 Ops | `src/ops/`, `include/ninfer/ops/` |

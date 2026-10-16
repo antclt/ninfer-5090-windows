@@ -32,6 +32,8 @@ struct DeviceLayerView {
     // back in. Both are 1.0 for every registered non-NVFP4 format.
     float key_inverse_divisor   = 1.0F;
     float value_inverse_divisor = 1.0F;
+    std::int64_t key_slot_stride;
+    std::int64_t value_slot_stride;
 };
 
 struct DeviceLayers {
@@ -60,6 +62,8 @@ inline DeviceLayers make_device_layers(
             static_cast<std::int32_t>(source.cache.padded_capacity),
             inverse_divisor(source.key_weight),
             inverse_divisor(source.value_weight),
+            source.cache.k.nb[3] / 2,
+            source.cache.v.nb[3] / 2,
         };
     }
     return result;
@@ -80,8 +84,8 @@ __device__ __forceinline__ void store_key_head(const float* input, DeviceLayerVi
     float sin0, cos0, sin1, cos1;
     rope_d128_theta1e7_sincos(positions, column, j, &sin0, &cos0);
     rope_d128_theta1e7_sincos(positions, column, j + 1, &sin1, &cos1);
-    const auto dst = kv::cyclic_offset<128, 8, 2048>(positions[column], head, slots[column / width],
-                                                     layer.padded_capacity);
+    const auto dst = layer.key_slot_stride * slots[column / width] +
+                     kv::cyclic_offset<128, 2048>(positions[column], head, layer.padded_capacity);
     auto* out      = reinterpret_cast<__nv_bfloat162*>(layer.cache_k + dst);
     out[lane]      = __floats2bfloat162_rn(x0 * cos0 - y0 * sin0, x1 * cos1 - y1 * sin1);
     out[lane + 32] = __floats2bfloat162_rn(y0 * cos0 + x0 * sin0, y1 * cos1 + x1 * sin1);
@@ -89,8 +93,9 @@ __device__ __forceinline__ void store_key_head(const float* input, DeviceLayerVi
 
 __device__ __forceinline__ void store_value(int row, int column, int slot, const int* positions,
                                             DeviceLayerView layer, float result) {
-    const auto dst     = kv::cyclic_offset<128, 8, 2048>(positions[column], row / 128, slot,
-                                                         layer.padded_capacity, row % 128);
+    const auto dst = layer.value_slot_stride * slot +
+                     kv::cyclic_offset<128, 2048>(positions[column], row / 128,
+                                                  layer.padded_capacity, row % 128);
     layer.cache_v[dst] = __float2half_rn(__bfloat162float(__float2bfloat16_rn(result)));
 }
 

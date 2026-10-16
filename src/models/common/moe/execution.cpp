@@ -39,10 +39,11 @@ struct FrameLayout {
         : top_k(profile.routed.top_k), tokens(columns) {
         const auto h = profile.routed.ffn.hidden;
         LayoutBuilder device, host;
-        const auto route_bytes = Tensor::metadata(DType::I32, {top_k, tokens, 2}).bytes();
-        device_routes          = device.add(route_bytes, 16, "MoE Device routes");
-        host_routes            = host.add(route_bytes, 16, "MoE Host routes");
-        host_input             = host.add_tensor(DType::BF16, {h, tokens}, 16, "MoE Host input");
+        const auto coefficients_offset = (std::size_t(top_k) * tokens * 4 + 15) / 16 * 16;
+        const auto route_bytes         = coefficients_offset + std::size_t(top_k) * tokens * 4;
+        device_routes                  = device.add(route_bytes, 16, "MoE Device routes");
+        host_routes                    = host.add(route_bytes, 16, "MoE Host routes");
+        host_input  = host.add_tensor(DType::BF16, {h, tokens}, 16, "MoE Host input");
         shared      = device.add_tensor(DType::FP32, {tokens}, 4, "MoE shared coefficients");
         gpu_partial = device.add_tensor(DType::FP32, {h, tokens}, 16, "MoE GPU contribution");
         device_cpu_partial =
@@ -54,9 +55,11 @@ struct FrameLayout {
 
     Frame bind(MemorySpan device, MemorySpan host) const {
         const auto routes = [&](MemorySpan storage) {
-            const auto bytes = storage.bytes / 2;
-            return ops::ExpertRoutes{Tensor(storage.subspan(0, bytes), DType::I32, {top_k, tokens}),
-                                     Tensor(storage.subspan(bytes), DType::FP32, {top_k, tokens})};
+            const auto bytes               = std::size_t(top_k) * tokens * 4;
+            const auto coefficients_offset = (bytes + 15) / 16 * 16;
+            return ops::ExpertRoutes{
+                Tensor(storage.subspan(0, bytes), DType::I32, {top_k, tokens}),
+                Tensor(storage.subspan(coefficients_offset, bytes), DType::FP32, {top_k, tokens})};
         };
         const auto dr = device_routes.bind(device), hr = host_routes.bind(host);
         return {host_input.bind(host),
@@ -253,15 +256,17 @@ bool compute_cpu(const PreparedExecution& call) {
     const auto* mask  = static_cast<const std::int32_t*>(call.partition.host_mask.data);
     const auto kind   = call.partition.gpu_kind;
     if (kind == Subset::All) return false;
-    const bool cpu_work = kind == Subset::None ||
-                          std::any_of(ids, ids + std::size_t(p.profile.routed.top_k) * call.tokens,
-                                      [&](auto id) { return mask[id] == 0; });
-    if (!cpu_work) return false;
+    const auto assignments = std::size_t(p.profile.routed.top_k) * call.tokens;
+    const auto cpu_assignments =
+        kind == Subset::None
+            ? assignments
+            : std::count_if(ids, ids + assignments, [&](auto id) { return mask[id] == 0; });
+    if (!cpu_assignments) return false;
     const auto& host = *call.execution.host;
     auto scope       = host.workspace.scope();
     MemoryArena scratch(host.workspace.alloc_bytes(call.requirements.cpu_workspace_bytes));
     auto destination = frame.host_partial;
-    nvtx::ScopedRange cpu(nvtx::Name::MoeCpu, nvtx::Category::Moe);
+    nvtx::ScopedRange cpu(nvtx::Name::MoeCpu, nvtx::Category::Moe, cpu_assignments);
     ops::routed_swiglu(frame.host_input, p.profile.routed, {call.source.gate_up, call.source.down},
                        frame.host_routes, call.partition.cpu(), destination, scratch, host.cpu);
     return true;

@@ -3,6 +3,10 @@
 `build/apps/ninfer-serve` loads one v3 `.ninfer` artifact and exposes OpenAI- and
 Anthropic-compatible HTTP endpoints over one resident NInfer Engine.
 
+Qwen3.8-Flash-Next supports eager Text/Vision/MTP serving with `--no-cuda-graph`.
+Add `--vision` for media and `--spec mtp --draft-tokens 3` for native MTP with the full head.
+See the [CLI example](cli.md) for artifact and resource use.
+
 ## Start the server
 
 See [CUDA synchronization](cli.md#cuda-synchronization) for the shared `NINFER_CUDA_SYNC` setting.
@@ -982,9 +986,9 @@ curl http://127.0.0.1:8080/metrics
 | `ninfer_generation_tokens_total`, `ninfer_decode_tokens_total` | All committed outputs, or decode/control outputs excluding the first token; include thinking and injected control tokens |
 | `ninfer_spec_decode_{rounds,draft_tokens,accepted_tokens,fallback_steps}_total` | Live native speculative work, including MTP and DFlash/DFlash2 |
 | `ninfer_{preemptions,snapshot_restores,replay_restores}_total` | Pressure pauses and recovery routes |
-| `ninfer_device_kv_{used,capacity}_pages`, `ninfer_device_state_{used,capacity}_slots` | Physical Main KV and StateImage occupancy; retained history also occupies these pools |
+| `ninfer_device_kv_{used,capacity}_page_groups{pool_id}`, `ninfer_device_state_{used,capacity}_slots` | Physical per-pool KV and StateImage occupancy; retained history also occupies these pools |
 | `ninfer_host_context_{used,reserved,capacity,peak}_bytes` | Unified Host backing; reserved bytes are already included in used bytes |
-| `ninfer_context_transfer_bytes_total{resource,direction}` | Actual State/Main KV/backend KV payload transfers |
+| `ninfer_context_transfer_bytes_total{resource,pool_id,direction}` | Completed State or KV payload transfers; `pool_id` is present for KV |
 | `ninfer_host_work_seconds_total{phase}`, `ninfer_device_wait_seconds_total` | Instrumented worker wall time; device wait is not CUDA kernel time |
 | `ninfer_constraint_requests_total{outcome}`, `ninfer_constraint_cache_total{result}` | Settled constrained requests by completion state and compilation-cache access |
 | `ninfer_constraint_{prepare,mask,matcher}_seconds_total`, `ninfer_constraint_mask_{positions,upload_bytes}_total` | Constraint work aggregated at request settlement, including truncated/cancelled results |
@@ -1014,7 +1018,7 @@ in append mode and flushes every event, so successive model or MTP blocks may sh
 file. The parent directory must already exist. Failure to open the file aborts startup; the log path
 is also rejected if it resolves to the model artifact.
 
-Every line is one `ninfer_serve_request_log` schema-v28 JSON object. All events carry
+Every line is one `ninfer_serve_request_log` schema-v29 JSON object. All events carry
 `timestamp_unix_ms` and a process-unique `server_instance_id`; request IDs are monotonic only within
 that server instance. Successful request-start records include request-scoped acquisition,
 media-preprocessing wall/work, tokenizer, cache hit/miss/single-flight, and payload-size fields;
@@ -1115,8 +1119,12 @@ the whole request.
 
 The work `gpu_seconds` measures Text prefill stream intervals, including their MTP/DFlash work;
 Vision encode, standalone bridges and exact-hit sampling fall outside that interval.
-`context_transfers` reports completed request-owned State/Main KV/backend KV copies by direction,
-using transfer-event time and bytes. GPU intervals overlap Host submission and waits, so they are
+`context_transfers` contains `state` and a `kv_pools` array indexed by startup `pool_id`. Each
+resource reports `d2h`, `h2d`, `d2d` entries with `images`, `page_groups`, `bytes`, `copy_operations`
+and transfer-event `seconds`. Only completed request-owned copies are included, also when the
+request is later cancelled. Engine interval records expose `context_cache.state_transfers` and
+`context_cache.kv_pools`; each KV entry also carries its diagnostic `label`, `occupied_page_groups`
+and `capacity_page_groups`. GPU intervals overlap Host submission and waits, so they are
 separate evidence, not additional wall-time stages. Background reclamation remains Engine-wide.
 
 `result.generated_token_ids` records committed output token IDs for exact prefix analysis.
@@ -1195,8 +1203,8 @@ outside the GPU executor and do not delay formation of the next batch.
 
 `--max-context` is each sequence's logical ceiling. `--kv-capacity` fixes the shared Main Text KV
 pool used by active requests and retained prefixes. `auto` accounts for the complete enabled runtime
-and uses 1 GiB as a planning margin; omitting the option makes it follow `--max-context`. Capacity
-resolves once at startup.
+when sizing the pool; omitting the option makes it follow `--max-context`. Both explicit and automatic
+capacity use 1 GiB of startup planning headroom. Capacity resolves once at startup.
 
 Before each prefill, decode or replay unit, the runtime reserves the additional pages and temporary
 storage required by that unit. It first reclaims inactive cache resources when capacity is short.

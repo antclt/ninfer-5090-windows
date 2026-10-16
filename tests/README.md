@@ -11,14 +11,16 @@ ownership contracts are defined in [Engine architecture](../docs/maintainer/engi
   materialization and Python-writer/C++-reader interoperability;
 - `convert/` — source interpretation, Qwen logical mapping, recipe overrides/sharing, optional
   components, resources, proposals and numerical conversion methods;
-- `models/qwen3_5/` — config/binding, frontend, state/context stores, workspace, MTP alignment and
+- `models/common/` — shared Qwen frontend/tools, visual scatter, logical context stores and MoE;
+- `models/qwen3_5/` — native config/binding, state layout, workspace, MTP alignment and
   opt-in real Engine integration;
 - `ops/` — semantic Op qualification with independent mathematical or state-transition oracles;
   Linear and fused Linear suites are separated by their supported weight/activation paths;
 - `runtime/` — scheduler fairness, cache resource policy, capacity and context-cost calculations;
 - `cpu/` — topology/ISA, bounded task admission, bound collectives, publication and shutdown;
 - `io/` — bounded direct reads, partial submission, completion, wakeup and borrowed-buffer lifetime;
-- `models/qwen4_exp/ple/` — PLE disk binding, exact hash/NF4 reconstruction, incremental windows,
+- `models/qwen4_exp/` — native bank binding, state/page-group layouts and transfers, plus PLE
+  disk binding, exact hash/NF4 reconstruction, incremental windows,
   cancellation and Host/CUDA buffer lifetimes;
 - `bench/ttft/` — HTTP measurements, campaign orchestration and workload construction;
 - root C++ tests — core storage, public API, serving protocols, logging, benchmark reports and
@@ -27,7 +29,7 @@ ownership contracts are defined in [Engine architecture](../docs/maintainer/engi
   consumer.
 
 Tests are grouped by observable risk, not by mirroring every source file or class.
-`CMakeLists.txt` includes explicit registrations from `cmake/`, `artifact/`, `models/qwen3_5/`
+`CMakeLists.txt` includes explicit registrations from `cmake/`, `artifact/`, the model directories
 and `ops/`. Registration helpers live in `cmake/NinferTests.cmake`; included manifests keep
 executables and CTest working directories under `build/tests/`.
 `ops/op_tester.h` and `ops/op_check.h` own reusable device/guard and comparison mechanics.
@@ -332,7 +334,7 @@ call/result prefix reuse, and required-tool → JSON continuation with committed
 streaming and mixed strict/basic/free rows. Snapshot/Replay modes force resource pressure and
 validate the completed argument value after recovery; `cancel` interrupts the paused request.
 `NINFER_TEST_TOOL_REPORT` appends schema/output/timing JSONL.
-`python3 tests/models/qwen3_5/test_tool_schema.py` checks the native Qwen grammar and decoder against
+`python3 tests/models/common/qwen/test_tool_schema.py` checks the native Qwen grammar and decoder against
 `jsonschema` (dependencies in `tests/text/requirements.txt`), including string pattern/Unicode-length
 intersections. The JSON Schema oracle also covers finite-value filtering, reference/union siblings,
 closed-object and positional-array intersections, draft-07 tuples, recursive conjunctions,
@@ -416,6 +418,13 @@ Performance-only assertions belong in benchmarks and profiler review. Source sca
 implementation-shape assertions, trivial getters/configuration, retired command surfaces, and
 broad additions without a concrete regression risk do not belong in the permanent suite.
 
+`ninfer_context_store_test` checks StateImage transitions and replicas. `ninfer_kv_history_test`
+checks prefix retention, conflicting-writer COW, reservations, cancellation and Host extent lifetime.
+It compares page bytes against an independent CPU layout oracle and restores a complete mixed
+StateImage/KV snapshot at frontier 7, where `tokens_per_row=4` leaves one valid index row and a
+three-entry raw tail. Native transaction tests exercise the corresponding model-owned source,
+capture, retirement, recovery and consecutive decode/terminal paths.
+
 ## DFlash2 Engine integration
 
 The DFlash prefill regression checks actual KV contents after a StateImage fork and a conflicting
@@ -470,3 +479,17 @@ fixed tensors on GPU. This checks storage and binding, not mixed MoE execution:
 build/tests/ninfer_qwen3_5_loading_real_test --artifact out/qwen3_6_35b_a3b.ninfer \
   --vision --speculative mtp --host-experts
 ```
+
+Qwen4Exp loading/resources can be checked independently of the public Engine route:
+
+```bash
+./build/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer
+./build/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --materialize
+```
+
+The first command plans component combinations, KV formats and concurrency without loading weight
+payloads. `--materialize` additionally loads one full-component model, checks stored words and
+parameter sharing, constructs its execution resources, and reads/uploads a PLE window. It needs
+about 64 GiB of available Host memory plus system headroom. These are loading/resource checks;
+eager Text/Vision generation and text causal scoring use the public Engine, as described in the
+[CLI guide](../docs/cli.md).

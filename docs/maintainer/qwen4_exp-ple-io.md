@@ -2,7 +2,9 @@
 
 本文定义 PLE 查表的共同输入/输出、当前磁盘准备路径，以及 Host E 到 GPU 的交接。
 精确 LUT/行解码、文件 backing、Host hash、行缓存/去重、增量窗口和上传槽已实现，
-完整模型 Program 接入仍待完成。内存表与显存表的准备路径尚未实现。
+Eager Program 已接入窗口准备、下一 chunk 预取、上传、消费和取消；MTP 草稿 ID 通过
+异步 D2H 增量追加，verify 消费前完成 seal。Graph 编排后续接入。
+内存表与显存表的准备路径尚未实现。
 独立 SSD 实验是选型依据；生产组件的实测入口见 [Benchmarks](../../bench/README.md)。
 
 [模型与权重](qwen4_exp-model.md)维护实例几何与量化选择；
@@ -319,6 +321,10 @@ history 已前进。Program 的 ledger/PendingBatch 独立保有这些 IDs，不
 Cache、ticket 和 staging 不进入 checkpoint；丢弃错误草稿也不要求清空正确行缓存。
 
 ## 7. 启动预算
+
+`PrepareService::memory_bytes(table, options, slots)` 与 `UploadSlots::memory(max_positions, slots)`
+提供创建前的容量查询。Reader 构造和查询使用同一容量描述；Host 数组统计不含 allocator、
+线程栈及内核 I/O 系统开销。Model 的表 backing/LUT 与 Program 的可变准备资源分别计量。
 
 令 `Mmax=max(计划 prefill chunk, verify width×并发数, ordinary 并发数)`，按实际最大
 T*B 规划；当前 prefill 一次一条请求。它是 Program 调用形状的容量，不是 Op 的 T 上限。

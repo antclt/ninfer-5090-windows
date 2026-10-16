@@ -5,7 +5,7 @@
 #include "models/qwen3_5/execution/mtp.h"
 #include "models/qwen3_5/program/internal.h"
 #include "models/qwen3_5/program/planning/startup.h"
-#include "models/qwen3_5/execution/vision.h"
+#include "models/common/qwen/vision/vision.h"
 #include "models/qwen3_5/execution/workspace.h"
 #include "core/device.h"
 #include "ninfer/ops/gated_delta_net.h"
@@ -112,6 +112,7 @@ PersistentLayout persistent_layout(const SequencePlanImpl& plan) {
                      .mtp_physical_page_groups  = mtp_physical_pages,
                  });
     qwen3_5::StateImageSpec state_image_spec{
+        .slot_count = state_image_slots,
         .linear =
             {
                 .layers        = config.linear_attention_layers,
@@ -120,7 +121,6 @@ PersistentLayout persistent_layout(const SequencePlanImpl& plan) {
                 .value_heads = (config.gdn ? dimension(config.gdn->linear_num_value_heads) : 0),
                 .value_head_dim = (config.gdn ? dimension(config.gdn->linear_value_head_dim) : 0),
                 .key_head_dim   = (config.gdn ? dimension(config.gdn->linear_key_head_dim) : 0),
-                .slot_count     = state_image_slots,
                 .conv_dtype     = DType::BF16,
             },
         .hidden = dimension(config.hidden_size),
@@ -714,9 +714,9 @@ WorkspacePlan build_workspace_plan(const SequencePlanImpl& plan) {
     out.capacity = out.general_capacity;
     if (plan.features.vision) {
         const std::uint32_t merged = static_cast<std::uint32_t>(
-            std::min<std::uint64_t>(plan.capacity, kMaximumVisionItemTokens));
-        out.vision = execution::VisionContext::plan_workspace(
-            *profile.config.vision, *profile.vision, merged, out.general_capacity);
+            std::min<std::uint64_t>(plan.capacity, qwen::kMaximumVisionItemTokens));
+        out.vision   = qwen::VisionContext::plan_workspace(*profile.config.vision, *profile.vision,
+                                                           merged, out.general_capacity);
         out.capacity = std::max(out.capacity, out.vision->capacity_bytes);
     }
     return out;
@@ -831,7 +831,7 @@ std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlannin
         // Default Host capacity covers 8 GiB of KV bytes plus eight complete StateImages.
         impl->context_cache.host_capacity_bytes =
             checked_add(8ULL * 1024 * 1024 * 1024,
-                        checked_mul(8, impl->persistent.state_images.host.image_bytes,
+                        checked_mul(8, impl->persistent.state_images.images.image_stride,
                                     "Host context state default overflow"),
                         "Host context default overflow");
     }
@@ -882,18 +882,18 @@ make_sequence_planner_impl(std::shared_ptr<const execution::ModelProfile> profil
     planner->inputs  = inputs;
     planner->minimum = build_sequence_candidate(inputs, minimum_pages);
     planner->curve   = runtime::SequenceCapacityCurve{
-          .main_page_tokens                     = static_cast<std::uint32_t>(kPagedKVPageSize),
-          .minimum_main_page_groups             = minimum_pages,
-          .maximum_main_page_groups             = maximum_pages,
-          .minimum_device_reservation_bytes     = planner->minimum->device_reservation_bytes,
-          .bytes_per_additional_main_page_group = 0,
+          .primary_page_tokens                     = static_cast<std::uint32_t>(kPagedKVPageSize),
+          .minimum_primary_page_groups             = minimum_pages,
+          .maximum_primary_page_groups             = maximum_pages,
+          .minimum_device_reservation_bytes        = planner->minimum->device_reservation_bytes,
+          .bytes_per_additional_primary_page_group = 0,
     };
     if (minimum_pages < maximum_pages) {
         auto adjacent = build_sequence_candidate(inputs, minimum_pages + 1U);
         if (adjacent->device_reservation_bytes <= planner->minimum->device_reservation_bytes) {
             throw std::logic_error("Qwen3.5 sequence layout has a nonpositive KV capacity stride");
         }
-        planner->curve.bytes_per_additional_main_page_group =
+        planner->curve.bytes_per_additional_primary_page_group =
             adjacent->device_reservation_bytes - planner->minimum->device_reservation_bytes;
     }
     return planner;
@@ -918,7 +918,7 @@ finalize_sequence_plan_impl(std::unique_ptr<qwen3_5::detail::SequencePlannerImpl
     }
     const std::size_t expected = planner->curve.reservation_bytes(main_page_groups);
     std::unique_ptr<SequencePlanImpl> plan;
-    if (main_page_groups == planner->curve.minimum_main_page_groups) {
+    if (main_page_groups == planner->curve.minimum_primary_page_groups) {
         plan = std::move(planner->minimum);
     } else {
         plan = build_sequence_candidate(planner->inputs, main_page_groups);

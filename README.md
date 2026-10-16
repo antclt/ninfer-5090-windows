@@ -288,8 +288,8 @@ The product boundary remains intentionally small:
 
 `--max-context` is each sequence's logical limit. `--kv-capacity` sizes the shared Main Text KV pool
 used by active requests and retained prefixes; `auto` resolves the largest legal capacity at
-startup from the memory remaining after weights while keeping 1 GiB of sizing headroom. Explicit
-capacities remain fixed for the process lifetime.
+startup from the memory remaining after weights. Both explicit and automatic modes use 1 GiB of
+startup planning headroom. Explicit capacities remain fixed for the process lifetime.
 
 ## Documentation
 

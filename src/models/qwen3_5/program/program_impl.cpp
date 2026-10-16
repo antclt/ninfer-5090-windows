@@ -1,5 +1,5 @@
 #include "models/qwen3_5/program/program_impl.h"
-#include "models/qwen3_5/program/context_work.h"
+#include "models/common/context/work.h"
 #include "models/qwen3_5/program/execution_context.h"
 #include "core/buffer.h"
 #include "models/qwen3_5/execution/linear.h"
@@ -56,10 +56,6 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
                                                              sizeof(qwen3_5::DFlashDecodeEgress) +
                                                              sizeof(qwen3_5::DFlashPrefillIngress))
                       : std::nullopt),
-      context_source_ready_(device_in), context_completion_(device_in),
-      context_transfer_timers_{CudaEventTimer(device_in, device_in.transfer_stream()),
-                               CudaEventTimer(device_in, device_in.transfer_stream()),
-                               CudaEventTimer(device_in, device_in.transfer_stream())},
       prefill_gpu_timer_(device_in) {
     if (parameters.profile != plan.profile || parameters.model.options() != plan.features) {
         throw std::invalid_argument("Program parameters do not match the frozen sequence plan");
@@ -74,7 +70,7 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
     }
     const MemorySpan backing = persistent.span();
     decoder      = std::make_unique<qwen3_5::DecoderState>(backing, plan.persistent.decoder);
-    state_images = std::make_unique<StateImageDevicePool>(backing, plan.persistent.state_images);
+    state_images = std::make_unique<StateImageViews>(backing, plan.persistent.state_images);
     if (plan.persistent.replay_records) {
         replay_records.emplace(backing, *plan.persistent.replay_records);
         replay_fold.emplace(*replay_records, state_images->linear().all_layers_view());
@@ -93,7 +89,7 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
         backend_host_kv_page_stride = layout.page_stride;
         if (layout != layouts.front()) { layouts.push_back(std::move(layout)); }
     }
-    std::size_t minimum_stride    = state_images->host_layout().image_bytes;
+    std::size_t minimum_stride    = state_images->storage().image_bytes();
     std::size_t minimum_kv_stride = layouts.front().page_stride;
     for (const auto& layout : layouts) {
         minimum_stride    = std::min(minimum_stride, layout.page_stride);
@@ -105,43 +101,55 @@ ProgramImpl::ProgramImpl(const execution::Parameters& parameters_in, const Seque
         }
         return static_cast<std::uint32_t>(value);
     };
-    const auto logical_states = checked_count(state_images->slot_count() +
-                                              host_bytes / state_images->host_layout().image_bytes);
+    const auto logical_states = checked_count(state_images->storage().slot_count() +
+                                              host_bytes / state_images->storage().image_bytes());
     // One immutable image can serve private replay, an explicit anchor, a public view and an
     // exact-hit endpoint. Alias descriptors are bounded separately from physical state slots.
     checkpoints.resize(checked_count(4ULL * logical_states + 2ULL * max_concurrency));
-    const auto address_capacity = checked_count(checkpoints.size() + max_concurrency + 2U);
+    const auto history_capacity = checked_count(checkpoints.size() + max_concurrency + 2U);
     if (host_bytes) {
         StartupPhaseScope phase(startup_observer, StartupPhase::HostContextPin,
                                 StartupProgressUnit::Bytes, host_bytes);
         host_context_arena = std::make_unique<HostContextArena>(host_bytes, minimum_stride);
-        host_state_images =
-            std::make_unique<HostStatePool>(*host_context_arena, state_images->host_layout());
         host_kv_arena      = std::make_unique<HostKVArena>(*host_context_arena, layouts);
         const auto extents = checked_count(host_bytes / minimum_kv_stride);
         if (extents) {
-            host_kv_extents = std::make_unique<HostKVExtentStore>(*host_kv_arena, extents);
+            host_kv_extents = std::make_unique<context::HostKVExtentStore>(*host_kv_arena, extents);
         }
         phase.complete(host_bytes, host_bytes);
     }
-    state_store =
-        std::make_unique<StateImageStore>(*state_images, host_state_images.get(), logical_states);
+    state_store              = std::make_unique<StateImageStore>(state_images->storage(),
+                                                                 host_context_arena.get(), logical_states);
     const auto logical_pages = [&](const DeviceKVPagePool& pool) {
         const auto stride = plan_host_kv_page_layout(pool.geometry()).page_stride;
         return checked_count(pool.capacity_pages() + host_bytes / stride);
     };
-    text_kv_pages = std::make_unique<LogicalKVPageStore>(
+    text_kv_pages = std::make_unique<context::LogicalKVPageStore>(
         decoder->text_kv.page_pool(), logical_pages(decoder->text_kv.page_pool()));
-    text_kv_addresses = std::make_unique<KVAddressSpaceStore>(
-        *text_kv_pages, decoder->text_kv.execution_tables(), address_capacity,
-        decoder->text_kv.execution_tables().logical_page_capacity());
+    text_kv_histories = std::make_unique<context::KVHistoryStore>(
+        *text_kv_pages, decoder->text_kv.execution_tables(), history_capacity,
+        decoder->text_kv.execution_tables().logical_page_capacity(), host_kv_extents.get());
     if (auto* backend = backend_kv_cache()) {
-        backend_kv_pages = std::make_unique<LogicalKVPageStore>(
+        backend_kv_pages = std::make_unique<context::LogicalKVPageStore>(
             backend->page_pool(), logical_pages(backend->page_pool()));
-        backend_kv_addresses = std::make_unique<KVAddressSpaceStore>(
-            *backend_kv_pages, backend->execution_tables(), address_capacity,
-            backend->execution_tables().logical_page_capacity());
+        backend_kv_histories = std::make_unique<context::KVHistoryStore>(
+            *backend_kv_pages, backend->execution_tables(), history_capacity,
+            backend->execution_tables().logical_page_capacity(), host_kv_extents.get());
     }
+
+    const auto register_pool = [&](runtime::KvPoolId id, std::string_view label,
+                                   const DeviceKVPagePool& pool, std::size_t host_stride) {
+        kv_pools.push_back({id, label, &pool.geometry(), pool.capacity_pages(),
+                            pool.device_copy_work(1).payload_bytes, host_stride});
+    };
+    register_pool(kTextKvPool, "text", text_kv_pages->physical_pool(), text_host_kv_page_stride);
+    if (backend_kv_pages) {
+        register_pool(kBackendKvPool,
+                      speculative_backend == SpeculativeBackend::Mtp ? "mtp" : "draft_full",
+                      backend_kv_pages->physical_pool(), backend_host_kv_page_stride);
+    }
+
+    migration_context_.emplace(device, kv_pools.size());
 
     io = qwen3_5::RoundState(backing, plan.persistent.round);
     if (io.mtp.has_value() != (speculative_backend == SpeculativeBackend::Mtp)) {
@@ -277,7 +285,7 @@ ProgramImpl::~ProgramImpl() noexcept {
     moe.reset();
 }
 
-std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
+std::vector<float> ProgramImpl::causal_score(qwen::PreparedPromptData&& prompt,
                                              std::uint32_t first_target) {
     if (!causal_scoring || !score_hidden || !score_logprobs_host ||
         workspace_plan.causal_score == 0) {
@@ -301,18 +309,14 @@ std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
     const auto token_count                     = static_cast<std::uint32_t>(token_count_size);
     const std::uint32_t predictor_count        = token_count - 1U;
     const std::uint32_t scored_predictor_begin = first_target - 1U;
-    const std::uint32_t required_pages         = kv_pages_for_frontier(predictor_count);
+    const std::uint32_t required_pages         = context::kv_pages_for_frontier(predictor_count);
     if (required_pages == 0) { throw std::logic_error("causal score requires KV pages"); }
 
     std::optional<StateImageHandle> state;
-    std::optional<KVAddressSpaceHandle> address;
+    std::optional<context::KVHistory> address;
     const auto cleanup = [&] {
         bool released = true;
-        if (address) {
-            if (text_kv_addresses->active(*address)) { text_kv_addresses->deactivate(*address); }
-            released = text_kv_addresses->release(*address) && released;
-            address.reset();
-        }
+        address.reset();
         if (state) {
             released = state_store->release(*state) && released;
             state.reset();
@@ -327,14 +331,16 @@ std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
     std::uint32_t staged_columns = 0;
 
     try {
-        state = state_store->reserve_reset(device.stream());
+        state = state_store->reserve_destination();
         if (!state) { throw std::bad_alloc(); }
-        address = text_kv_addresses->create_active(required_pages, 0, device.stream());
-        if (!address) { throw std::bad_alloc(); }
-        if (text_kv_addresses->bound_row(*address) != 0) {
-            throw std::logic_error("causal score did not bind the unique Main KV row");
-        }
-        text_kv_addresses->ensure_mapped_to_tokens(*address, predictor_count, device.stream());
+        state_images->storage().clear(state_store->physical_slot(*state), device.execution_view());
+        state_store->complete_initialization(*state);
+        auto binding = text_kv_histories->prepare_binding(nullptr, 0, predictor_count, 0);
+        binding.publish_restores();
+        binding.prepare_tail_copy();
+        binding.enqueue_mapping(device.stream());
+        address.emplace(binding.commit());
+        text_kv_histories->prepare_write(*address, 0, predictor_count, device.stream());
 
         const std::int32_t state_slot = state_store->physical_slot(*state);
 
@@ -396,7 +402,7 @@ std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
             }
             const std::uint32_t chunk_begin = cursor;
             cursor += result.processed_tokens;
-            text_kv_addresses->commit_frontier(*address, cursor);
+            text_kv_histories->commit_frontier(address->handle(), cursor);
 
             std::uint32_t selected = std::max(chunk_begin, scored_predictor_begin);
             while (selected < cursor) {
@@ -434,36 +440,6 @@ std::vector<float> ProgramImpl::causal_score(PreparedPromptData&& prompt,
         } catch (...) {}
         throw;
     }
-}
-
-void ProgramImpl::start_context_transfer_timer(runtime::ContextResourceClass resource) {
-    context_transfer_timers_[context_resource_index(resource)].start();
-}
-
-void ProgramImpl::stop_context_transfer_timer(runtime::ContextResourceClass resource) {
-    context_transfer_timers_[context_resource_index(resource)].record_stop();
-}
-
-runtime::ContextTransferObservation ProgramImpl::context_transfer_observation(
-    runtime::ContextResourceClass resource, runtime::ContextTransferDirection direction,
-    TransferWork work, std::uint32_t page_count, std::uint64_t state_images) const {
-    const double elapsed_ns =
-        static_cast<double>(
-            context_transfer_timers_[context_resource_index(resource)].elapsed_ms()) *
-        1'000'000.0;
-    const std::uint64_t measured_ns =
-        elapsed_ns >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())
-            ? std::numeric_limits<std::uint64_t>::max()
-            : std::max<std::uint64_t>(1, static_cast<std::uint64_t>(elapsed_ns + 0.5));
-    return runtime::ContextTransferObservation{
-        .resource  = resource,
-        .direction = direction,
-        .units =
-            resource == runtime::ContextResourceClass::State ? state_images : work.payload_bytes,
-        .page_count = page_count,
-        .work       = work,
-        .elapsed_ns = measured_ns,
-    };
 }
 
 MemorySummary ProgramImpl::memory_summary() const {
@@ -526,7 +502,7 @@ MemorySummary ProgramImpl::memory_summary() const {
     if (workspace_plan.vision) {
         out.vision_workspace = VisionWorkspaceMemorySummary{
             .aggregate_prompt_tokens = static_cast<std::uint32_t>(
-                std::min<std::uint64_t>(capacity, kMaximumPromptVisionTokens)),
+                std::min<std::uint64_t>(capacity, qwen::kMaximumPromptVisionTokens)),
             .max_item_tokens        = workspace_plan.vision->max_merged_tokens,
             .general_capacity_bytes = workspace_plan.vision->general_capacity_bytes,
             .encode_peak_bytes      = workspace_plan.vision->encode_peak_bytes,
@@ -539,7 +515,7 @@ MemorySummary ProgramImpl::memory_summary() const {
     out.workspace_logical_peak_bytes = workspace_logical_peak_bytes;
     out.cuda_graph                   = graph_memory;
     out.kv_payload_bytes             = kv_payload_bytes;
-    if (host_state_images) { out.host_state_occupied_slots = host_state_images->occupied(); }
+    out.host_state_occupied_slots    = state_store->host_occupied();
     if (host_kv_arena) { out.host_kv_occupied_bytes = host_kv_arena->occupied_bytes(); }
     if (host_context_arena) {
         out.host_context_capacity_bytes = host_context_arena->capacity_bytes();
