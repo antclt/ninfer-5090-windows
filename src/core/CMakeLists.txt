@@ -74,7 +74,7 @@ add_library(ninfer_core STATIC
   decode_graph.cpp
 )
 ninfer_internal_includes(ninfer_core)
-ninfer_cuda_archive(ninfer_core)
+ninfer_cuda_library(ninfer_core)
 target_link_libraries(ninfer_core PUBLIC ninfer_cpu CUDA::cudart CUDA::nvtx3 Threads::Threads)
 if(NOT WIN32)
   target_link_libraries(ninfer_core PRIVATE PkgConfig::URING)
