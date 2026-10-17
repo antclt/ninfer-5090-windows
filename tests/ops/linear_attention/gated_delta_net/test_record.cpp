@@ -1,10 +1,10 @@
+#include "ops/suite.h"
 #include "ops/state_fixture.h"
 #include "ninfer/ops/gated_delta_net.h"
 #include "cuda_fixture.h"
 #include "core/buffer.h"
 
 #include "core/device.h"
-#include "ops/linear_attention/gated_delta_net/recurrence/launch.h"
 
 #include "ops/op_tester.h"
 
@@ -123,6 +123,8 @@ int run_case(std::int32_t value_heads, std::int32_t width, std::int32_t batch,
     record_states = history.tensor;
     Tensor reference_final_states(reference_final.span(), DType::FP32,
                                   {kStateDim, kStateDim, value_heads, batch});
+    DeviceBuffer reference_slot = to_device(std::vector<std::int32_t>{0});
+    Tensor selected_reference_slot(reference_slot.span(), DType::I32, {1});
     Tensor valid;
     if (!dense) { valid = Tensor(device_valid.span(), DType::I32, {batch}); }
     Tensor initial(device_initial.span(), DType::I32, {batch});
@@ -142,7 +144,7 @@ int run_case(std::int32_t value_heads, std::int32_t width, std::int32_t batch,
     CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
     const auto stream_execution = ninfer::test::cuda_environment().context.execution_view(stream);
     cuda_synchronize();
-    // Replay is bitwise equivalent to recurrence, independently of the prefill dispatcher.
+    // The contract names public one-token state-pool execution as the exact reference.
     const auto launch_reference = [&] {
         CUDA_CHECK(cudaMemsetAsync(reference_out.data(), 0, reference_out.size(), stream));
         for (std::int32_t row = 0; row < batch; ++row) {
@@ -170,9 +172,19 @@ int run_case(std::int32_t value_heads, std::int32_t width, std::int32_t batch,
                                  .view({kStateDim, value_heads, valid_extent});
             Tensor final_row =
                 reference_final_states.slice(3, row, 1).view({kStateDim, kStateDim, value_heads});
-            ops::detail::gated_delta_net::launch_recurrent_inout(q_row, k_row, v_row, g_row,
-                                                                 beta_row, kScale, true, state_row,
-                                                                 final_row, out_row, stream);
+            CUDA_CHECK(cudaMemcpyAsync(final_row.data, state_row.data, state_row.bytes(),
+                                       cudaMemcpyDeviceToDevice, stream));
+            for (int token = 0; token < valid_extent; ++token) {
+                auto qt = q_row.slice(2, token, 1);
+                auto kt = k_row.slice(2, token, 1);
+                auto vt = v_row.slice(2, token, 1);
+                auto gt = g_row.slice(1, token, 1);
+                auto bt = beta_row.slice(1, token, 1);
+                auto ot = out_row.slice(2, token, 1);
+                ops::gated_delta_net_batch_update(qt, kt, vt, gt, bt, kScale, true, final_row,
+                                                  selected_reference_slot, selected_reference_slot,
+                                                  ot, stream_execution);
+            }
         }
     };
     const auto launch_record = [&] {
@@ -299,23 +311,24 @@ int run_case(std::int32_t value_heads, std::int32_t width, std::int32_t batch,
 
 } // namespace
 
-int main() {
-    if (cuda_unavailable()) {
-        std::cout << "SKIP: no usable CUDA device\n";
-        return 77;
-    }
-
-    int failures = 0;
-    failures += run_case(32, 2, 1, {}, 1701U);
-    failures += run_case(32, 16, 1, {7}, 1711U);
-    failures += run_case(32, 6, 8, {6, 5, 4, 3, 2, 1, 6, 2}, 1721U);
+int main(int argc, char** argv) {
+    OpSuite suite;
+    const auto add = [&](int heads, int width, int batch, std::vector<int> valid, unsigned seed) {
+        suite.add("gdn_record/h" + std::to_string(heads) + "/w" + std::to_string(width) + "/b" +
+                      std::to_string(batch) + (valid.empty() ? "/dense" : "/ragged"),
+                  [=] { return run_case(heads, width, batch, valid, seed); },
+                  {{"execution", width == 2 || width == 9 || width == 16 ? "graph" : "eager"}});
+    };
+    add(32, 2, 1, {}, 1701U);
+    add(32, 16, 1, {7}, 1711U);
+    add(32, 6, 8, {6, 5, 4, 3, 2, 1, 6, 2}, 1721U);
     for (int width = 2; width <= 16; ++width) {
-        failures += run_case(48, width, 1, {}, 1730U + width);
+        add(48, width, 1, {}, 1730U + width);
         std::vector<std::int32_t> valid(8);
         for (int b = 0; b < 8; ++b) valid[b] = b == 0 ? width : 1 + (3 * b) % width;
-        failures += run_case(48, width, 8, valid, 1760U + width);
+        add(48, width, 8, valid, 1760U + width);
     }
-    failures += run_case(48, 5, 3, {5, 3, 1}, 1791U);
-    std::cout << (failures == 0 ? "OK" : "FAIL") << " gated_delta_net_replay_record\n";
-    return failures == 0 ? 0 : 1;
+    add(48, 5, 3, {5, 3, 1}, 1791U);
+
+    return suite.main(argc, argv);
 }

@@ -32,30 +32,42 @@ Tests are grouped by observable risk, not by mirroring every source file or clas
 `CMakeLists.txt` includes explicit registrations from `cmake/`, `artifact/`, the model directories
 and `ops/`. Registration helpers live in `cmake/NinferTests.cmake`; included manifests keep
 executables and CTest working directories under `<build-dir>/tests/`.
-`ops/op_tester.h` and `ops/op_check.h` own reusable device/guard and comparison mechanics.
-`ops/linear_common.h` shares extent checks, explicit sampling recipes, payload preservation and
-0/1/77 entry handling. `ops/linear/support.*` owns Linear case selection and the portable CPU oracle
-executor; `ops/linear/weights.*` owns its shared weight fixtures. Each semantic Op keeps its complete
-oracle and case declarations in its own directory.
-Concrete numerical criteria remain named by the semantic Op suite; there are no cross-Op tolerance
-presets.
+Tests link the same Core, Ops and CPU shared libraries as products and benchmarks, stored in
+`<build-dir>/lib/`; relative RPATH supplies their build-tree lookup. Test support and restricted
+CPU ISA qualification libraries remain private static targets. See
+[Build system](../docs/maintainer/build-system.md#shared-library-boundary) for linkage ownership.
 
-Family-specific case declarations, independent oracles and numerical criteria live alongside the
-Op suites. `ops/quantized_weight.h` owns packed-weight fixtures and independent logical decoding;
-`ops/direct_bf16_weight.h` owns direct BF16 fixtures. GDN record/fold tests preserve their specified
-snapshot reference separately from projection and recurrence mathematical qualification.
+CUDA and I/O failure cases interpose selected symbols only in their owning test executables.
+`ninfer_test_interpose()` exports the replacements; `symbol_interpose.h` resolves the real shared
+definitions with `RTLD_NEXT`. Keep failure state and assertions local to the relevant suite.
 
-For segmented projection, run the original 2560-input suite and the migrated two/multi-output suites:
-`ctest --test-dir build/rtx5090-dev -R '^ninfer_linear_split(_two_output|_multi_output)?_test$' --output-on-failure`.
-`ninfer_qsa_sparse_gqa_test --kv-cache bf16|fp8|int8|nvfp4|k8v4` selects one cache profile;
-the default checks all five. QSA tail, prepare, indexer and sparse-GQA partial-initialization cases
-also check their permitted read footprints under Compute Sanitizer initcheck.
+Op tests follow semantic families under `ops/`. Small related Ops share an executable;
+large computations own dedicated runners and case catalogues. A case is a reproducible input
+recipe or a complete state/Graph sequence. A source file, semantic suite, executable and CTest
+group need not have the same boundary.
+
+| Family | Organization |
+|---|---|
+| Elementwise, indexing, reduction, normalization, RoPE, embedding, sequence | One family executable; each semantic Op owns its cases and oracle. |
+| Sampling | Sampling, candidate selection and acceptance; input preparation and exact indexing live in sequence/indexing. |
+| Linear | Projection, Split, Add, SwiGLU, Pair and TopK; typed shape and policy catalogues. |
+| Linear attention | KDA, causal convolution and GDN. GDN owns control, input-conv, recurrence and replay. |
+| Softmax attention | Causal cache fixtures, mathematical oracle, runner and cases are separate. Packed/context, sliding-window and QSA keep their own semantics. |
+| KV cache | Append codecs/paged storage, cyclic prefixes and context materialization. |
+| Gated residual, dynamic grouped convolution, PLE | Related forms share an entry and substantial family support. PLE GPU tests perform no disk I/O. |
+| MoE | GPU route/routed/complete computations, CPU arithmetic routes and mixed contributions. |
+
+`ops/suite.*` owns metadata selection, result handling and a bounded CPU oracle executor.
+`ops/op_tester.h` and `ops/op_check.h` own uploads, guards and comparison mechanics;
+`ops/float_codec.h` owns shared test-side floating-point codecs. `ops/quantized_weight.h` and
+`ops/direct_bf16_weight.h` own independent represented-weight fixtures. Linear-specific geometry,
+sampling recipes and fixture reuse remain under `ops/linear/` and `ops/linear_common.h`.
+Numerical criteria and complete mathematical/state references stay with their semantic suites.
 
 ## Build and run
 
 Select a Python environment with the dependencies for the tests first. The maintained environment
-uses the maintained Python 3.12 environment; CMake finds Python 3 without restricting its
-minor version.
+uses Python 3.11; CMake finds Python 3 without restricting its minor version.
 `Python3_EXECUTABLE` selects the interpreter used by interop and frontend tests explicitly.
 
 ```bash
@@ -91,126 +103,74 @@ CPU/GPU MoE composition has its own `ninfer_moe_mixed_test`; pure GPU MoE remain
 `ninfer_memory_test` covers portable CPU storage and views. Frontend and HTTP transport tests
 cover the task-pool consumers, including restricted media affinity and HTTP queue saturation.
 
-Run a focused target for a localized change:
+Run all Op qualification groups or select a family:
 
 ```bash
-cmake --build build/rtx5090-dev --parallel --target ninfer_sampling_test
-ctest --test-dir build/rtx5090-dev -R ninfer_sampling_test --output-on-failure
+ctest --test-dir build/rtx5090-dev -L ops --output-on-failure
+ctest --test-dir build/rtx5090-dev -R '^ninfer_qsa_.*_test$' --output-on-failure
+./build/rtx5090-dev/tests/ninfer_normalization_test --suite rmsnorm --list
+./build/rtx5090-dev/tests/ninfer_qsa_sparse_gqa_test --format nvfp4 --execution graph
+./build/rtx5090-dev/tests/ninfer_linear_projection_test --format q8 --shape 6144 5120
 ```
 
-### Windows port recipes
+Every semantic Op executable under `ops/` accepts `--help`, `--list`, `--case ID`,
+`--suite NAME`, `--format FORMAT`, `--policy a16|a8|a4` and `--execution eager|graph`.
+Filters intersect declared metadata; an absent format/policy does not match that filter.
+The first component of an ID names its suite. A case containing both eager and captured calls is
+classified as Graph. `--case` takes an exact ID from `--list`; quote IDs containing spaces.
+The six Linear executables additionally accept `--shape N K` and `--t T` (T=0 denotes metadata cases).
+Filters select existing cases, without generating new shapes or inputs.
 
-This port ships three recipes rather than expecting the commands above to be reconstructed:
+Listing and selection precede CUDA initialization, weight generation and fixture allocation.
+Unknown options, duplicate IDs and empty selections fail. Exit 77 means the selected tests cannot
+run on the available device/CPU ISA. An unavailable group is reported separately from failures.
+CTest partitions Linear, dense attention and QSA sparse GQA by format; it does not
+also run an aggregate entry. CPU MoE retains separate native, AVX2 and FMA qualification
+executables with a shared resource lock.
 
-- `tools/scripts/test_v3.cmd` — configure, build and run the whole suite in `build-test`, and stage
-  the FFmpeg runtime DLLs beside the test executables (four tests exit `0xC0000135` without that
-  copy). It passes `--schedule-random`, because an order-dependent test hid behind a fixed order
-  once: a test that decorates itself with an empty environment variable poisoned every test after it.
-- `tools/scripts/test_v3_asan.cmd` — the host-only subset under MSVC AddressSanitizer. ASan cannot
-  instrument device code, which is why the device side is a separate recipe and not a flag here.
-- `tools/scripts/test_v3_compute_sanitizer.cmd` — memcheck over five sub-second device tests, the
-  device-side complement to the ASan recipe.
+Inputs, seeds and sample coordinates are independent of selection order. Grouped runners reuse
+immutable fixtures, while each stateful case resets its own initial state. Graph cases include
+all declared input/metadata updates. ReplaySSM record/fold compares the specified snapshot
+or recurrent execution bit for bit; those computations have separate mathematical tests.
+Linear and fused projection suites select their A4 criterion for `AllowA4` and A8 criterion for
+`AllowA8`, including when an implementation chooses higher precision for a small input.
 
-`tools/release/check_test_baseline.py` compares a run against the recorded baseline in
-`tools/release/test_baseline.json`, which is the authority for how many tests the suite has and which
-failures are expected by construction. Set `NINFER_TEST_ARTIFACT` before running it: without it the
-three required real-model tests skip, and the gate then fails on missing coverage rather than on a
-regression.
+GDN recurrence uses one output criterion and one final-state criterion across running and
+state-pool updates, normalization choices, targets, token extents and continuation partitions.
+Its independent FP64 oracle starts from represented inputs and retains the complete history.
+Replay record/fold uses public one-token state-pool updates to produce its exact reference
+snapshots; their bitwise consistency remains separate from recurrence's mathematical accuracy.
 
-`tools/release/test_v3.cmd` runs one further gate at its tail, after `ctest`:
-`tools/release/check_test_mutation.py`. It asks whether the suite *can* go red — every mutation
-declared in `tests/ops/mutations.json` must turn its Op test red, and the clean run must be green, since
-a suite that is red to begin with satisfies every mutation assertion trivially. It builds the tests it
-perturbs first and refuses if the tree is stale, because a gate that certifies a binary it did not
-compile is worse than no gate. It prints `MUTATION_EXIT`. The manifest is the declaration; see
-[op-development.md §6.4](../docs/maintainer/op-development.md#64-perturbation-coverage) for when an Op
-owes perturbation coverage and how the seam is scoped.
+Large independent output rows may use fixed samples of the complete mathematical formula.
+QSA sparse GQA checks all live queries up to 64 per batch row; larger rows use fixed boundary,
+interior and tail queries. GPU extents remain unchanged. QSA checks every output cell for a write
+and finite value; invalid outputs, untouched state, preserved inputs and guards retain full checks.
+Long recurrence histories are not shortened or sampled away. Attention cache generation/decoding
+and independent oracle rows share at most eight CPU workers; nested work runs serially and each
+dot product retains its accumulation order. Shared oracle support and CXX suite targets use
+`-fno-fast-math -ffp-contract=off` on GNU/Clang.
 
-Enable uniform floating-point error records when establishing or reviewing an Op criterion:
+Enable numerical error records when reviewing a criterion:
 
 ```bash
 NINFER_OP_REPORT_STATS=1 \
-  ctest --test-dir build/rtx5090-dev -V -R '^ninfer_(rmsnorm|softmax_attention)_test$'
+  ./build/rtx5090-dev/tests/ninfer_gated_residual_test --suite combine-norm
 ```
 
-Every participating comparison emits one `OP_ERROR_STATS` record containing the stable case label,
-actual error, active limit, and error-to-limit ratio. The switch changes reporting only; the same
-statistics still drive the normal verdict. Passing tests remain quiet without it.
+Each participating comparison emits `OP_ERROR_STATS` with the case label, actual error, limit
+and error-to-limit ratio. The switch changes reporting only. Passing tests otherwise print the
+selected-case result; detailed failure diagnostics remain owned by each oracle.
 
-`ninfer_softmax_attention_test --causal-only` runs both D256 geometries and all five KV types;
-`--kv-dtype bf16|int8|fp8|nvfp4|k8v4` selects the same complete causal suite for one type.
-The default invocation also runs packed and context attention. Large causal oracle calculations
-use at most eight CPU workers while preserving each output's FP64 accumulation order; small cases
-remain serial. The runner reports elapsed time per KV type.
+QSA Indexer and sparse GQA qualify both metadata changes during Graph replay and envelope
+changes through Graph executable updates, including transitions through all-select/inert calls.
+Their numerical criteria remain independent of target, extent and private arithmetic.
+QSA tail, prepare, indexer and sparse GQA retain partial-initialization cases for Compute Sanitizer
+initcheck. Use `--list` / `--case` to select the read-footprint recipe rather than running a whole
+format sweep under instrumentation.
 
-Run the RMSNorm and GDN control families together:
-
-```bash
-cmake --build build/rtx5090-dev -j --target \
-  ninfer_rmsnorm_test ninfer_gated_rmsnorm_test \
-  ninfer_gdn_control_test ninfer_gdn_control_proj_test ninfer_gdn_norm_control_proj_test
-ctest --test-dir build/rtx5090-dev --output-on-failure \
-  -R '^ninfer_(rmsnorm|gated_rmsnorm|gdn_control|gdn_control_proj|gdn_norm_control_proj)_test$'
-```
-
-Numerical criteria live in [test_gated.cpp](ops/rmsnorm/test_gated.cpp) and
-[GDN criteria.h](ops/gdn_control/criteria.h). `NINFER_OP_REPORT_STATS=1` with verbose CTest output
-reports the same suite-owned criteria used by the normal verdict.
-
-Run the HC residual family:
-
-```bash
-cmake --build build/rtx5090-dev -j --target \
-  ninfer_hc_expand_norm_test ninfer_hc_grouped_rmsnorm_test \
-  ninfer_hc_combine_test ninfer_hc_combine_norm_test ninfer_hc_mix_test
-ctest --test-dir build/rtx5090-dev --output-on-failure \
-  -R '^ninfer_hc_(expand_norm|grouped_rmsnorm|combine|combine_norm|mix)_test$'
-```
-
-HC suites qualify the public [gated residual forms](../include/ninfer/ops/gated_residual.h),
-including Mix, using [family-owned criteria](ops/gated_residual/criteria.h). Exact copying and
-mathematical outputs retain their respective references and the public BF16 residual boundary.
-
-PLE GPU Ops run with `ctest --test-dir build/rtx5090-dev -R '^ninfer_ple_(gate|conv|state_extract)_test$'`.
-Gate uses an independent FP64 oracle for U and norm(actual BF16 U), including strided projections,
-record windows, masks, Graph replay and the Conv/StateExtract handoff. These tests perform no file I/O.
-
-The Linear family has six executables under `ops/linear/`: `projection`, `split`, `add`, `swiglu`,
-`pair`, and `topk`. CTest partitions each executable by format without registering an additional
-aggregate run. Dynamic-grouped-convolution fusion remains a separate Op suite.
-
-```bash
-cmake --build build/rtx5090-dev -j
-ctest --test-dir build/rtx5090-dev -R '^ninfer_linear_.*_test$' --output-on-failure
-./build/rtx5090-dev/tests/ninfer_linear_projection_test --format q8 --shape 6144 5120
-./build/rtx5090-dev/tests/ninfer_linear_split_test --format fp8 --policy a4 --list
-./build/rtx5090-dev/tests/ninfer_linear_swiglu_test --format nvfp4 --policy a4 --execution graph
-```
-
-All six accept `--help`, `--list`, `--format FORMAT`, `--policy a16|a8|a4`, `--shape N K`,
-`--t T`, `--case ID`, and `--execution eager|graph`. Filters intersect and select declared cases;
-they do not generate new fixtures. Formats are `bf16`, `q4`, `q5`, `q6`, `q8`, `fp8`, `nvfp4`,
-and `q4_q5` for paired Split parents, where present in the suite. N is the logical weight row count
-(one projection's N for Pair). `--case` accepts an exact ID from `--list`.
-
-Listing and filtering precede CUDA initialization and fixture allocation. Unknown options and empty
-selections fail; exit 77 means no usable CUDA device. IDs distinguish geometry, represented-input
-recipe, policy, call form and execution. Metadata and workspace contract cases use T=0. A Graph
-case includes its whole declared input-update sequence; a policy filter selects a multi-policy
-sequence if any of its calls uses that policy. Each call uses its own policy's numerical criterion.
-
-Input generation, seeds, packed codes/scales/divisors and sample coordinates belong to the case,
-independently of selection order and acceptance criteria. `AllowA4` always uses the Op's A4
-criterion, even if a higher-precision implementation runs; `AllowA8` similarly uses A8. Oracles
-decode represented weights independently and evaluate the complete FP64 formula without activation
-quantization or intermediate BF16 rounding. Bank row views are layout cases in the four consuming
-suites. Changed-input Graph checks include Pair's separate/shared parents and TopK scores.
-
-Large independent oracle rows reuse a bounded portable CPU task pool; small work remains serial.
-Each dot product retains its K accumulation order. Shared support and all CXX suite targets receive
-`-fno-fast-math` and `-ffp-contract=off` on GNU/Clang. Both build targets use the same mathematical
-criteria and shared case tables. Run the native Spark build with `build/dgx-spark-dev` in the commands
-above; add target-specific boundary tables only when actual dispatch needs them.
+Both execution targets share mathematical cases and criteria. Cases derived from device size query
+the actual SM count after selection, so listing does not require a CUDA device. Run the Spark build
+with `build/dgx-spark-dev` in these commands when qualifying that target.
 
 Run the native Python suites with the project Python environment:
 
@@ -221,8 +181,7 @@ python3 -m pytest \
 ```
 
 The Python suites exercise conversion, encoded output and measurement tools without model inference.
-The maintained environment is the virtualenv at `C:\vllm-env` (Python 3.12.13) with the
-dependencies for those suites. C++ binding and Engine tests
+The maintained environment uses Python 3.11 with the dependencies for those suites. C++ binding and Engine tests
 cover consumption of their resulting representation.
 
 The real loading test accepts an explicit artifact path and optional component selection:
@@ -255,9 +214,10 @@ NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
 `ninfer_moe_block_scaled_test` qualifies NVFP4 A4 and block-FP8 A8/G128 experts with BF16
 control/shared and small-token A16 routes. It uses independent FP64 formulas and encoded-weight
 decoders, covering per-expert divisors, K128 scales, zero groups, affine/indexed banks, masks,
-changed Graph contents, private route boundaries and workspace guards. Optional `nvfp4` or `fp8`
-arguments select one format; CTest runs both.
-`ninfer_sum_contributions_test` covers FP32 partial summation with optional BF16 residual.
+changed Graph contents, private route boundaries and workspace guards. `--format nvfp4` or
+`--format fp8` selects one format; CTest runs both.
+`ninfer_elementwise_test --suite sum_contributions` covers FP32 partial summation with optional
+BF16 residual.
 Their independent FP64 oracles start from represented inputs and decoded logical weights. The MoE
 suite covers the resident codec profiles, FP32/BF16 outputs, residual modes, expert masks, strided/indexed
 banks, empty GPU assignments, Graph relocation and workspace guards. The complete MoE retains
@@ -275,7 +235,7 @@ checks, signed code domains, scale extremes and tiny-BF16 cancellation around th
 independent FP64 mathematics, including scale swizzles, per-expert divisors, masked metadata,
 column and chunk tails, full-precision products and tiny inputs. These CPU tests do not load
 model files or use GPU memory.
-`ninfer_moe_test` also qualifies complementary CPU/GPU subsets plus GPU shared/residual composition.
+`ninfer_moe_mixed_test` qualifies complementary CPU/GPU subsets plus GPU shared/residual composition.
 
 `ninfer_moe_execution_test` qualifies the shared single-layer execution and the Program-owned
 multi-layer fixed-cache and streaming-window schedule against the same independent complete-MoE oracle. It uses registered native Host banks and the real ExpertCache,
@@ -287,7 +247,7 @@ transitions through the real cache schedule. The compact Graph calibration stora
 All/None/partial contributions against the same oracle while reusing one bank window.
 
 ```bash
-ctest --test-dir build/rtx5090-dev -R '^ninfer_moe(_block_scaled|_cpu_(groupwise_int|nvfp4)(_avx2|_fma)?)?_test$' --output-on-failure
+ctest --test-dir build/rtx5090-dev -R '^ninfer_moe(_mixed|_block_scaled|_cpu_(groupwise_int|nvfp4)(_avx2|_fma)?)?_test$' --output-on-failure
 ctest --test-dir build/rtx5090-dev -R '^ninfer_moe_execution_test$' --output-on-failure
 ```
 

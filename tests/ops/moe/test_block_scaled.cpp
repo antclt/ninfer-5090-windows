@@ -1,3 +1,4 @@
+#include "ops/suite.h"
 #include "core/buffer.h"
 #include "ninfer/ops/moe.h"
 #include "ops/op_tester.h"
@@ -319,8 +320,17 @@ int run(Fixture& f, CudaExecutionView execution, int tokens, ops::ExpertSubsetKi
             std::array<double, TopK> coefficients;
             double total = 0;
             for (int j = 0; j < TopK; ++j) {
-                const int e       = complete ? order[j] : (replay == 1 ? j : (t * 13 + j * 31) % E);
-                ids[t * TopK + j] = e;
+                int e = complete ? order[j] : (replay == 1 ? j : (t * 13 + j * 31) % E);
+                if (!complete && f.fp8 && tokens == 2) {
+                    // Cover no overlap, permuted full overlap and partial overlap
+                    // between tokens while retaining distinct IDs within each token.
+                    if (replay == 1) {
+                        e = t ? (j + 3) % TopK : j;
+                    } else if (replay == 2 || !graph) {
+                        e = t ? (j < 5 ? (j + 3) % TopK : 100 + j) : j;
+                    }
+                }
+                ids[t * TopK + j]   = e;
                 alpha[t * TopK + j] = .025F + j * .007F;
                 coefficients[j] =
                     complete ? std::exp(logits[e] - logits[order[0]]) : alpha[t * TopK + j];
@@ -396,7 +406,7 @@ int run(Fixture& f, CudaExecutionView execution, int tokens, ops::ExpertSubsetKi
 
 int route_cases(Fixture& f, CudaExecutionView execution) {
     int failures = 0;
-    for (int m : {1, 2, 33, 4097}) {
+    for (int m : {1, 2, 33, 64, 127, 128, 129, 130, 192, 512, 1024, 4097}) {
         std::vector<float> input(std::size_t(m) * H);
         for (int t = 0; t < m; ++t) {
             std::copy(f.x[t % 3].begin(), f.x[t % 3].end(), input.begin() + std::size_t(t) * H);
@@ -411,7 +421,7 @@ int route_cases(Fixture& f, CudaExecutionView execution) {
         ops::ExpertRoutes routes{Tensor(ids.span(), DType::I32, {TopK, m}),
                                  Tensor(alpha.span(), DType::FP32, {TopK, m})};
         int pattern_offset = 0;
-        if (m == 33) {
+        if (m == 33 || m == 128 || m == 129 || m == 512) {
             cudaGraph_t graph;
             cudaGraphExec_t executable;
             cuda_check(cudaStreamBeginCapture(execution.stream(), cudaStreamCaptureModeGlobal),
@@ -509,11 +519,32 @@ int affine_cases(Fixture& f, CudaExecutionView execution) {
     f.weights.routed.bank.down    = copy(f.down, down_codes, down_scales);
     cuda_synchronize(execution.stream());
     int failures = 0;
-    for (int m : {1, 129}) {
+    for (int m : {1, 2, 129}) {
         failures += run(f, execution, m, ops::ExpertSubsetKind::All, false, false, DType::FP32,
                         ops::MoeEpilogue::Write, false);
     }
     f.weights.routed.bank = saved;
+    return failures;
+}
+
+int zero_expert_cases(Fixture& f, CudaExecutionView execution) {
+    // Keep the shared term observable at its own scale through the complete Op.
+    // The existing A4/A8 criterion stays unchanged; no private route is forced.
+    std::cout << "shared-only oracle (zero routed GU), format=" << (f.fp8 ? "fp8" : "nvfp4")
+              << '\n';
+    for (std::size_t slot = 0; slot < f.gu.payload.size(); ++slot) {
+        auto& bytes = f.gu.payload[slot];
+        std::fill(bytes.begin() + f.gu.scale_offset,
+                  bytes.begin() + f.gu.scale_offset + f.gu.scale_bytes, 0);
+        std::fill(f.gu.decoded[slot].begin(), f.gu.decoded[slot].end(), 0);
+        f.gu.data.copy_from_host(bytes.data(), bytes.size(), slot * f.gu.stride);
+    }
+    f.cache.clear();
+    int failures = 0;
+    for (int m : {512, 513}) {
+        failures += run(f, execution, m, ops::ExpertSubsetKind::All, true, true, DType::BF16,
+                        ops::MoeEpilogue::Write, true);
+    }
     return failures;
 }
 
@@ -524,63 +555,79 @@ int main(int argc, char** argv) {
     using namespace ninfer;
     using namespace ninfer::test;
     using namespace ninfer::test::moe_block_scaled;
-    if (argc > 2 ||
-        (argc == 2 && std::string(argv[1]) != "fp8" && std::string(argv[1]) != "nvfp4")) {
-        std::cerr << "usage: ninfer_moe_block_scaled_test [nvfp4|fp8]\n";
-        return 1;
-    }
-    if (cuda_unavailable()) { return 77; }
-    try {
-        cudaStream_t stream;
-        cuda_check(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), "stream");
-        const auto execution = cuda_environment().context.execution_view(stream);
-        int failures         = 0;
-        for (bool fp8 : {false, true}) {
-            if (argc == 2 && std::string(argv[1]) != (fp8 ? "fp8" : "nvfp4")) { continue; }
-            Fixture fixture(fp8);
-            failures += affine_cases(fixture, execution);
-            if (!fp8) { failures += route_cases(fixture, execution); }
-            using ops::ExpertSubsetKind;
-            using ops::MoeEpilogue;
-            for (int m : {1,   2,   3,   7,   8,   9,    15,   16,   17,   18,  31,  32,
-                          33,  34,  63,  64,  65,  66,   127,  128,  129,  130, 255, 256,
-                          257, 258, 511, 512, 513, 1024, 3583, 3584, 3585, 4097}) {
-                failures += run(fixture, execution, m, ExpertSubsetKind::All, false, false,
-                                DType::FP32, MoeEpilogue::Write, false);
-            }
-            for (auto subset : {ExpertSubsetKind::None, ExpertSubsetKind::MaskOnes,
-                                ExpertSubsetKind::MaskZeros}) {
-                failures += run(fixture, execution, 17, subset, true, false, DType::BF16,
-                                MoeEpilogue::AddResidual, true);
-            }
-            for (auto subset : {ExpertSubsetKind::MaskOnes, ExpertSubsetKind::MaskZeros}) {
-                failures += run(fixture, execution, 129, subset, false, false, DType::FP32,
-                                MoeEpilogue::Write, true);
-                failures += run(fixture, execution, 1, subset, true, false, DType::BF16,
-                                MoeEpilogue::AddResidual, true);
-            }
-            failures += run(fixture, execution, 1, ExpertSubsetKind::None, true, false, DType::FP32,
-                            MoeEpilogue::Write, true);
-            for (int m : {1, 65}) {
-                failures += run(fixture, execution, m, ExpertSubsetKind::None, false, false,
-                                DType::FP32, MoeEpilogue::Write, true);
-            }
-            failures += run(fixture, execution, 2048, ExpertSubsetKind::None, true, false,
-                            DType::FP32, MoeEpilogue::Write, false);
-            if (fp8) {
-                failures += run(fixture, execution, 2, ExpertSubsetKind::MaskZeros, true, false,
-                                DType::BF16, MoeEpilogue::AddResidual, true);
-            }
-            for (int m : {1, 2, 7, 8, 9, 65, 1024, 2047, 2048, 4096}) {
-                failures += run(fixture, execution, m, ExpertSubsetKind::All, true, true,
-                                DType::BF16, MoeEpilogue::Write, true);
-            }
+    OpSuite suite;
+    for (bool fp8 : {false, true}) {
+        const std::string format = fp8 ? "fp8" : "nvfp4";
+        std::vector<OpCase> catalogue;
+        std::vector<std::function<int(Fixture&, CudaExecutionView)>> runners;
+        const auto special = [&](std::string id, auto run,
+                                 std::vector<std::pair<std::string, std::string>> tags = {}) {
+            tags.emplace_back("format", format);
+            catalogue.push_back({"moe/" + format + "/" + id, std::move(tags)});
+            runners.push_back(run);
+        };
+        special("affine", affine_cases);
+        if (!fp8) special("route", route_cases, {{"execution", "graph"}});
+        const auto add = [&](int m, ops::ExpertSubsetKind subset, bool shared, bool complete,
+                             DType dtype, ops::MoeEpilogue epilogue, bool graph) {
+            const auto id = std::string(complete ? "complete" : "routed") + "/t" +
+                            std::to_string(m) + "/subset" + std::to_string(int(subset)) +
+                            (shared ? "/shared" : "/no_shared") + "/dtype" +
+                            std::to_string(int(dtype)) + "/epilogue" +
+                            std::to_string(int(epilogue)) + (graph ? "/graph" : "/eager");
+            special(id,
+                    [=](Fixture& f, auto e) {
+                        return run(f, e, m, subset, shared, complete, dtype, epilogue, graph);
+                    },
+                    {{"execution", graph ? "graph" : "eager"}});
+        };
+        using ops::ExpertSubsetKind;
+        using ops::MoeEpilogue;
+        for (int m : {1,   2,   3,   7,    8,    9,    15,   16,   17,   18,   31,   32,   33,
+                      34,  63,  64,  65,   66,   127,  128,  129,  130,  255,  256,  257,  258,
+                      511, 512, 513, 1023, 1024, 1025, 3071, 3072, 3073, 3583, 3584, 3585, 4097}) {
+            add(m, ExpertSubsetKind::All, false, false, DType::FP32, MoeEpilogue::Write, false);
         }
-        cuda_check(cudaStreamDestroy(stream), "destroy stream");
-        std::cout << (failures ? "FAIL" : "OK") << " block-scaled MoE contracts\n";
-        return failures ? 1 : 0;
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
-        return 1;
+        for (auto subset :
+             {ExpertSubsetKind::None, ExpertSubsetKind::MaskOnes, ExpertSubsetKind::MaskZeros}) {
+            add(17, subset, true, false, DType::BF16, MoeEpilogue::AddResidual, true);
+        }
+        for (auto subset : {ExpertSubsetKind::MaskOnes, ExpertSubsetKind::MaskZeros}) {
+            add(129, subset, false, false, DType::FP32, MoeEpilogue::Write, true);
+            add(1, subset, true, false, DType::BF16, MoeEpilogue::AddResidual, true);
+        }
+        add(1, ExpertSubsetKind::None, true, false, DType::FP32, MoeEpilogue::Write, true);
+        for (int m : {1, 65}) {
+            add(m, ExpertSubsetKind::None, false, false, DType::FP32, MoeEpilogue::Write, true);
+        }
+        for (int m : {512, 1024}) {
+            add(m, ExpertSubsetKind::All, false, false, DType::BF16, MoeEpilogue::Write, true);
+            add(m, ExpertSubsetKind::MaskZeros, true, false, DType::FP32, MoeEpilogue::Write, true);
+        }
+        add(2048, ExpertSubsetKind::None, true, false, DType::FP32, MoeEpilogue::Write, false);
+        if (fp8) {
+            add(2, ExpertSubsetKind::All, false, false, DType::FP32, MoeEpilogue::Write, true);
+            add(2, ExpertSubsetKind::MaskOnes, false, false, DType::FP32, MoeEpilogue::Write, true);
+            add(4098, ExpertSubsetKind::All, false, false, DType::FP32, MoeEpilogue::Write, true);
+            for (int m : {3071, 3072, 3073}) {
+                add(m, ExpertSubsetKind::MaskZeros, true, false, DType::FP32, MoeEpilogue::Write,
+                    true);
+            }
+            add(2, ExpertSubsetKind::MaskZeros, true, false, DType::BF16, MoeEpilogue::AddResidual,
+                true);
+        }
+        for (int m : {1,    2,    7,    8,    9,    65,   511,  512,  513,  1023,
+                      1024, 1025, 2047, 2048, 3071, 3072, 3073, 4096, 4097, 4098}) {
+            add(m, ExpertSubsetKind::All, true, true, DType::BF16, MoeEpilogue::Write, true);
+        }
+        special("shared_only", zero_expert_cases, {{"execution", "graph"}});
+        suite.add(std::move(catalogue), [=](auto selected) {
+            DeviceContext device;
+            Fixture fixture(fp8);
+            int failures = 0;
+            for (auto i : selected) failures += runners[i](fixture, device.execution_view());
+            return failures;
+        });
     }
+    return suite.main(argc, argv);
 }

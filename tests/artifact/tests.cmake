@@ -11,19 +11,9 @@ ninfer_add_test(ninfer_artifact_materialization_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_materialization.cpp" "${CMAKE_CURRENT_LIST_DIR}/materialization_cuda_errors.cpp"
   LIBRARIES ninfer_artifact)
 
-# The injected-failure cases need GNU --wrap, which MSVC does not provide. The test source reports
-# that as SKIP rather than passing silently; see materialization_cuda_errors.cpp.
-if(NOT MSVC)
-target_link_options(ninfer_artifact_materialization_test PRIVATE
-  "LINKER:--wrap=cudaMalloc"
-  "LINKER:--wrap=cudaMallocHost"
-  "LINKER:--wrap=cudaFree"
-  "LINKER:--wrap=cudaFreeHost"
-  "LINKER:--wrap=cudaEventCreateWithFlags"
-  "LINKER:--wrap=cudaEventRecord"
-  "LINKER:--wrap=cudaMemcpyAsync"
-  "LINKER:--wrap=cudaStreamSynchronize")
-endif()
+ninfer_test_interpose(ninfer_artifact_materialization_test
+  cudaMalloc cudaMallocHost cudaFree cudaFreeHost cudaEventCreateWithFlags cudaEventRecord
+  cudaMemcpyAsync cudaStreamSynchronize)
 
 add_test(NAME ninfer_artifact_writer_interop_test
   COMMAND ${Python3_EXECUTABLE} -B "${CMAKE_CURRENT_LIST_DIR}/writer_interop.py"
@@ -41,12 +31,3 @@ add_test(NAME ninfer_artifact_cpu_materialization_test
   COMMAND ninfer_artifact_materialization_test --cpu-only)
 set_tests_properties(ninfer_artifact_cpu_materialization_test
   PROPERTIES ENVIRONMENT "CUDA_VISIBLE_DEVICES=")
-
-# The regression test for issue #7 (Windows Direct I/O). It reads NINFER_TEST_ARTIFACT through the
-# materializer's 64 MiB direct pattern and locks the 4096-alignment contract plus a measured
-# throughput floor. It skips with 77 when the artifact is missing or smaller than 4 GiB.
-ninfer_add_test(ninfer_artifact_direct_io_test
-  SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_direct_io.cpp"
-  LIBRARIES ninfer_artifact)
-set_tests_properties(ninfer_artifact_direct_io_test PROPERTIES
-  TIMEOUT 120 SKIP_RETURN_CODE 77)

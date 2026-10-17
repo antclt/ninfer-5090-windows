@@ -67,12 +67,16 @@ void q8_a16_conformance(Suite& suite) {
             for (int t : {895, 896, 897}) calls.push_back({t});
         }
         if (shape.n == 2560 && shape.k == 6144) {
-            for (int t : {50, 51, 52, 512, 1025}) calls.push_back({t});
-            for (int t : {4, 33, 49, 50, 51, 129, 512, 1024, 1025})
+            for (int t : {50, 51, 52, 511, 512, 513, 1025, 2047, 2048, 2049, 4096})
+                calls.push_back({t});
+            for (int t : {4, 33, 49, 50, 51, 129, 512, 1024, 1025, 2049})
                 calls.push_back({t, CallForm::Policy, ninfer::ops::LinearPolicy::A16Only, true});
             for (int t : {40, 512, 1024, 1025}) calls.push_back({t, CallForm::A16Convenience});
         }
         if (shape.n == 12288 && shape.k == 2560) {
+            for (int t : {191, 192, 193, 1023, 1151, 1152, 1153, 2048, 4096}) calls.push_back({t});
+            for (int t : {192, 1152})
+                calls.push_back({t, CallForm::Policy, ninfer::ops::LinearPolicy::A16Only, true});
             for (int t : {34, 35, 36, 72, 104, 105, 110, 111, 112, 113, 512, 1025})
                 calls.push_back({t});
             for (int t : {17, 32,  34,  35,  40,  41,  64,  79,  80,   81,  96,
@@ -98,6 +102,9 @@ void q8_a16_conformance(Suite& suite) {
                 calls.push_back({t, CallForm::A16Convenience});
         }
         if (shape.n == 16384 && shape.k == 2560) {
+            for (int t : {191, 192, 193, 1023, 1151, 1152, 1153, 2048, 4096}) calls.push_back({t});
+            for (int t : {192, 1152})
+                calls.push_back({t, CallForm::Policy, ninfer::ops::LinearPolicy::A16Only, true});
             for (int t : {512, 513, 1025}) calls.push_back({t});
             for (int t : {1,  8,  9,  16, 17, 24, 25,  32,  33,  40,  41,   48,
                           49, 63, 64, 65, 96, 97, 128, 129, 512, 513, 1024, 1025})
