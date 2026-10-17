@@ -58,6 +58,25 @@ TEST_TIMEOUT_SECONDS = 900
 # ctest reports a failing test as "(Failed)" or, when the process aborted, as "(Exit code 0xc0000409)".
 # Matching only the first form hid four of five failures in one run.
 FAILURE_LINE = re.compile(r"^\s*\d+\s+-\s+(\S+)\s+\((?:Failed|Exit code \S+|Exception[^)]*)\)")
+# ctest colours its output when it decides the stream is a terminal, and its -O log keeps the SGR
+# escapes. The escape lands BETWEEN the tab and the test number, so FAILURE_LINE cannot match a
+# coloured failure line at all: measured 2026-10-17, a --from-log run against a ctest -O log parsed an
+# empty failure set from a run whose own summary read "6 tests failed out of 199", printed
+# "199/199 passed", and then reported the baseline stale -- a green verdict on a red run, which is the
+# one failure this gate exists to prevent. The escapes are stripped on read, and the summary
+# cross-check below refuses to certify a log whose reported failure count exceeds what could be
+# parsed, so any future parser break fails loudly rather than passing quietly.
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(log: str) -> str:
+    return ANSI_ESCAPE.sub("", log)
+
+
+def reported_failed(log: str) -> int | None:
+    """The failure count ctest printed in its own summary, or None when that line is absent."""
+    match = re.search(r"(\d+) tests? failed", log)
+    return int(match.group(1)) if match else None
 
 
 def find_ctest() -> str | None:
@@ -225,11 +244,25 @@ def main() -> int:
                 print(f"  GATE FAILED: {raced}")
                 return 1
 
+    log = strip_ansi(log)
+
     total = parse_total(log)
     failing = parse_failures(log)
     if total is None:
         print("  GATE FAILED: could not read a ctest summary; the suite did not run to completion")
         print(log[-2000:])
+        return 1
+
+    # A gate that cannot read a run must not certify it. The summary is printed by ctest itself and
+    # survives whatever the parser trips on, so the two are compared: a log reporting more failures
+    # than the parser found means the parser and the log format disagree, and that is a failure of the
+    # gate rather than a green run.
+    reported = reported_failed(log)
+    if reported is not None and len(failing) != reported:
+        print(f"  GATE FAILED: the log's own summary reports {reported} failing test(s), but "
+              f"{len(failing)} could be parsed.")
+        print("  The parser and the log format disagree, so this verdict cannot be trusted. Fix the "
+              "parser; do not read the run as green.")
         return 1
 
     expected = baseline.get("suite_size")

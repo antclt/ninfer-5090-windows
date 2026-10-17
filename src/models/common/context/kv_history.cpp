@@ -611,8 +611,14 @@ void KVHistoryStore::prepare_write(KVHistory& owner, std::uint32_t begin, std::u
     if (!original.row || !original.owned || begin != original.frontier || begin > end)
         throw std::invalid_argument("KV write must start at its actual frontier");
     const auto copies = write_pages(handle, begin, end);
-    if (copies > original.reservation.pages())
-        throw std::logic_error("KV write exceeds its page reservation");
+    if (copies > original.reservation.pages()) {
+        // The binding-time reservation can under-predict when a page gains readers between
+        // binding and write (the page needs a copy-on-write page that was not reserved). Grow
+        // the reservation to cover the actual write instead of failing the request.
+        pages_->physical_pool().resize_reservation(original.reservation, copies);
+        if (copies > original.reservation.pages())
+            throw std::logic_error("KV write exceeds its page reservation");
+    }
     if (begin == end) return;
     const auto first = begin / kPageTokens;
     if (first < original.page_count && original.retained > first * kPageTokens &&

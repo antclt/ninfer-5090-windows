@@ -130,11 +130,21 @@ ninfer::PromptInput session_root(const std::string& body, const std::string& key
     return input;
 }
 
+// The transfer counters are indexed by direction -- 0 D2H, 1 H2D, 2 D2D -- and the KV ones by
+// startup pool ID, pool 0 being Main. A pool this configuration did not create has no entry, so an
+// absent one reads as zero rather than indexing past the end.
+[[nodiscard]] std::uint64_t kv_page_groups(const ninfer::RuntimeStats& stats, std::size_t pool,
+                                           std::size_t direction) {
+    return pool < stats.context_transfers.kv.size()
+               ? stats.context_transfers.kv[pool][direction].page_groups
+               : 0;
+}
+
 void report(const char* label, const ninfer::RuntimeStats& stats) {
     std::cerr << label
-              << " state_h2d=" << stats.state_h2d_count
-              << " main_h2d=" << stats.main_kv_h2d_pages
-              << " backend_h2d=" << stats.backend_kv_h2d_pages
+              << " state_h2d=" << stats.context_transfers.state[1].images
+              << " main_h2d=" << kv_page_groups(stats, 0, 1)
+              << " backend_h2d=" << kv_page_groups(stats, 1, 1)
               << " degraded=" << stats.capture_pending_requests
               << " evicted=" << stats.active_captures_aborted
               << " captures[offered=" << stats.active_captures_completed
@@ -219,7 +229,7 @@ int exercise_concurrent_cache_hit(const char* artifact) {
     // loop assert a proximate condition of my own rather than the reporter's symptom -- the skill's Phase
     // 1 says a loop must be able to go red on *this* bug, and "did it demote" is not that bug. The value
     // is printed so the state is visible without gating the verdict on it.
-    if (after_pressure.main_kv_d2h_pages <= before_pressure.main_kv_d2h_pages) {
+    if (kv_page_groups(after_pressure, 0, 0) <= kv_page_groups(before_pressure, 0, 0)) {
         std::cout << "note: nothing was demoted by the pressure request (informational)\n";
     }
 
@@ -264,7 +274,7 @@ int exercise_concurrent_cache_hit(const char* artifact) {
 
     const ninfer::RuntimeStats after = engine.runtime_stats();
     report("  after", after);
-    if (after.state_h2d_count > before.state_h2d_count) {
+    if (after.context_transfers.state[1].images > before.context_transfers.state[1].images) {
         std::cout << "note: the continuation restored state from host, which is the path under test\n";
     }
 

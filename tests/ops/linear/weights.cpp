@@ -2,6 +2,8 @@
 #include "ops/direct_bf16_weight.h"
 #include "ops/linear_common.h"
 
+#include <array>
+
 namespace ninfer::test::linear_weights {
 
 namespace {

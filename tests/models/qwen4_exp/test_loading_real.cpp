@@ -7,13 +7,40 @@
 #include <cstring>
 #include <iostream>
 #include <thread>
-#include <sys/resource.h>
+
+// Peak RSS is a diagnostic for a human reading the test's output, and it stays on Windows because
+// the port's memory work compares runs -- a number that appears only on one platform cannot be
+// compared across them. Same helper as tests/models/qwen3_5/test_loading_real.cpp.
+#ifdef _WIN32
+#    include <windows.h>
+
+#    include <psapi.h>
+#else
+#    include <sys/resource.h>
+#endif
 
 namespace {
 using namespace ninfer;
 namespace q4 = models::qwen4_exp;
 using test::artifact_fixture::require;
 constexpr std::size_t GiB = 1024ULL * 1024 * 1024;
+
+// Peak resident set in KiB, which is the unit the field's name states. Linux reports ru_maxrss,
+// already in KiB; Windows reports PeakWorkingSetSize in bytes, so it is divided here rather than in
+// the stream, keeping one unit at the one place the number is produced.
+[[nodiscard]] std::uint64_t peak_rss_kib() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS counters{};
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) {
+        throw std::runtime_error("GetProcessMemoryInfo failed");
+    }
+    return counters.PeakWorkingSetSize / 1024;
+#else
+    rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) != 0) { throw std::runtime_error("getrusage failed"); }
+    return static_cast<std::uint64_t>(usage.ru_maxrss);
+#endif
+}
 
 void placement(const q4::LoadPlan& load, Device device, bool host) {
     const auto plan = load.placement(device, host ? Device::cpu() : device);
@@ -252,14 +279,11 @@ int main(int argc, char** argv) {
             q4::Resources resources(parameters, std::move(*selected), device);
             ple_window(resources, *model, device);
 
-            struct rusage usage {};
-
-            getrusage(RUSAGE_SELF, &usage);
             const auto& s = model->storage_stats();
             std::cout << "loaded host=" << s.host_capacity_bytes
                       << " registered=" << s.registered_host_bytes
                       << " gpu=" << s.device_capacity_bytes << " staging=" << s.peak_staging_bytes
-                      << " read=" << s.read_bytes << " rss_kib=" << usage.ru_maxrss << '\n';
+                      << " read=" << s.read_bytes << " rss_kib=" << peak_rss_kib() << '\n';
         }
         std::cout << "PASS\n";
         return 0;

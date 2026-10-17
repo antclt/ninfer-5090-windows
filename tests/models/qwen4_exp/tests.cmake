@@ -30,6 +30,10 @@ ninfer_add_test(ninfer_qwen4_exp_loading_real_test
   LIBRARIES ninfer_model_runtime)
 set_tests_properties(ninfer_qwen4_exp_loading_real_test PROPERTIES
   SKIP_RETURN_CODE 77 RUN_SERIAL TRUE LABELS "gpu;real")
+if(WIN32)
+  # PeakWorkingSetSize, for the peak-RSS diagnostic the port keeps on both platforms.
+  target_link_libraries(ninfer_qwen4_exp_loading_real_test PRIVATE psapi)
+endif()
 ninfer_add_test(ninfer_qwen4_exp_loading_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_loading.cpp"
   LIBRARIES ninfer_model_loading)

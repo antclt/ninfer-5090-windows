@@ -42,9 +42,12 @@ void add_bank_cases(Suite& suite) {
             const auto call   = calls[index];
             const auto& label = declared[index].id;
             std::vector<std::uint16_t> bits(std::size_t(k) * call.t);
-            for (int token = 0; token < call.t; ++token)
-                std::fill_n(bits.data() + std::size_t(token) * k, k,
-                            f32_to_bf16(token % 2 ? -6.0F : 6.0F));
+            for (int token = 0; token < call.t; ++token) {
+                // MSVC rejects the nested ternary in the fill_n argument inside a generic lambda
+                // (C2326), so name the value first.
+                const float value = token % 2 ? -6.0F : 6.0F;
+                std::fill_n(bits.data() + std::size_t(token) * k, k, f32_to_bf16(value));
+            }
             auto input_storage = to_device(bits);
             Tensor input(input_storage.span(), DType::BF16, {k, call.t});
             std::vector<input_projection::GuardedBf16Tensor> outputs;
