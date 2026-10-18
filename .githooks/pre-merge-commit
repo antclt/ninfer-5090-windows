@@ -1,0 +1,19 @@
+#!/bin/sh
+# The gate set, run on merges.
+#
+# Git core runs ONLY pre-merge-commit for a clean auto-merge. builtin/merge.c's
+# prepare_to_commit() calls run_commit_hook(..., "pre-merge-commit", NULL) -- one hook name, with
+# no fallback. The "default pre-merge-commit runs pre-commit" line in githooks(5) describes the
+# sample hook in Git's own template directory, not git's behaviour, and this repo sets
+# core.hooksPath=.githooks, so that fallback never applies. A merge therefore ran no gate at all,
+# and on 2026-10-17 a 45-commit merge silently reverted nine reviewed files while the port-delta
+# ratchet was left reporting them as "stale -- trim them", which would have erased the evidence.
+#
+# A merge that conflicts is committed separately, so pre-commit still runs for it; this hook covers
+# the clean auto-merge, which is the case that loses work without any conflict to notice.
+#
+# The interpreter is a precondition of the commit gate too: without it this hook aborts the merge
+# with a message rather than passing it unverified. Set NINFER_PYTHON if it lives elsewhere.
+set -e
+here="$(cd "$(dirname "$0")" && pwd)"
+exec "$here/pre-commit" "$@"

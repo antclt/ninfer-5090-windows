@@ -1,0 +1,28 @@
+#!/bin/sh
+# The port-delta ratchet, run at push.
+#
+# pre-merge-commit covers the merge; pre-commit can be bypassed with `git commit --no-verify`, and
+# pre-merge-commit with `git merge --no-verify`. This is the third line: the one that decides whether
+# an unrecorded divergence reaches the remote at all.
+#
+# It runs only the ratchet, not the whole chain: the ratchet is the gate that catches a merge taking
+# upstream's version of a file the port changed, it is CPU-only (0.69 s), and it is the one that must
+# not be skippable. The rest of the chain still runs on every commit.
+#
+# Same skip as pre-commit, for the same reason: without the upstream ref there is nothing to compare
+# against, and failing every push on a machine that cannot fetch it is worse than a loud skip.
+set -e
+PY="${NINFER_PYTHON:-C:/vllm-env/Scripts/python.exe}"
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if ! command -v "$PY" >/dev/null 2>&1 && [ ! -x "$PY" ]; then
+    echo "pre-push: python not found at $PY (set NINFER_PYTHON to override)" >&2
+    exit 1
+fi
+
+if git rev-parse --verify --quiet upstream/dev >/dev/null; then
+    "$PY" tools/release/check_port_delta.py --check
+else
+    echo "pre-push: SKIPPED port delta -- upstream/dev is not a local ref (run: git fetch upstream)"
+fi
