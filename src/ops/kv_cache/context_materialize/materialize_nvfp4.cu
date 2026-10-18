@@ -278,10 +278,7 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
                 key_scratch[row + 1024LL * (packed_column + max_count * batch * layer_index)] =
                     result;
             } else {
-                const auto dst     = row % 128 + 128LL * ((positions[column] & 2047) +
-                                                      (long long)layer.padded_capacity *
-                                                          (row / 128 + 8 * slots[request]));
-                layer.cache_v[dst] = __float2half_rn(__bfloat162float(__float2bfloat16_rn(result)));
+                store_value(row, column, slots[request], positions, layer, result);
             }
         }
     }

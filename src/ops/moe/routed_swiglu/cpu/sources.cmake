@@ -47,3 +47,20 @@ ninfer_internal_includes(ninfer_moe_cpu)
 target_link_libraries(ninfer_moe_cpu PUBLIC ninfer_core PRIVATE ninfer_cpu_executor
   ninfer_moe_cpu_avx2 ninfer_moe_cpu_avx512 ninfer_moe_cpu_avx512_bf16)
 target_link_libraries(ninfer_ops PUBLIC ninfer_moe_cpu)
+
+if(WIN32)
+  add_custom_command(TARGET ninfer_moe_cpu POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/apps"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:ninfer_moe_cpu>
+      "${CMAKE_BINARY_DIR}/apps/$<TARGET_FILE_NAME:ninfer_moe_cpu>"
+  )
+  if(BUILD_TESTING)
+    add_custom_command(TARGET ninfer_moe_cpu POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/tests"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:ninfer_moe_cpu>
+        "${CMAKE_BINARY_DIR}/tests/$<TARGET_FILE_NAME:ninfer_moe_cpu>"
+    )
+  endif()
+endif()

@@ -353,7 +353,9 @@ int capacity_contract() {
 
 void add_greedy_accept_cases(ninfer::test::OpSuite& suite) {
     suite.add("accept_greedy/capacity", capacity_contract);
-    for (auto [k, accepted, domain] : {std::array{1, 0, 64}, {5, 2, 64}, {5, 5, 64}, {15, 7, 257}})
+    struct Case { int k, accepted, domain; };
+    const Case cases[] = {{1, 0, 64}, {5, 2, 64}, {5, 5, 64}, {15, 7, 257}};
+    for (auto [k, accepted, domain] : cases)
         suite.add("accept_greedy/k" + std::to_string(k) + "/accepted" + std::to_string(accepted),
                   [=] { return greedy_accept_case(k, accepted, domain); });
     for (int domain : {64, 257, 248077})

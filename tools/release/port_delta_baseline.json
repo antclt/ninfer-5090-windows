@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-17",
+  "recorded": "2026-10-18",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -1281,12 +1281,6 @@
       "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. The injected-failure cases are therefore not exercised on this platform.",
       "reason": "Guards the __real_/__wrap_ definitions and the injected-failure cases with _MSC_VER, reporting SKIP rather than passing silently. The wrappers need GNU ld --wrap, which MSVC does not provide, and an import-address patch cannot substitute because this build resolves cudart statically. This is the arrangement tests/artifact/materialization_cuda_errors.cpp already uses for the same class of case."
     },
-    "tests/kv_cache_storage.h": {
-      "status": "D",
-      "disposition": "deleted",
-      "review": "deleted",
-      "reason": "Removed by the port: a sixth copy of the same parser, in namespace ninfer::test. Its three includers call ninfer::parse_kv_storage() now."
-    },
     "tests/models/common/qwen/test_tool_schema.py": {
       "status": "M",
       "disposition": "windows",
@@ -1413,6 +1407,12 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
+    "tests/ops/sampling/accept_greedy.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "MSVC cannot deduce template arguments for std::initializer_list of std::array without an explicit struct or type."
+    },
     "tests/ops/softmax_attention/plain_and_packed.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -1448,6 +1448,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- win32: _WIN32. Open it before changing this path."
+    },
+    "tests/symbol_interpose.h": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Guard dlfcn.h and next_symbol under #ifndef _WIN32 because Windows does not provide dlfcn.h."
     },
     "tests/test_cli_options.cpp": {
       "status": "M",

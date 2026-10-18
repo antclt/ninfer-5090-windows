@@ -1,12 +1,15 @@
 #pragma once
 
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
 
 namespace ninfer::test {
 
+#ifndef _WIN32
 // Called from a test executable's exported replacement; cache the result per symbol.
 template <class Function>
 Function next_symbol(const char* name) {
@@ -20,5 +23,6 @@ Function next_symbol(const char* name) {
     }
     return reinterpret_cast<Function>(address);
 }
+#endif
 
 } // namespace ninfer::test

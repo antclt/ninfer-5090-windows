@@ -39,6 +39,7 @@ ninfer_add_op_test(ninfer_dflash2_nvfp4_routes_test
 # parallelism rather than coverage. tests/ops/test_context_kv_materialize.cpp is the now
 # unreferenced source of that removed target, kept only so this decision stays revertable.
 ninfer_add_op_test(ninfer_speculative_round_test
-  SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_speculative_round.cpp")
+  SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_speculative_round.cpp"
+  LIBRARIES ninfer_ops ninfer_core)
 include("${CMAKE_CURRENT_LIST_DIR}/moe/tests.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/ple/tests.cmake")

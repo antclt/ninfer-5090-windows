@@ -9,6 +9,24 @@ ninfer_cuda_library(ninfer_ops)
 set_target_properties(ninfer_ops PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 target_link_libraries(ninfer_ops PUBLIC ninfer_core ninfer_ops_non_rdc)
 
+if(WIN32)
+  # On Windows, copy ninfer_ops.dll beside executables so loaders locate it.
+  add_custom_command(TARGET ninfer_ops POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/apps"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:ninfer_ops>
+      "${CMAKE_BINARY_DIR}/apps/$<TARGET_FILE_NAME:ninfer_ops>"
+  )
+  if(BUILD_TESTING)
+    add_custom_command(TARGET ninfer_ops POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/tests"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:ninfer_ops>
+        "${CMAKE_BINARY_DIR}/tests/$<TARGET_FILE_NAME:ninfer_ops>"
+    )
+  endif()
+endif()
+
 # Non-RDC kernels keep instruction and register-allocation choices within one translation unit.
 # This private PIC archive joins the shared library through host launchers.
 add_library(ninfer_ops_non_rdc STATIC)

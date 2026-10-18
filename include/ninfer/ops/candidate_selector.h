@@ -57,4 +57,36 @@ void candidate_selector_path(const Tensor& candidate_ids, const Tensor& unary_sc
                              Tensor& drafts, Tensor& proposal_q, MemoryArena& workspace,
                              CudaExecutionView execution);
 
+inline Weight weight_from_codebook_tensor(const Tensor& tensor) {
+    Weight w{};
+    w.device = tensor.device;
+    w.qtype = QType::BF16;
+    w.layout = QuantLayout::Contiguous;
+    w.ndim = 2;
+    constexpr std::int32_t kRank = 256;
+    constexpr std::int32_t kCodebookRows = 248320;
+    w.n = kCodebookRows;
+    w.k = kRank;
+    w.shape[0] = kCodebookRows;
+    w.shape[1] = kRank;
+    w.padded_shape[0] = kCodebookRows;
+    w.padded_shape[1] = kRank;
+    w.payload = tensor.data;
+    w.qdata = tensor.data;
+    w.payload_bytes = static_cast<std::uint64_t>(kCodebookRows) * kRank * sizeof(std::uint16_t);
+    return w;
+}
+
+inline void candidate_selector_path(const Tensor& candidate_ids, const Tensor& unary_scores,
+                                    const Tensor& projected_hidden, const Tensor& anchors,
+                                    const Tensor& predecessor_codebook, const Tensor& successor_codebook,
+                                    const Tensor& base_positions, const SamplingConfig* configs,
+                                    Tensor& drafts, Tensor& proposal_q, MemoryArena& workspace,
+                                    CudaExecutionView execution) {
+    candidate_selector_path(candidate_ids, unary_scores, projected_hidden, anchors,
+                            weight_from_codebook_tensor(predecessor_codebook),
+                            weight_from_codebook_tensor(successor_codebook),
+                            base_positions, configs, drafts, proposal_q, workspace, execution);
+}
+
 } // namespace ninfer::ops
