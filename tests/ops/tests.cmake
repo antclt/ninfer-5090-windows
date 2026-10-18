@@ -25,23 +25,19 @@ ninfer_add_op_test(ninfer_dflash2_nvfp4_routes_test
   SOURCES ops/test_dflash2_nvfp4_routes.cpp
   LIBRARIES ninfer_ops)
 
-# The port's context-KV materialize and speculative-round coverage. Upstream deleted
-# both files in the 2026-10-17 merge, taking the port's batch-splitting sweep and the
-# sparse-accept isolation test with them; restore them so the coverage isn't lost
+# The port's speculative-round coverage. Upstream deleted the file in the 2026-10-17 merge,
+# taking the sparse-accept isolation test with it; restore it so the coverage is not lost
 # silently. Restored from f89e05fc.
-set(ninfer_context_kv_materialize_batch_groups "8" "1" "2,3,4" "5,6,7")
-add_executable(ninfer_context_kv_materialize_test
-  "${CMAKE_CURRENT_LIST_DIR}/test_context_kv_materialize.cpp")
-ninfer_test_includes(ninfer_context_kv_materialize_test)
-target_link_libraries(ninfer_context_kv_materialize_test PRIVATE ninfer_ops)
-ninfer_op_oracle_options(ninfer_context_kv_materialize_test)
-foreach(batch_group IN LISTS ninfer_context_kv_materialize_batch_groups)
-  string(REPLACE "," "_" batch_suffix "${batch_group}")
-  add_test(NAME "ninfer_context_kv_materialize_test_b${batch_suffix}"
-    COMMAND ninfer_context_kv_materialize_test --batches "${batch_group}")
-  set_tests_properties("ninfer_context_kv_materialize_test_b${batch_suffix}"
-    PROPERTIES SKIP_RETURN_CODE 77)
-endforeach()
+#
+# The context-KV materialize test is deliberately NOT restored here, though it used to be.
+# This block was a second add_executable() for the same target name that kv_cache/tests.cmake
+# already registers through ninfer_add_op_test, so BUILD_TESTING=ON could not configure at
+# all (CMP0002: duplicate target). The registered kv_cache/context_kv_materialize.cpp comes
+# from the f30e661f suite reorganisation, runs the same batch sweep and the same workspace
+# interval checks, and adds capacity-witness cases this copy lacks; the only thing the removed
+# copy added was splitting that one sweep across four ctest entries via --batches, which is
+# parallelism rather than coverage. tests/ops/test_context_kv_materialize.cpp is the now
+# unreferenced source of that removed target, kept only so this decision stays revertable.
 ninfer_add_op_test(ninfer_speculative_round_test
   SOURCES "${CMAKE_CURRENT_LIST_DIR}/test_speculative_round.cpp")
 include("${CMAKE_CURRENT_LIST_DIR}/moe/tests.cmake")
