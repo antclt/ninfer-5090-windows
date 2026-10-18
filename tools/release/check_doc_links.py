@@ -55,11 +55,16 @@ def documents() -> list[Path]:
     return [path for path in candidates if path.exists()]
 
 
+HTML_ANCHOR = re.compile(r"""<a\s+(?:[^>]*?\s+)?(?:id|name)=["']([^"']+)["']""", re.IGNORECASE)
+
+
 def slugs(path: Path) -> set[str]:
     """The slugs GitHub derives from a file's headings, including its -1 suffixes for repeats."""
     counts: dict[str, int] = {}
     result: set[str] = set()
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for anchor in HTML_ANCHOR.finditer(line):
+            result.add(anchor.group(1))
         match = HEADING.match(line)
         if not match:
             continue

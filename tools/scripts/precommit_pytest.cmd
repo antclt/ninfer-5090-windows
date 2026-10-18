@@ -23,6 +23,7 @@ if not exist "%VCVARS%" (
 ) else (
   call "%VCVARS%" >nul 2>&1
 )
+set "PATH=C:\vllm-env\Scripts;%PATH%"
 set "PY=%NINFER_PYTHON%"
 if not defined PY set "PY=C:/vllm-env/Scripts/python.exe"
 "%PY%" -m pytest %*

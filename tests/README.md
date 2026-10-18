@@ -17,6 +17,7 @@ ownership contracts are defined in [Engine architecture](../docs/maintainer/engi
 - `ops/` — semantic Op qualification with independent mathematical or state-transition oracles;
   Linear and fused Linear suites are separated by their supported weight/activation paths;
 - `runtime/` — scheduler fairness, cache resource policy, capacity and context-cost calculations;
+- `distributed/` — typed native work, bounded transport, and opt-in two-rank GPU execution;
 - `cpu/` — topology/ISA, bounded task admission, bound collectives, publication and shutdown;
 - `io/` — bounded direct reads, partial submission, completion, wakeup and borrowed-buffer lifetime;
 - `models/qwen4_exp/` — native bank binding, state/page-group layouts and transfers, plus PLE
@@ -223,7 +224,7 @@ The real loading test accepts an explicit artifact path and optional component s
 ```
 
 Add `--host-only` to check semantic binding without uploading weights. This does not construct a
-Program or establish native Op support.
+RankProgram or establish native Op support.
 
 The C++ prefix/MTP integration test is separately opt-in because it loads the full artifact and
 runs the real engine:
@@ -234,11 +235,23 @@ NINFER_TEST_ARTIFACT=$PWD/out/qwen3_6_27b.ninfer \
 ```
 
 The causal-scoring integration test uses the same artifact variable and checks a full 1,024-column
-score tile, overlapping target suffixes, and repeated-window State/KV isolation:
+score tile, overlapping target suffixes, and finite, nonpositive results across repeated windows.
+Floating-point execution does not promise bitwise-identical scores across calls:
 
 ```bash
 NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
   ctest --test-dir build/rtx5090-dev -R ninfer_qwen3_5_score_real_test --output-on-failure
+```
+
+Qwen4Exp's native scoring test checks fresh-root state independently of the resulting logprobs.
+It runs two short scoring jobs in one Session, verifies that the first job writes nonzero state,
+then checks zero StateImage contents and initial PLE raw history before the second job computes.
+The executed device batch must start at position zero with no preceding KV history visible.
+It loads all weights on Device:
+
+```bash
+NINFER_QWEN4_EXP_TEST_ARTIFACT=out/qwen3_8_flash_next.ninfer \
+  ./build/dgx-spark-dev/tests/ninfer_qwen4_exp_score_state_real_test
 ```
 
 `ninfer_moe_test` qualifies the integer routing, complete MoE and routed SwiGLU profiles.
@@ -268,7 +281,7 @@ column and chunk tails, full-precision products and tiny inputs. These CPU tests
 model files or use GPU memory.
 `ninfer_moe_mixed_test` qualifies complementary CPU/GPU subsets plus GPU shared/residual composition.
 
-`ninfer_moe_execution_test` qualifies the shared single-layer execution and the Program-owned
+`ninfer_moe_execution_test` qualifies the shared single-layer execution and the RankProgram-owned
 multi-layer fixed-cache and streaming-window schedule against the same independent complete-MoE oracle. It uses registered native Host banks and the real ExpertCache,
 covering Write/AddResidual outputs, absent CPU-only replicas, explicit region replacement,
 All/None/partial partitions, bank IDs independent of traversal order, variable frame reuse through
@@ -332,6 +345,13 @@ NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer \
   ./build/rtx5090-dev/tests/ninfer_qwen3_5_native_transactions_test dflash2
 ```
 
+The MTP history test compares committed KV with an independent Main-conditioning oracle:
+
+```bash
+NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer ./build/rtx5090-dev/tests/ninfer_qwen3_5_mtp_history_real_test
+NINFER_TEST_ARTIFACT=$PWD/out/qwen3_8_27b_nvfp4.ninfer NINFER_TEST_GRAPH=1 ./build/rtx5090-dev/tests/ninfer_qwen3_5_mtp_history_real_test
+```
+
 The agent entry checks multi-turn continuation and branching. The preemption entry exercises
 Snapshot/Replay recovery and cancellation while paused or replaying; `NINFER_PREEMPTION_REAL_SCENARIO`
 selects `all`, `snapshot`, `replay`, `cancel-paused` or `cancel-replay`.
@@ -341,6 +361,16 @@ physical state/KV ownership, binding, capture, reclamation and abort; their posi
 `none`, `mtp`, `dflash` or `dflash2`. Each backend requires an artifact containing that component.
 Public-HTTP latency and output gaps are measured separately by the
 [TTFT campaign](../tools/bench/ttft/README.md).
+
+`ninfer_tool_streaming_test` checks incremental tool arguments without loading weights: long HTML
+strings and JSON containers, byte-split Unicode/framing, completion and interruption at every
+boundary, continuation initialization, request-local format errors, stable protocol IDs, and
+Chat/Responses/Anthropic argument equivalence. It also checks Anthropic eager versus parameter-buffered
+publication, terminal-reason and item-status consistency, and exclusion of incomplete calls from
+executable history. Unknown parameter types
+wait for parameter completion before inference; known JSON encodings do not repair malformed values.
+`ninfer_qwen_tool_constraints_test` additionally checks open-name uniqueness before sampling,
+whole-token boundary crossings, speculative rollback, independent requests, and continuation seeds.
 
 `ninfer_qwen3_5_tools_real_test [none|mtp|dflash|dflash2] [graph|eager|basic|snapshot|replay|cancel] [concurrency]`
 uses `NINFER_TEST_ARTIFACT` for strict tools, thinking, raw continuation, mixed batches, and
@@ -417,7 +447,7 @@ A permanent test should protect one current risk, such as:
 
 - exact artifact bytes, geometry, object binding, or conversion transform;
 - a numerical operator contract with an independent oracle;
-- model Frontend or Program frontier, prefix, MTP, or multimodal behavior;
+- model Frontend, Session frontier/prefix policy, or RankProgram MTP/multimodal execution;
 - generated-token commit/stop/cancel consistency;
 - public benchmark or OpenAI/Anthropic observable behavior;
 - a reproduced supported bug.
@@ -445,11 +475,20 @@ StateImage/KV snapshot at frontier 7, where `tokens_per_row=4` leaves one valid 
 three-entry raw tail. Native transaction tests exercise the corresponding model-owned source,
 capture, retirement, recovery and consecutive decode/terminal paths.
 
+`ninfer_recovery_test` compares the shared branch-loss definition with an independent exhaustive
+oracle, including aliases, invalid/foreign generations, forced shortlist collisions, and unavailable
+fallbacks. It also checks physical union probes and rollback against complete holder enumeration.
+`ninfer_resource_manager_test` compares incremental Host selection with full rescoring and bounds
+deterministic score/holder work for 16–128 independent candidates. These operation counts check
+algorithmic regressions; they do not establish inference throughput or latency.
+`ninfer_kv_history_test` also exercises both actual Qwen checkpoint record types, separate backend
+frontiers, external snapshots, reader pins, excluded aliases, and Device/Host release quantities.
+
 ## DFlash2 Engine integration
 
 The DFlash prefill regression checks actual KV contents after a StateImage fork and a conflicting
 decode binding, including shortened chunks and oversized local/full KV appends. It uses native
-Program storage and the production prefill route; select the draft component stored in the artifact:
+RankProgram storage and the production prefill route; select the draft component stored in the artifact:
 
 ```bash
 cmake --build build/rtx5090-dev -j --target ninfer_qwen3_5_dflash_prefill_real_test
@@ -505,6 +544,8 @@ Qwen4Exp loading/resources can be checked independently of the public Engine rou
 ```bash
 ./build/rtx5090-dev/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --host-experts
 ./build/rtx5090-dev/tests/ninfer_qwen4_exp_loading_real_test out/qwen3_8_flash_next.ninfer --host-experts --materialize
+NINFER_QWEN4_EXP_TEST_ARTIFACT=out/qwen3_8_flash_next.ninfer \
+  ./build/rtx5090-dev/tests/ninfer_qwen4_exp_reclaim_real_test
 ```
 
 The first command plans component combinations, KV formats and concurrency without loading weight
@@ -515,3 +556,30 @@ loading on Spark, use its build directory and omit `--host-experts`. These are l
 Text/Vision/MTP generation, eager or CUDA Graph decode, and text causal scoring use the public Engine,
 with current support described in the [execution reference](../docs/maintainer/qwen4_exp-execution.md)
 and commands in the [CLI guide](../docs/cli.md).
+
+The reclaim test loads Main experts on Host and MTP/fixed weights on Device, then constructs
+native checkpoint contents without generating text. It checks complete holder quotes, actual-page
+batch coverage, typed shortage clipping, stale holders/readers/residency, Main/MTP/State migrations,
+and quoted Host release against final store occupancy. It requires the same Host memory headroom.
+
+## Distributed execution
+
+Configure with `-DNINFER_ENABLE_DISTRIBUTED=ON` and system NCCL development libraries.
+`ninfer_distributed_protocol_test` is an ordinary CTest entry; it checks native Work values,
+decision/commit requirements, input ownership, memory reports and transport backpressure.
+
+The two-GPU test is explicit. Create a local TOML file using the commented deployment section in
+`ninfer.example.toml`; set each node's `worker` to its absolute path to
+`tests/ninfer_distributed_execution_test`. Both nodes need the matching binary and `lib/` directory.
+From the configured coordinator:
+
+```bash
+./build/dgx-spark-dev/tests/ninfer_distributed_execution_test --config distributed.local.toml
+```
+
+The test launches local/SSH workers and uses the production Executor, transport and NCCL backend.
+It checks SUM, unsigned MAX and exact PLE words, Gather/Scatter/Broadcast/P2P, Graph replay,
+decision input, delayed-rank commit, owner subsets, cancellation, retirement, resource queries,
+peak reset, remote launch failure and failure during a collective. No model payload is loaded.
+The test's Program supplies an independent small mathematical/state reference; it is not a model
+registration or an alternative inference entry.

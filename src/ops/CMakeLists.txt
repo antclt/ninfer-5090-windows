@@ -35,7 +35,6 @@ ninfer_cuda_non_rdc_archive(ninfer_ops_non_rdc)
 target_link_libraries(ninfer_ops_non_rdc PRIVATE ninfer_core CUDA::cudart CUDA::cuda_driver)
 
 target_sources(ninfer_ops PRIVATE weight_input.cpp)
-
 # Perturbation seam, scoped to the test tree. An Op's kernel may carry small mutation branches behind
 # NINFER_OP_TEST_MUTATIONS, selected per test run by the launcher from NINFER_OP_MUTATION, and
 # tools/release/check_test_mutation.py asserts the suite actually goes red when one is selected.
@@ -49,6 +48,8 @@ target_sources(ninfer_ops PRIVATE weight_input.cpp)
 if(BUILD_TESTING)
   target_compile_definitions(ninfer_ops PUBLIC NINFER_OP_TEST_MUTATIONS=1)
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/collective/sources.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/common/sources.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/elementwise/sources.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/indexing/sources.cmake")

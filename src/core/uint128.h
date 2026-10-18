@@ -201,6 +201,8 @@ struct Uint128 {
 }
 
 constexpr Uint128& operator*=(Uint128& a, const Uint128& b) noexcept { return a = a * b; }
+constexpr Uint128& operator/=(Uint128& a, const Uint128& b) noexcept { return a = a / b; }
+constexpr Uint128& operator%=(Uint128& a, const Uint128& b) noexcept { return a = a % b; }
 constexpr Uint128& operator+=(Uint128& a, const Uint128& b) noexcept { return a = a + b; }
 constexpr Uint128& operator-=(Uint128& a, const Uint128& b) noexcept { return a = a - b; }
 

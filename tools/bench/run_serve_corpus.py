@@ -25,6 +25,7 @@ MANIFEST_PATH = REPO_ROOT / "examples/cli/manifest.json"
 SPECULATIVE_MODES = {
     "mtp0": ("none", 0),
     "mtp3": ("mtp", 3),
+    "mtp5": ("mtp", 5),
     "dflash7": ("dflash", 7),
     "dflash2_7": ("dflash2", 7),
 }
@@ -86,7 +87,7 @@ WARMUP_FIXTURE = "text_smoke_zh"
 RUN_ARTIFACT_TYPE = "ninfer_serve_corpus_result"
 RUN_SCHEMA_VERSION = 8
 SERVER_LOG_ARTIFACT_TYPE = "ninfer_serve_request_log"
-SERVER_LOG_SCHEMA_VERSION = 27
+SERVER_LOG_SCHEMA_VERSION = 31
 STARTUP_TIMEOUT_SECONDS = 1800.0
 REQUEST_TIMEOUT_SECONDS = 24.0 * 60.0 * 60.0
 LOG_EVENT_TIMEOUT_SECONDS = 10.0
@@ -504,11 +505,11 @@ def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> 
         raise CampaignError(f"server_start Engine configuration mismatch: {actual!r}")
     context_cache = engine.get("context_cache", {})
     if (
-        context_cache.get("device_state_slots") != 0
+        context_cache.get("extra_state_slots") != 0
         or context_cache.get("host_capacity_bytes") != 0
     ):
         raise CampaignError("server_start context cache capacity differs from the campaign")
-    if event.get("sampling_defaults", {}).get("greedy") != (
+    if (event.get("sampling_defaults", {}).get("server_overrides", {}).get("temperature") == 0) != (
         spec.sampling_mode == "greedy"
     ):
         raise CampaignError("server_start sampling mode does not match the campaign")
@@ -765,7 +766,7 @@ def server_command(
         "262144",
         "--prefill-chunk",
         "1024",
-        "--log-stats-interval-ms",
+        "--stats-interval",
         "0",
         "--device",
         str(device),
@@ -774,9 +775,9 @@ def server_command(
         "--kv-dtype",
         spec.kv_dtype,
         "--no-prefix-reuse",
-        "--device-state-slots",
+        "--extra-state-slots",
         "0",
-        "--host-context-mib",
+        "--host-cache-capacity",
         "0",
     ]
     if spec.speculative_backend != "none":
@@ -786,11 +787,11 @@ def server_command(
                 spec.speculative_backend,
                 "--draft-tokens",
                 str(spec.draft_tokens),
-                "--lm-head-draft",
+                "--proposal-head", "optimized",
             ]
         )
     if spec.sampling_mode == "greedy":
-        command.append("--greedy")
+        command.extend(["--temperature", "0"])
     else:
         # Published stochastic measurements use this explicit profile; they must not drift when
         # product defaults follow a newly registered model recommendation.

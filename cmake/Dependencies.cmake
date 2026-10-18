@@ -1,5 +1,14 @@
 find_package(CUDAToolkit REQUIRED)
 find_package(Threads REQUIRED)
+if(NINFER_ENABLE_DISTRIBUTED)
+  find_path(NCCL_INCLUDE_DIR nccl.h REQUIRED)
+  find_library(NCCL_LIBRARY NAMES nccl REQUIRED)
+  add_library(ninfer::nccl UNKNOWN IMPORTED GLOBAL)
+  set_target_properties(ninfer::nccl PROPERTIES
+    IMPORTED_LOCATION "${NCCL_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${NCCL_INCLUDE_DIR}")
+endif()
+
 if(MSVC)
   # Windows: FFmpeg dev binaries are staged into ffmpeg/ (see build_windows.bat).
   # Expose the same target name upstream consumers link, so nothing else changes.
@@ -38,6 +47,11 @@ if(NINFER_BUILD_ENGINE)
 endif()
 
 if(NINFER_BUILD_PRODUCT_SUPPORT)
+  add_library(ninfer::toml INTERFACE IMPORTED GLOBAL)
+  target_include_directories(ninfer::toml INTERFACE
+    ${PROJECT_SOURCE_DIR}/third_party/tomlplusplus)
+  target_compile_features(ninfer::toml INTERFACE cxx_std_17)
+
   # Media acquisition uses CURLOPT_PROTOCOLS_STR and CURLOPT_REDIR_PROTOCOLS_STR,
   # introduced in libcurl 7.85 (not merely the version of the maintainer environment).
   # Use CMake's FindCURL module, which works on both Linux and Windows and creates

@@ -24,6 +24,7 @@
 namespace {
 
 using namespace ninfer::serve;
+using ninfer::product::ServeOptions;
 using Json = nlohmann::json;
 
 int check(bool condition, const char* message) {
@@ -45,40 +46,50 @@ int main() {
                       "request log accepted the model artifact as its output path");
 
     ServeOptions options;
-    options.artifact_path                  = "/models/qwen3_6_27b.ninfer";
-    options.host                           = "127.0.0.1";
-    options.port                           = 8123;
-    options.api_key                        = "must-not-appear";
-    options.model_id_override              = "deployment-alias";
-    options.request_log_jsonl              = "requests.jsonl";
-    options.max_context                    = 262144;
-    options.kv_capacity                    = ninfer::KvCapacityPolicy::explicit_capacity(524288);
-    options.prefill_chunk                  = 1024;
-    options.log_stats_interval_ms          = 2500;
-    options.kv_cache                       = ninfer::KvCacheStorage::Fp8E4M3Row256;
-    options.speculative.backend            = ninfer::SpeculativeBackend::Mtp;
-    options.speculative.draft_tokens       = 3;
-    options.speculative.proposal_head      = ninfer::ProposalHead::Optimized;
-    options.enable_vision                  = false;
-    options.allow_prefix_reuse             = true;
-    options.preserve_thinking              = true;
-    options.default_thinking_budget        = 512;
-    options.sampling_overrides.temperature = 0.6F;
-    options.startup_argv = {"ninfer-serve", options.artifact_path, "--api-key", "<redacted>"};
+    options.launch.engine.artifact_path       = "/models/qwen3_6_27b.ninfer";
+    options.host                              = "127.0.0.1";
+    options.port                              = 8123;
+    options.api_key                           = "must-not-appear";
+    options.model_id_override                 = "deployment-alias";
+    options.launch.logging.request_jsonl      = "requests.jsonl";
+    options.launch.engine.max_context         = 262144;
+    options.launch.engine.kv_capacity         = ninfer::KvCapacityPolicy::explicit_capacity(524288);
+    options.launch.engine.prefill_chunk       = 1024;
+    options.launch.logging.stats_interval_ms  = 2500;
+    options.launch.engine.kv_cache            = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.launch.engine.speculative.backend = ninfer::SpeculativeBackend::Mtp;
+    options.launch.engine.speculative.draft_tokens  = 3;
+    options.launch.engine.speculative.proposal_head = ninfer::ProposalHead::Optimized;
+    options.launch.engine.enable_vision             = false;
+    options.launch.engine.context_cache.enabled     = true;
+    options.launch.generation.preserve_thinking     = true;
+    options.launch.generation.thinking_budget       = 512;
+    options.launch.generation.sampling.temperature  = 0.6F;
+    options.launch.provenance.argv = {"ninfer-serve", options.launch.engine.artifact_path.string(),
+                                      "--api-key", "<redacted>"};
+
+    const Json startup = Json::parse(format_startup_config_json("test-startup", 1000, options));
+    failures += check(startup.at("event") == "startup_config" &&
+                          startup.at("schema_version") == kRequestLogSchemaVersion &&
+                          startup.at("configuration").at("generation.sampling.temperature") ==
+                              static_cast<double>(0.6F) &&
+                          startup.at("configuration").at("server.api_key") == "configured" &&
+                          startup.dump().find("must-not-appear") == std::string::npos,
+                      "startup configuration log lost exact values or exposed the API key");
 
     ninfer::EngineOptions engine_options;
-    engine_options.artifact_path                     = options.artifact_path;
-    engine_options.device                            = options.device;
-    engine_options.max_context                       = options.max_context;
+    engine_options.artifact_path                     = options.launch.engine.artifact_path;
+    engine_options.device                            = options.launch.engine.device;
+    engine_options.max_context                       = options.launch.engine.max_context;
     engine_options.max_concurrency                   = 2;
-    engine_options.max_pending_requests              = options.max_pending_requests;
-    engine_options.pending_timeout_ms                = options.pending_timeout_ms;
-    engine_options.prefill_chunk                     = options.prefill_chunk;
-    engine_options.kv_cache                          = options.kv_cache;
-    engine_options.speculative                       = options.speculative;
-    engine_options.enable_vision                     = options.enable_vision;
-    engine_options.use_cuda_graph                    = options.use_cuda_graph;
-    engine_options.context_cache.device_state_slots  = 2;
+    engine_options.max_pending_requests              = options.launch.engine.max_pending_requests;
+    engine_options.pending_timeout_ms                = options.launch.engine.pending_timeout_ms;
+    engine_options.prefill_chunk                     = options.launch.engine.prefill_chunk;
+    engine_options.kv_cache                          = options.launch.engine.kv_cache;
+    engine_options.speculative                       = options.launch.engine.speculative;
+    engine_options.enable_vision                     = options.launch.engine.enable_vision;
+    engine_options.use_cuda_graph                    = options.launch.engine.use_cuda_graph;
+    engine_options.context_cache.extra_state_slots   = 2;
     engine_options.context_cache.host_capacity_bytes = 64ULL << 20;
 
     const ninfer::ModelSamplingDefaults sampling_defaults{
@@ -180,18 +191,18 @@ int main() {
     failures += check(server.at("server").at("default_thinking_budget") == 512,
                       "server thinking budget missing");
     failures += check(server.at("engine").at("kv_cache") == "fp8-e4m3-row256", "KV type missing");
-    options.kv_cache        = ninfer::KvCacheStorage::Nvfp4Group16;
-    engine_options.kv_cache = options.kv_cache;
-    memory.kv_cache         = options.kv_cache;
-    const Json nvfp4_server = Json::parse(format_server_start_json(
+    options.launch.engine.kv_cache = ninfer::KvCacheStorage::Nvfp4Group16;
+    engine_options.kv_cache        = options.launch.engine.kv_cache;
+    memory.kv_cache                = options.launch.engine.kv_cache;
+    const Json nvfp4_server        = Json::parse(format_server_start_json(
         "serve-test", 1000, options, engine_options, sampling_defaults, "deployment-alias", load,
         memory, environment, std::uint64_t{123456}));
     failures +=
         check(nvfp4_server.at("engine").at("kv_cache") == "nvfp4", "NVFP4 KV report name missing");
-    options.kv_cache        = ninfer::KvCacheStorage::Fp8KeyNvfp4Value;
-    engine_options.kv_cache = options.kv_cache;
-    memory.kv_cache         = options.kv_cache;
-    const Json k8v4_server  = Json::parse(format_server_start_json(
+    options.launch.engine.kv_cache = ninfer::KvCacheStorage::Fp8KeyNvfp4Value;
+    engine_options.kv_cache        = options.launch.engine.kv_cache;
+    memory.kv_cache                = options.launch.engine.kv_cache;
+    const Json k8v4_server         = Json::parse(format_server_start_json(
         "serve-test", 1000, options, engine_options, sampling_defaults, "deployment-alias", load,
         memory, environment, std::uint64_t{123456}));
     failures +=
@@ -210,7 +221,7 @@ int main() {
         "resolved context-cost layers missing");
     failures += check(server.at("engine").at("prefix_reuse") == true, "prefix-reuse state missing");
     failures += check(
-        server.at("engine").at("context_cache").at("device_state_slots") == 2 &&
+        server.at("engine").at("context_cache").at("extra_state_slots") == 2 &&
             server.at("engine").at("context_cache").at("total_device_state_slots") == 4 &&
             server.at("engine").at("context_cache").at("host_capacity_bytes") == (64ULL << 20),
         "resolved context-cache configuration missing");
@@ -475,7 +486,6 @@ int main() {
     failures +=
         check(done.at("result").at("tool_call_parse").at("marker_seen") == false &&
                   done.at("result").at("tool_call_parse").at("structured_call_count") == 0 &&
-                  done.at("result").at("tool_call_parse").at("empty_arguments_omitted") == 0 &&
                   done.at("result").at("tool_call_parse").at("schema_mismatch_arguments") == 0 &&
                   done.at("result").at("tool_call_parse").at("fallback_reason") == "none",
               "default tool-call parse diagnostics missing");
@@ -657,7 +667,6 @@ int main() {
     normalized_tool_outcome.tool_call_parse = {
         .marker_seen               = true,
         .structured_call_count     = 1,
-        .empty_arguments_omitted   = 1,
         .schema_mismatch_arguments = 2,
         .fallback_reason           = ninfer::ToolCallParseFallbackReason::None,
     };
@@ -666,8 +675,6 @@ int main() {
     failures += check(
         normalized_tool_done.at("result").at("tool_call_count") == 1 &&
             normalized_tool_done.at("result").at("tool_call_parse").at("structured_call_count") ==
-                1 &&
-            normalized_tool_done.at("result").at("tool_call_parse").at("empty_arguments_omitted") ==
                 1 &&
             normalized_tool_done.at("result")
                     .at("tool_call_parse")
@@ -681,21 +688,20 @@ int main() {
     fallback_outcome.tool_call_parse   = {
           .marker_seen               = true,
           .structured_call_count     = 0,
-          .empty_arguments_omitted   = 0,
           .schema_mismatch_arguments = 0,
-          .fallback_reason           = ninfer::ToolCallParseFallbackReason::DuplicateParameter,
+          .fallback_reason           = ninfer::ToolCallParseFallbackReason::UndeclaredTool,
     };
     const Json fallback_done =
         Json::parse(format_request_done_json("serve-test", 3003, context, fallback_outcome));
     failures += check(fallback_done.at("result").at("tool_call_parse").at("marker_seen") &&
                           fallback_done.at("result").at("tool_call_parse").at("fallback_reason") ==
-                              "duplicate_parameter",
+                              "undeclared_tool",
                       "tool-call text fallback diagnostics missing from JSONL");
     const std::optional<OperationalRecord> fallback_warning =
         render_tool_call_fallback(context, fallback_outcome);
     failures += check(
         fallback_warning && fallback_warning->severity == OperationalSeverity::Warning &&
-            fallback_warning->message == "req#7 tool markup returned as text | duplicate parameter",
+            fallback_warning->message == "req#7 tool markup returned as text | undeclared tool",
         "tool-call text fallback warning is absent or exposes raw content");
 
     const Json error =

@@ -1,3 +1,4 @@
+#include "serve_tool_stream_fixture.h"
 #include "serve/anthropic_messages.h"
 
 #include "serve/generation_service.h"
@@ -19,6 +20,7 @@ namespace {
 
 using Json = ninfer::serve::RequestJson;
 using namespace ninfer::serve;
+using ninfer::product::ServeOptions;
 
 int check(bool condition, const std::string& message) {
     if (condition) { return 0; }
@@ -62,7 +64,7 @@ std::string api_param(const std::function<void()>& action) {
 
 ResolvedPromptSemantics semantics(const GenerationRequest& request, bool default_thinking = true) {
     ServeOptions options;
-    options.enable_thinking = default_thinking;
+    options.launch.generation.enable_thinking = default_thinking;
     return resolve_prompt_semantics(request, options);
 }
 
@@ -466,7 +468,7 @@ int test_thinking_and_count_tokens() {
         Json{{"type", "enabled"}, {"budget_tokens", 1024}, {"display", "summarized"}};
     const GenerationRequest enabled = parse(body).generation;
     ServeOptions server;
-    server.default_thinking_budget = 777;
+    server.launch.generation.thinking_budget = 777;
     const ninfer::RequestOptions options =
         to_request_options(enabled, server, semantics(enabled), true);
     int failures = check(enabled.enable_thinking == true && enabled.thinking_budget == 1024 &&
@@ -682,6 +684,8 @@ int test_tool_call_presentation() {
     std::vector<std::string> content = stream.content_delta(outcome.text);
     events.insert(events.end(), std::make_move_iterator(content.begin()),
                   std::make_move_iterator(content.end()));
+    auto tool_events = emit_tools(stream, outcome.tool_calls);
+    events.insert(events.end(), tool_events.begin(), tool_events.end());
     std::vector<std::string> terminal = stream.finish(outcome);
     events.insert(events.end(), std::make_move_iterator(terminal.begin()),
                   std::make_move_iterator(terminal.end()));

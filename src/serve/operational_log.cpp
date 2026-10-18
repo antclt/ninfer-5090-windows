@@ -228,10 +228,13 @@ OperationalRecord render_request_done(const RequestLogContext& context,
         outcome.completion_tokens > 0 ? static_cast<double>(outcome.completion_tokens - 1) : 0.0;
     std::ostringstream out;
     out << "req#" << context.id << " done | " << protocol_name(context.protocol) << " | ";
-    if (outcome.tool_calls.empty()) {
+    const auto complete_calls =
+        std::count_if(outcome.tool_calls.begin(), outcome.tool_calls.end(),
+                      [](const auto& call) { return call.status == ToolCallStatus::Complete; });
+    if (complete_calls == 0) {
         out << finish_reason_name(outcome.finish_reason);
     } else {
-        out << "tool calls " << product::format_pretty_count(outcome.tool_calls.size());
+        out << "tool calls " << product::format_pretty_count(complete_calls);
     }
     out << " | prompt "
         << product::format_pretty_count(
@@ -450,10 +453,10 @@ void OperationalLog::engine_capacity(const GenerationService& service) const {
                   product::format_pretty_bytes(memory.available_after_startup_bytes));
 
     logger_->info("context | history {} | {} active + {} extra device states | host {}",
-                  cache.enabled ? "on" : "off", engine.max_concurrency, *cache.device_state_slots,
+                  cache.enabled ? "on" : "off", engine.max_concurrency, *cache.extra_state_slots,
                   product::format_pretty_bytes(*cache.host_capacity_bytes));
 
-    if (service.options().enable_vision) {
+    if (service.options().launch.engine.enable_vision) {
         const ninfer::MediaCacheSummary media = service.media_cache_summary();
         logger_->info("media | {} preprocess workers | cache {} | live {}",
                       media.preprocess_threads, product::format_pretty_bytes(media.capacity_bytes),

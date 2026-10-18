@@ -74,7 +74,7 @@ ninfer::EngineOptions reporter_engine_options(const char* artifact) {
     options.speculative.proposal_head            = ninfer::ProposalHead::Optimized;
     options.max_concurrency                      = kConcurrency;
     options.max_pending_requests                 = 32;
-    options.context_cache.device_state_slots     = 2;
+    options.context_cache.extra_state_slots      = 2;
     // Upstream b9114396 collapsed host_state_slots, host_kv_capacity_bytes,
     // max_private_continuations, max_shared_prefixes and
     // max_long_anchors_per_continuation into one shared Host quota. This test's own 6 GiB
