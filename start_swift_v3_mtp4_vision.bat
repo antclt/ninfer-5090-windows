@@ -1,7 +1,4 @@
 @echo off
-REM Set the console to UTF-8 (code page 65001) so all console output from this
-REM launcher and the engine it starts is captured without encoding errors.
-chcp 65001 >nul
 REM ============================================================================
 REM  Swift 1.5 + MTP4 + Vision
 REM
