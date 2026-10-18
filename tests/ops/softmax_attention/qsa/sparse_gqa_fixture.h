@@ -1,3 +1,4 @@
+#include <cuda_fp16.h>
 #pragma once
 
 #include "ninfer/ops/qsa.h"
@@ -21,9 +22,9 @@ inline std::uint32_t hash(std::uint32_t x) {
 
 inline float sample(std::uint32_t i) { return (int(hash(i) % 10001) - 5000) / 3000.0F; }
 
-inline std::uint16_t half(float x) { return std::bit_cast<std::uint16_t>(_Float16(x)); }
+inline std::uint16_t half_bits(float x) { return std::bit_cast<std::uint16_t>(__float2half_rn(x)); }
 
-inline float unhalf(std::uint16_t x) { return float(std::bit_cast<_Float16>(x)); }
+inline float half_value(std::uint16_t x) { return __half2float(std::bit_cast<__half>(x)); }
 
 struct Plane {
     int leading;
@@ -166,7 +167,7 @@ struct Fixture {
                     const auto seed = std::uint32_t((page * 128 + h * 64 + token) * 256 + d);
                     keys.host[keys.offset(d, h, token, page)] =
                         f32_to_bf16(sample(seed + 701) * magnitude);
-                    values.host[values.offset(d, h, token, page)] = half(sample(seed + 1311));
+                    values.host[values.offset(d, h, token, page)] = half_bits(sample(seed + 1311));
                 }
         }
         upload();
@@ -244,7 +245,7 @@ struct Fixture {
                         decoded_values[index] =
                             encoded_value
                                 ? encoded_value->decode(d, h, token, page)
-                                : double(unhalf(values.host[values.offset(d, h, token, page)]));
+                                : double(half_value(values.host[values.offset(d, h, token, page)]));
                     }
         });
         parallel_rows(

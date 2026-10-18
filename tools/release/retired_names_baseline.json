@@ -112,7 +112,9 @@
       "runtime_intervals_missing": "the tool's own case and comparison labels, which it writes and reads back",
       "streaming_first_output": "the tool's own case and comparison labels, which it writes and reads back",
       "terminal_diagnostics_unavailable": "the tool's own case and comparison labels, which it writes and reads back",
-      "wire_identity_not_found": "the tool's own case and comparison labels, which it writes and reads back"
+      "wire_identity_not_found": "the tool's own case and comparison labels, which it writes and reads back",
+      "invalid_context_pool_directory": "the tool's own status reason string, returned when a context-cache KV pool directory does not line up with the pool list. The directory field it reads was retired upstream in the 2026-10-17 merge; the label is the tool's output vocabulary, not a tree symbol.",
+      "changed_context_pool_directory": "the tool's own status reason string, returned when a pool directory changes between intervals. Same provenance as invalid_context_pool_directory."
     },
     "tools/bench/ttft/execution.py": {
       "barrier_spread_ns": "the tool's own case and comparison labels, which it writes and reads back",
@@ -300,6 +302,9 @@
     },
     "tools/convert/quantization/stored_scale.py": {
       "ninfer_stored_scale": "the label this codec writes into the artifact's provenance; it names a conversion output, not a symbol in this tree"
+    },
+    "tools/bench/chunked_context_soak.py": {
+      "device_kv_used_pages": "the tool's own watched counter, read from /metrics as the exact per-cycle Main KV page count that makes its leak check a slope rather than an RSS estimate. The 2026-10-17 merge retired the metric upstream. The tool falls back to '?' rather than failing, so the check degrades silently; recorded here so the loss stays visible."
     }
   }
 }

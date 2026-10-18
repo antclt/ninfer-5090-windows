@@ -67,7 +67,8 @@ Numerical criteria and complete mathematical/state references stay with their se
 ## Build and run
 
 Select a Python environment with the dependencies for the tests first. The maintained environment
-uses Python 3.11; CMake finds Python 3 without restricting its minor version.
+uses the maintained Python 3.12 environment; CMake finds Python 3 without restricting its
+minor version.
 `Python3_EXECUTABLE` selects the interpreter used by interop and frontend tests explicitly.
 
 ```bash
@@ -113,6 +114,35 @@ ctest --test-dir build/rtx5090-dev -R '^ninfer_qsa_.*_test$' --output-on-failure
 ./build/rtx5090-dev/tests/ninfer_linear_projection_test --format q8 --shape 6144 5120
 ```
 
+### Windows port recipes
+
+This port ships three recipes rather than expecting the commands above to be reconstructed:
+
+- `tools/scripts/test_v3.cmd` — configure, build and run the whole suite in `build-test`, and stage
+  the FFmpeg runtime DLLs beside the test executables (four tests exit `0xC0000135` without that
+  copy). It passes `--schedule-random`, because an order-dependent test hid behind a fixed order
+  once: a test that decorates itself with an empty environment variable poisoned every test after it.
+- `tools/scripts/test_v3_asan.cmd` — the host-only subset under MSVC AddressSanitizer. ASan cannot
+  instrument device code, which is why the device side is a separate recipe and not a flag here.
+- `tools/scripts/test_v3_compute_sanitizer.cmd` — memcheck over five sub-second device tests, the
+  device-side complement to the ASan recipe.
+
+`tools/release/check_test_baseline.py` compares a run against the recorded baseline in
+`tools/release/test_baseline.json`, which is the authority for how many tests the suite has and which
+failures are expected by construction. Set `NINFER_TEST_ARTIFACT` before running it: without it the
+three required real-model tests skip, and the gate then fails on missing coverage rather than on a
+regression.
+
+`tools/release/test_v3.cmd` runs one further gate at its tail, after `ctest`:
+`tools/release/check_test_mutation.py`. It asks whether the suite *can* go red — every mutation
+declared in `tests/ops/mutations.json` must turn its Op test red, and the clean run must be green, since
+a suite that is red to begin with satisfies every mutation assertion trivially. It builds the tests it
+perturbs first and refuses if the tree is stale, because a gate that certifies a binary it did not
+compile is worse than no gate. It prints `MUTATION_EXIT`. The manifest is the declaration; see
+[op-development.md §6.4](../docs/maintainer/op-development.md#64-perturbation-coverage) for when an Op
+owes perturbation coverage and how the seam is scoped.
+
+Enable uniform floating-point error records when establishing or reviewing an Op criterion:
 Every semantic Op executable under `ops/` accepts `--help`, `--list`, `--case ID`,
 `--suite NAME`, `--format FORMAT`, `--policy a16|a8|a4` and `--execution eager|graph`.
 Filters intersect declared metadata; an absent format/policy does not match that filter.
@@ -181,7 +211,8 @@ python3 -m pytest \
 ```
 
 The Python suites exercise conversion, encoded output and measurement tools without model inference.
-The maintained environment uses Python 3.11 with the dependencies for those suites. C++ binding and Engine tests
+The maintained environment is the virtualenv at `C:\vllm-env` (Python 3.12.13) with the
+dependencies for those suites. C++ binding and Engine tests
 cover consumption of their resulting representation.
 
 The real loading test accepts an explicit artifact path and optional component selection:

@@ -9,6 +9,29 @@ which of our changes touch files upstream also owns, and which are Windows-perma
 conflict. `dev` is a strict superset of `upstream/master` (0 commits behind), so the only risk is
 recognising our own patches when upstream edits the same shared logic.
 
+## The removed record
+
+`docs/research/` is not in the tree. It held 68 dated investigation notes, and was deleted from
+`dev` by `8475086f` and `f8bbc3fd` on 2026-10-13 because nothing in the tree referenced them. The
+deletion was reviewed and approved; the mistake was deleting a file that a 2026-10-06 restoration
+pass had put back after an earlier merge dropped it.
+
+The corpus survives under a tag, and reading one note is one command:
+
+    git show docs-archive-2026-10-13:docs/research/<name>.md
+
+The tag is at `f8bbc3fd^` = `4315b6e0`, the last commit that had all 68. Do not treat
+`C:\AI\actions-runner\_work\...` as the archive: that is an Actions runner work directory, and
+`actions/checkout` wipes it on the next run.
+
+**The ratchet cannot see a file a merge made identical to upstream.** On 2026-10-17 a 45-commit
+merge reverted nine reviewed files, and `check_port_delta.py --check` reported them as
+"stale -- trim them" -- the gate's advice would have erased the evidence of the loss, because a
+file at zero net divergence is invisible to it. The merge base of that merge was `919721877`, not
+`438ae67c`; `merge-base HEAD upstream/dev` is only the post-merge tip. Compare against the merge
+base of the two parents, or tag the pre-merge state (`pre-merge-<sha>`) so `git diff
+pre-merge-<sha> <merge> -- <path>` answers per path what the merge took.
+
 | Report | Target | What it is | Strength |
 | --- | --- | --- | --- |
 | `ninfer-tma-descriptor-graph-capture.md` | `Neroued/ninfer`, aimed at the open Windows/TMA PRs `#233` and `#82` | the device-buffer TMA descriptor path is not safe under CUDA Graph capture | strongest: a `compute-sanitizer` trace, a named mechanism, and a fix |
