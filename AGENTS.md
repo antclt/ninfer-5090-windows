@@ -352,6 +352,16 @@ Each is a rule, not a story. The parenthetical is the failure that produced it.
 58. A cache that never reports a counter cannot be debugged, and a driver that dies takes its buffer
     with it — see rule 6.
 
+**Windows build and runtime**
+
+59. On Windows, executables load DLLs from their own directory before PATH. A shared library compiled to
+    `build/src/ops/ninfer_ops.dll` is shadowed if a stale copy sits in `build/apps/ninfer-serve.exe`'s
+    folder. Shared library targets must stage their output beside executables via CMake `POST_BUILD`
+    copy (`copy_if_different`).
+60. Slotted KV cache writes must use `store_value()` / `cyclic_offset` with `value_slot_stride`, never
+    a handcrafted flat index. In `materialize_nvfp4.cu`, a hand-rolled store formula ignored slot stride
+    and cyclic wrapping, corrupting V-cache during prefill and collapsing speculative draft acceptance to zero.
+
 ## References
 
 Read [Engine architecture](docs/maintainer/engine-architecture.md) before changing execution or

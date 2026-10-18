@@ -278,6 +278,8 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
                 key_scratch[row + 1024LL * (packed_column + max_count * batch * layer_index)] =
                     result;
             } else {
+                // Must use store_value() from epilogue.cuh to honour layer.value_slot_stride
+                // and kv::cyclic_offset (ADR-0013); flat offset arithmetic corrupts V-cache.
                 store_value(row, column, slots[request], positions, layer, result);
             }
         }

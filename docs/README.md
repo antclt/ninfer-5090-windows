@@ -65,8 +65,8 @@ in every translated file.
 
 [`adr/`](adr/) holds the decisions behind the shipped profiles and artifact rules, each with the
 measurement that produced it: why a v3 container is required, why speculation is not bit-identical,
-the draft-binding contract, why the profiles are vision-only, and why every profile flag is
-measured rather than chosen.
+the draft-binding contract, why the profiles are vision-only, why every profile flag is
+measured rather than chosen, and the NVFP4 context-materialize V-cache stride / runtime DLL staging fix (ADR-0013).
 
 [Engine architecture](maintainer/engine-architecture.md) is the single top-level reference. The
 other references own narrower contracts:
