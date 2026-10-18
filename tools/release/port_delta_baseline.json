@@ -677,7 +677,7 @@
     },
     "src/ops/CMakeLists.txt": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "product",
       "reason": "The perturbation seam: Op kernels may carry small mutation branches behind NINFER_OP_TEST_MUTATIONS, selected per run by NINFER_OP_MUTATION, and tools/release/check_test_mutation.py asserts the suite actually goes red when one is selected. Scoped to the test tree, because build/ and build-test/ are separate configurations and BUILD_TESTING is what gates it. The recipe runs the gate as part of test_v3.cmd."
     },
@@ -1065,6 +1065,12 @@
       "review": "product",
       "reason": "The media-acquire wire-source classification: data URIs and HTTP(S) URLs, with libcurl linked behind NINFER_HAVE_LIBCURL and the CMake option NINFER_BUILD_MEDIA_ACQUIRE. prompt_input.cpp uses classify_wire_source to decide a message part's SourceKind, so the same prefix rule serves every wire endpoint instead of each parsing its own."
     },
+    "src/runtime/CMakeLists.txt": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test. Upstream links ninfer_ops PRIVATE to ninfer_engine, which works on Linux because shared-library symbol resolution differs. On Windows/MSVC, ninfer-serve.exe (which links ninfer_engine PUBLIC) needs ninfer_ops.lib in its link line to resolve __imp__ references from ninfer_engine static objects to the ninfer_ops DLL. Moving ninfer_ops to PUBLIC propagates the import library.",
+      "reason": "Moved ninfer_ops from PRIVATE to PUBLIC in ninfer_engine's link libraries so that ninfer-serve.exe (which consumes ninfer_engine PUBLIC) gets ninfer_ops.lib in its link line. Without this, ninfer-serve.exe fails with 16 unresolved externals (nvfp4 TMA kernel launchers defined in ninfer_ops_non_rdc, linked PRIVATE into ninfer_ops). Also added WINDOWS_EXPORT_ALL_SYMBOLS ON to ninfer_ops so the DLL exports those symbols."
+    },
     "src/runtime/contract/resources.h": {
       "status": "M",
       "disposition": "windows",
@@ -1433,7 +1439,7 @@
     },
     "tests/ops/tests.cmake": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "product",
       "review": "product",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
     },

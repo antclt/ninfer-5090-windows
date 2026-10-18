@@ -2,7 +2,12 @@
 add_library(ninfer_ops SHARED)
 ninfer_internal_includes(ninfer_ops)
 ninfer_cuda_library(ninfer_ops)
-target_link_libraries(ninfer_ops PUBLIC ninfer_core PRIVATE ninfer_ops_non_rdc)
+# Export all symbols so consumers of this shared library (via ninfer_engine, now PUBLIC) can
+# resolve the nvfp4 TMA kernel launchers and other Op entry points that live in the
+# ninfer_ops_non_rdc static archive. Without this, MSVC does not export DLL symbols by default
+# and ninfer-serve.exe fails to link with 16 unresolved externals.
+set_target_properties(ninfer_ops PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+target_link_libraries(ninfer_ops PUBLIC ninfer_core ninfer_ops_non_rdc)
 
 # Non-RDC kernels keep instruction and register-allocation choices within one translation unit.
 # This private PIC archive joins the shared library through host launchers.

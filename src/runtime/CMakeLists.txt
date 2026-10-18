@@ -16,12 +16,7 @@ add_library(ninfer_engine STATIC
 )
 ninfer_internal_includes(ninfer_engine)
 target_include_directories(ninfer_engine PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(ninfer_engine PRIVATE
-  ninfer_model_runtime
-  ninfer_artifact
-  ninfer_core
-  ninfer_runtime_support
-  ninfer_ops
-  ninfer_text
-  ninfer_media_decode)
+target_link_libraries(ninfer_engine
+  PUBLIC ninfer_ops
+  PRIVATE ninfer_model_runtime ninfer_artifact ninfer_core ninfer_runtime_support ninfer_text ninfer_media_decode)
 add_library(ninfer::engine ALIAS ninfer_engine)
