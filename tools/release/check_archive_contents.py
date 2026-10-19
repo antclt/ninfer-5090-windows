@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from profiles import PROFILES  # noqa: E402
+from pe_audit import audit_binary_dependencies  # noqa: E402
 
 REQUIRED = [
     "ninfer-serve.exe",
@@ -90,6 +91,14 @@ def main() -> int:
         for name in sorted(by_name):
             if "__pycache__" in name or name.endswith(".pyc"):
                 failures.append(f"bytecode in the archive: {name}")
+
+        binaries = {
+            name: zf.read(entry)
+            for name, entry in by_name.items()
+            if name.lower().endswith((".exe", ".dll"))
+        }
+        for pe_error in audit_binary_dependencies(binaries):
+            failures.append(f"unresolved dependency: {pe_error}")
 
         if "SHA256SUMS" in by_name:
             listed = {}

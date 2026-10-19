@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from profiles import PROFILES  # noqa: E402
+from pe_audit import audit_binary_dependencies  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 BUILD = REPO / "build" / "apps"
@@ -215,6 +216,18 @@ def main() -> int:
             print(f"    {item}")
         return 1
 
+    staged_binaries = {
+        p.relative_to(stage).as_posix(): p.read_bytes()
+        for p in stage.rglob("*")
+        if p.is_file() and p.suffix.lower() in (".exe", ".dll")
+    }
+    dep_errors = audit_binary_dependencies(staged_binaries)
+    if dep_errors:
+        print("  RELEASE REFUSED: staged binaries have unresolved DLL dependencies:")
+        for err in dep_errors:
+            print(f"    {err}")
+        return 1
+
     staged = sorted(p for p in stage.rglob("*") if p.is_file())
     names = [p.relative_to(stage).as_posix() for p in staged]
     lines = [f"{sha256(path)}  {name}" for path, name in zip(staged, names)]
@@ -226,6 +239,15 @@ def main() -> int:
                             capture_output=True, text=True, encoding="utf-8", check=False)
     if result.returncode != 0 or not archive.exists():
         print(f"  ARCHIVE FAILED: {result.stderr[:300]}")
+        return 1
+
+    print("  gate check : running tools/release/check_archive_contents.py on archive")
+    check_result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve().parent / "check_archive_contents.py"), str(archive)],
+        cwd=REPO, check=False)
+    if check_result.returncode != 0:
+        print("  RELEASE REFUSED: newly created archive failed check_archive_contents.py!")
+        archive.unlink(missing_ok=True)
         return 1
 
     print(f"  staged {len(names) + 1} files from {total / (1024 ** 2):.0f} MB of inputs")

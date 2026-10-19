@@ -226,6 +226,9 @@
     "tools/release/check_retired_names.py": {
       "shared_stable_prefix": "the gate's own docstring examples, which have to name the names it exists to catch"
     },
+    "tools/release/pe_audit.py": {
+      "msvcp140_atomic_wait": "standard Windows C++ runtime DLL name"
+    },
     "tools/release/per_domain_kl.py": {
       "mean_kl_nats": "the tool's own report key"
     },
