@@ -39,7 +39,7 @@ std::string rejection(Function&& function) {
 }
 
 struct Files {
-    fs::path root = fs::path(NINFER_SOURCE_DIR) / ".agent-tmp" /
+    fs::path root = fs::absolute(fs::path(NINFER_SOURCE_DIR)).lexically_normal() / ".agent-tmp" /
                     ("config-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 
@@ -235,11 +235,12 @@ void test_file_errors_and_example(const Files& files) {
     require(serve({"ninfer-serve", "--config", inactive.string()}).launch.engine.max_context ==
                 8192,
             "inactive CLI paths were opened or required");
-    const auto example = fs::path(NINFER_SOURCE_DIR) / "ninfer.example.toml";
+    const auto source_root = fs::absolute(fs::path(NINFER_SOURCE_DIR)).lexically_normal();
+    const auto example = source_root / "ninfer.example.toml";
     const auto cli     = parse({"ninfer", "--config", example.string()});
     const auto server  = serve({"ninfer-serve", "--config", example.string()});
     require(cli.launch.engine.artifact_path ==
-                fs::path(NINFER_SOURCE_DIR) / "out/qwen3_8_flash_next.ninfer",
+                source_root / "out/qwen3_8_flash_next.ninfer",
             "root example path is not relative to its file");
     require(cli.launch.generation.max_tokens == 128 &&
                 server.launch.generation.max_tokens == 8192 &&

@@ -19,7 +19,11 @@ void validate_deployment(const DeploymentOptions& options) {
     std::set<std::uint32_t> nodes;
     for (const auto& node : options.nodes) {
         if (!nodes.insert(node.id).second) fail("duplicate node ID");
-        if (!node.worker.is_absolute() || !node.artifact.is_absolute())
+        const auto is_abs = [](const std::filesystem::path& p) {
+            const auto s = p.string();
+            return p.is_absolute() || (!s.empty() && s.front() == '/');
+        };
+        if (!is_abs(node.worker) || !is_abs(node.artifact))
             fail("node worker and artifact paths must be absolute");
         if (node.id == options.coordinator_node) {
             if (!node.ssh.empty()) fail("coordinator node must use local launch");

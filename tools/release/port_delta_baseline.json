@@ -537,6 +537,12 @@
       "review": "product",
       "reason": "native_weight allows a 128-row-aligned sub-range of an NVFP4 BlockScaleK16M128x4 parent to be used as a complete matrix, rebasing the codes plane by whole code rows and the scale plane by whole 512-byte scale tiles. The port's shipped NVFP4 artifacts need it: the DFlash2 context K/V rows share the fused query/key/value parent at exact 128-row boundaries. The RowScale complete-parent validation this file used to carry is upstream's now, so it is no longer part of this divergence."
     },
+    "src/distributed/deployment.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Recognize POSIX absolute paths starting with '/' as absolute on remote deployment nodes because std::filesystem::path::is_absolute() returns false on Windows without a drive letter."
+    },
     "src/media/decode/decode.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -1029,6 +1035,12 @@
       "review": "product",
       "reason": "The media-acquire wire-source classification: data URIs and HTTP(S) URLs, with libcurl linked behind NINFER_HAVE_LIBCURL and the CMake option NINFER_BUILD_MEDIA_ACQUIRE. prompt_input.cpp uses classify_wire_source to decide a message part's SourceKind, so the same prefix rule serves every wire endpoint instead of each parsing its own."
     },
+    "src/product/config/file.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Recognize POSIX absolute paths starting with '/' as absolute for distributed worker and artifact paths in TOML validation on Windows."
+    },
     "src/product/config/schema.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -1460,6 +1472,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Guard dlfcn.h and next_symbol under #ifndef _WIN32 because Windows does not provide dlfcn.h."
+    },
+    "tests/test_cli_options.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Normalize NINFER_SOURCE_DIR with lexically_normal() so Windows path separators match the engine's canonical path representation in diagnostics."
     },
     "tests/test_expert_cache.cu": {
       "status": "M",

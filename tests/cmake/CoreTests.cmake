@@ -35,13 +35,11 @@ foreach(mode flags IN ZIP_LISTS sync_modes sync_flags)
   set_tests_properties(ninfer_device_sync_${mode}_test PROPERTIES
     ENVIRONMENT "NINFER_CUDA_SYNC=${mode}" SKIP_RETURN_CODE 77)
 endforeach()
-foreach(mode IN ITEMS invalid empty)
-  add_test(NAME ninfer_device_sync_${mode}_test COMMAND ninfer_device_test --invalid-sync)
-endforeach()
+add_test(NAME ninfer_device_sync_invalid_test COMMAND ninfer_device_test --invalid-sync)
 set_tests_properties(ninfer_device_sync_invalid_test PROPERTIES
   ENVIRONMENT "NINFER_CUDA_SYNC=invalid")
-set_tests_properties(ninfer_device_sync_empty_test PROPERTIES
-  ENVIRONMENT "NINFER_CUDA_SYNC=")
+add_test(NAME ninfer_device_sync_empty_test
+  COMMAND ${CMAKE_COMMAND} -E env "NINFER_CUDA_SYNC=" $<TARGET_FILE:ninfer_device_test> --invalid-sync)
 
 ninfer_add_test(ninfer_decode_graph_test SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_decode_graph.cpp"
   LIBRARIES ninfer_core)

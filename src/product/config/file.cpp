@@ -106,9 +106,13 @@ public:
             value.ssh      = string(n, "ssh", prefix, false);
             value.worker   = string(n, "worker", prefix, true);
             value.artifact = string(n, "artifact", prefix, true);
-            for (const auto key : {"worker", "artifact"})
-                if (!std::filesystem::path(n[key].value<std::string>().value()).is_absolute())
+            for (const auto key : {"worker", "artifact"}) {
+                const auto raw = n[key].value<std::string>().value();
+                const bool is_abs = std::filesystem::path(raw).is_absolute() ||
+                                    (!raw.empty() && raw.front() == '/');
+                if (!is_abs)
                     error(*n.get(key), prefix + "." + key, "expected an absolute path on the node");
+            }
             if (const auto* env = n.get("environment")) {
                 if (!env->is_table()) error(*env, prefix + ".environment", "expected a table");
                 for (const auto& [key, item] : *env->as_table()) {
