@@ -31,7 +31,11 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-TYPES = REPO / "include" / "ninfer" / "types.h"
+TYPES = (
+    REPO / "include" / "ninfer" / "observability" / "snapshot.h"
+    if (REPO / "include" / "ninfer" / "observability" / "snapshot.h").is_file()
+    else REPO / "include" / "ninfer" / "types.h"
+)
 SERVER = REPO / "src" / "serve" / "http_server.cpp"
 BASELINE = Path(__file__).with_name("activity_predicate_baseline.json")
 

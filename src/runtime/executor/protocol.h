@@ -4,12 +4,20 @@
 #include "runtime/executor/contract.h"
 
 namespace ninfer::runtime::protocol {
-void encode(distributed::wire::Encoder&, const MemorySummary&);
-[[nodiscard]] MemorySummary memory_summary(distributed::wire::Decoder&);
+void encode(distributed::wire::Encoder&, const RankMemoryBudget&);
+[[nodiscard]] RankMemoryBudget memory_budget(distributed::wire::Decoder&);
+void encode(distributed::wire::Encoder&, const RankSnapshot&);
+[[nodiscard]] RankSnapshot rank_snapshot(distributed::wire::Decoder&);
+void encode(distributed::wire::Encoder&, const RankExecutionObservation&);
+[[nodiscard]] RankExecutionObservation rank_execution_observation(distributed::wire::Decoder&);
 
 // Payload ceilings include the envelope. The prepared model supplies these from its frame shape.
 struct ControlBudget {
-    std::size_t work, decision, commit, event, report;
+    std::size_t compute_work, context_work, decision, commit, event, report;
+
+    [[nodiscard]] std::size_t work(FrameKind kind) const noexcept {
+        return kind == FrameKind::Compute ? compute_work : context_work;
+    }
 };
 
 struct Scope {
@@ -71,6 +79,7 @@ distributed::wire::Bytes encode_event(const ExecutionEvent<Types>& event, const 
                 out.u8(static_cast<std::uint8_t>(EventKind::DeviceRetired));
                 encode(out, value.ticket);
                 out.u64(value.command.value);
+                encode(out, value.observed);
             } else {
                 out.u8(static_cast<std::uint8_t>(EventKind::Failed));
                 encode(out, value.ticket);
@@ -100,7 +109,7 @@ ExecutionEvent<Types> decode_event(distributed::wire::Decoder& in, const Codec& 
     case EventKind::ResultReady:
         return runtime::ResultReady<Types>{id, codec.decode_result(in)};
     case EventKind::DeviceRetired:
-        return runtime::DeviceRetired{id, {in.u64()}};
+        return runtime::DeviceRetired{id, {in.u64()}, rank_execution_observation(in)};
     case EventKind::Failed:
         return runtime::ExecutionFailed{id, in.string()};
     }

@@ -21,17 +21,6 @@
 
 namespace ninfer::runtime::detail {
 
-inline std::size_t device_budget(std::size_t available) {
-    const char* value = std::getenv("NINFER_VRAM_BUDGET_MIB");
-    if (!value) return available;
-    const std::string_view text(value);
-    std::uint64_t mib = 0;
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), mib);
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || !mib ||
-        mib > std::numeric_limits<std::size_t>::max() / (1024ULL * 1024))
-        throw std::invalid_argument("NINFER_VRAM_BUDGET_MIB requires a positive MiB integer");
-    return std::min(available, static_cast<std::size_t>(mib * 1024 * 1024));
-}
 
 template <class Plan>
 struct CalibratedPlan {
@@ -134,7 +123,7 @@ prepare_program(const Setup& setup, RankModelInstance<typename Setup::Types>& in
                 memory.kv_capacity_resolution.automatic_headroom_bytes = budget.headroom();
                 memory.device_budget_bytes                             = budget.limit();
                 memory.startup_retained_bytes                          = retained;
-                memory.cuda_graph = instance.program->memory_summary().cuda_graph;
+                memory.cuda_graph = instance.program->graph_memory_observation();
                 if (memory.cuda_graph) {
                     plan.graph.preparation_increment_bytes =
                         memory.cuda_graph->preparation_increment_bytes;
@@ -232,7 +221,7 @@ BuiltModel<typename Setup::Types> build_local_model(const artifact::Reader& read
     }
     auto& device       = *device_owner;
     const auto initial = device_memory_snapshot(device.device());
-    const auto limit   = device_budget(initial.free_bytes);
+    const auto limit   = device_budget(initial.available_bytes());
     const auto headroom =
         std::max(kDefaultKvCapacityHeadroomBytes, options.kv_capacity.automatic_headroom_bytes);
     const auto host_reservation = (NINFER_SHARED_PHYSICAL_MEMORY != 0) && options.enable_vision
@@ -276,13 +265,13 @@ BuiltModel<typename Setup::Types> build_local_model(const artifact::Reader& read
             auto model =
                 setup.materialize(device, choices[selected].placement, options.startup_observer);
             device.synchronize();
-            available_after_weights = device_memory_snapshot(device.device()).free_bytes;
+            available_after_weights = device_memory_snapshot(device.device()).available_bytes();
             const auto& stats       = model->storage_stats();
             summary.upload_seconds += stats.upload_seconds;
             summary.artifact_bytes_read += stats.read_bytes;
             summary.host_to_device_bytes += stats.h2d_bytes;
-            summary.peak_staging_bytes =
-                std::max(summary.peak_staging_bytes, stats.peak_staging_bytes);
+            summary.max_rank_staging_bytes =
+                std::max(summary.max_rank_staging_bytes, stats.peak_staging_bytes);
             instance = std::make_unique<RankModelInstance<Types>>(std::move(model), setup.profile);
             calibrated = initialize_program(setup, *instance, prepared_session, memory, device,
                                             options, budget, std::move(*candidate));
@@ -302,7 +291,7 @@ BuiltModel<typename Setup::Types> build_local_model(const artifact::Reader& read
     }
     memory.kv_capacity_resolution.available_after_weights_bytes = available_after_weights;
     memory.kv_capacity_resolution.available_after_startup_bytes =
-        device_memory_snapshot(device.device()).free_bytes;
+        device_memory_snapshot(device.device()).available_bytes();
     const auto signature =
         setup.prefill_signature(calibrated->startup.preparation, options.prefill_chunk);
     auto context_cost = resolve_context_machine_cost(
@@ -327,6 +316,13 @@ BuiltModel<typename Setup::Types> build_local_model(const artifact::Reader& read
     summary.host_object_count   = stats.host_object_count + definition_stats.host_object_count;
     summary.context_cost        = std::move(context_cost.summary);
     summary.cuda_sync_mode      = device.sync_mode();
+    const auto& capacity        = memory.kv_capacity_resolution;
+    memory.rank_budgets.push_back(
+        {memory.device_budget_bytes, capacity.runtime_reservation_bytes,
+         capacity.minimum_runtime_reservation_bytes,
+         capacity.bytes_per_additional_primary_page_group, capacity.available_after_weights_bytes,
+         capacity.available_after_startup_bytes, capacity.automatic_headroom_bytes,
+         capacity.planned_slack_bytes, memory.startup_retained_bytes, memory.cuda_graph});
     auto worker = std::make_unique<RankWorker<Types>>(std::move(device_owner), std::move(instance));
     auto executor = std::make_unique<LocalExecutor<Types>>(std::move(worker), next_session_epoch());
     auto inference = std::make_unique<InferenceInstance<Types>>(

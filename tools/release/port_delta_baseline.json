@@ -153,18 +153,6 @@
       "review": "windows",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
     },
-    "bench/inference/ninfer_bench.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "One name table: the bench's own kv_cache_name was one of five copies and it calls ninfer::kv_storage_name() now. tests/test_ninfer_bench_support.cpp pins the values it prints."
-    },
-    "bench/inference/ninfer_bench_support.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. The report prints that name, so it cannot be restated locally.",
-      "reason": "Includes the port's own ninfer/kv_storage.h for kv_storage_name and parse_kv_storage. Upstream carries a local kv_cache_name in the .cpp instead and has no such header; the port's table is the engine's own spelling and is what per_domain_kl.py compares."
-    },
     "bench/models/qwen3_5/benchmarks.cmake": {
       "status": "M",
       "disposition": "product",
@@ -224,6 +212,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "An anchor fix for the port's own gate: check_doc_links.py resolves every link target including its fragment, and these two maintainer documents are written in Chinese upstream, so the anchors are the full heading text rather than the English stubs the links used."
+    },
+    "docs/maintainer/qwen4_exp-execution.md": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "docs/performance.md": {
       "status": "M",
@@ -1161,12 +1155,6 @@
       "review": "product",
       "reason": "Publishes the three per-position recall vectors as metrics (see the header entry above)."
     },
-    "src/serve/generation_service.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "Carries speculative_proposed_per_position, speculative_recall1_per_position and speculative_recall16_per_position out of the engine, so a served lane reports its drafter's recall rather than only its accept rate. Carries speculative_proposed_per_position, speculative_recall1_per_position and speculative_recall16_per_position out of the engine, so a served lane reports its drafter's recall rather than only its accept rate, and adds `#include <span>`, which upstream's own request_error_to_api_error signature needs and its header does not include. That is a Windows necessity measured 2026-10-07: with the include absent, MSVC fails the four serve translation units with C2039 'span is not a member of std' and cascades, while upstream's libstdc++ build pulls the header transitively and upstream has no CI to notice."
-    },
     "src/serve/http_server.cpp": {
       "status": "M",
       "disposition": "unknown",
@@ -1443,11 +1431,23 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
+    "tests/ops/reduction/vocabulary_logprobs.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/ops/sampling/accept_greedy.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "windows",
       "reason": "MSVC cannot deduce template arguments for std::initializer_list of std::array without an explicit struct or type."
+    },
+    "tests/ops/sampling/vocabulary.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "tests/ops/softmax_attention/plain_and_packed.cpp": {
       "status": "M",
@@ -1514,12 +1514,6 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- win32: _WIN32. Open it before changing this path."
-    },
-    "tests/test_host_timing.cpp": {
-      "status": "M",
-      "disposition": "windows",
-      "review": "windows",
-      "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
     "tests/test_http_error_handler.cpp": {
       "status": "M",
@@ -1622,12 +1616,6 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "The Python half of the Win32 file I/O work: pread, pwrite and the binary-mode flag come from tools/artifact/file_io.py, which branches on sys.platform because POSIX page-cache controls have no Windows equivalent. src/artifact/file_io.cpp carries the C++ half."
-    },
-    "tools/bench/run_ninfer_bench_matrix.py": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "windows",
-      "reason": "Subprocess call states encoding='utf-8'. Upstream's call uses text=True with no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and the payload is deliberately non-ASCII. Windows necessity, found by the subprocess-encoding gate (check_subprocess_encoding.py), which exists because upstream wrote the same defect twice. No assertion changed."
     },
     "tools/bench/run_serve_corpus.py": {
       "status": "M",

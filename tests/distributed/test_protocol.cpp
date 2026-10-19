@@ -2,6 +2,7 @@
 #include "models/common/qwen/vision/control.h"
 #include "models/qwen4_exp/wire.h"
 #include "runtime/executor/protocol.h"
+#include "runtime/executor/input.h"
 
 #include <sys/socket.h>
 
@@ -144,7 +145,7 @@ void native_work() {
     contract.validate(work, request, masks);
     masks.rows[0].words.pop_back();
     rejects([&] { contract.validate(work, request, masks); });
-    q::ComputeResult result{{{1, 3, 1, {5, 6}, {23, 5}, 0, 0.125}}, {}};
+    q::ComputeResult result{{{1, 3, 1, {5, 6}, {23, 5}, 0}}};
     q::Commit commit{{{original.member, {2, 6}, 2, false, false, false}}, {}};
     contract.validate(work, q::Result{result}, commit);
     commit.rows[0].accepted = 1;
@@ -159,14 +160,25 @@ void native_work() {
     require(received_commit.rows[0].accepted == 1 && received_commit.rows[0].terminal &&
                 received_commit.rows[0].slots.destination == 6,
             "commit changed in transit");
+    q::ComputeResult prefill;
+    prefill.rows.resize(1);
+    prefill.rows[0].processed = 128;
+    wire::Encoder encoded_prefill;
+    q::encode_result(encoded_prefill, q::Result{prefill});
+    const auto prefill_bytes = std::move(encoded_prefill).take();
+    wire::Decoder prefill_input(prefill_bytes);
+    const auto received_prefill = std::get<q::ComputeResult>(q::decode_result(prefill_input));
+    prefill_input.finish();
+    require(received_prefill.rows.size() == 1 && received_prefill.rows[0].processed == 128 &&
+                received_prefill.rows[0].tokens.empty(),
+            "a non-sampling prefill result must decode without optional token payloads");
     wire::Encoder encoded_result;
     q::encode_result(encoded_result, q::Result{result});
     const auto result_bytes = std::move(encoded_result).take();
     wire::Decoder result_input(result_bytes);
     const auto received_result = std::get<q::ComputeResult>(q::decode_result(result_input));
     require(received_result.rows[0].tokens == result.rows[0].tokens &&
-                received_result.rows[0].input_tokens == result.rows[0].input_tokens &&
-                received_result.rows[0].vision_seconds == 0.125,
+                received_result.rows[0].input_tokens == result.rows[0].input_tokens,
             "result changed in transit");
 }
 
@@ -185,7 +197,8 @@ void queues() {
     const std::array normal{dist::OutgoingMessage{1, message(wire::Kind::Submit, 256)}};
     const std::array continuation{dist::OutgoingMessage{1, message(wire::Kind::Discard, 16)}};
     require(source.try_send(normal) && !source.try_send(normal), "normal queue has no bound");
-    require(source.try_send(continuation, true), "normal input consumed continuation capacity");
+    require(source.try_send(continuation, ninfer::distributed::Traffic::Continuation),
+            "normal input consumed continuation capacity");
     source.start();
     target.start();
     std::size_t received = 0;
@@ -208,26 +221,117 @@ void queues() {
         std::this_thread::yield();
     }
 }
+
+void inputs() {
+    int sockets[2];
+    require(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, sockets) == 0,
+            "input socketpair failed");
+    dist::TransportLimits limits;
+    limits.input_bytes    = (256ULL << 10) + 128;
+    limits.input_messages = 1;
+    dist::Transport source(limits), target(limits);
+    source.add(1, dist::Socket(sockets[0]));
+    target.add(0, dist::Socket(sockets[1]));
+    auto data = std::make_shared<wire::Bytes>(600ULL << 10);
+    for (std::size_t i = 0; i < data->size(); ++i) (*data)[i] = std::byte(i % 251);
+    const auto expected                    = *data;
+    std::weak_ptr<const wire::Bytes> owner = data;
+    runtime::InputTransfers transfers;
+    const auto keys = transfers.begin({{1, 7, {std::byte{19}}, {*data}, data}});
+    data.reset();
+    require(!owner.expired() && !transfers.ready(keys), "input owner was released before upload");
+    transfers.progress(source, 11);
+    const auto control =
+        std::make_shared<wire::Message>(wire::Message{wire::Kind::Commit, 11, {std::byte{23}}});
+    const dist::OutgoingMessage message{1, control};
+    require(source.try_send({&message, 1}, dist::Traffic::Continuation),
+            "bulk input consumed continuation capacity");
+    source.start();
+    target.start();
+    wire::Bytes received;
+    bool began = false, ended = false, control_received = false;
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!ended) {
+        require(std::chrono::steady_clock::now() < until, "bounded input transfer stalled");
+        transfers.progress(source, 11);
+        auto value = target.poll();
+        if (!value) {
+            std::this_thread::yield();
+            continue;
+        }
+        if (value->message.kind == wire::Kind::Commit) {
+            require(!began, "queued bulk input blocked a control continuation");
+            control_received = true;
+            continue;
+        }
+        wire::Decoder in(value->message.payload);
+        require(in.u64() == 7, "input identity changed");
+        if (value->message.kind == wire::Kind::InputBegin) {
+            const auto metadata = in.bytes();
+            require(!began && metadata.size() == 1 && metadata[0] == std::byte{19},
+                    "input metadata changed");
+            began = true;
+        } else if (value->message.kind == wire::Kind::InputChunk) {
+            require(began && in.u64() == 0 && in.u64() == received.size(),
+                    "input chunk ordering changed");
+            const auto bytes = in.bytes();
+            received.insert(received.end(), bytes.begin(), bytes.end());
+        } else {
+            require(value->message.kind == wire::Kind::InputEnd && received == expected,
+                    "input was sealed without its complete payload");
+            ended = true;
+        }
+        in.finish();
+    }
+    require(control_received && !transfers.ready(keys), "input bypassed receiver readiness");
+    transfers.complete(1, 7);
+    require(transfers.ready(keys) && owner.expired(), "ready input retained its source payload");
+    transfers.release(7);
+}
 } // namespace
 
 int main() {
     try {
         native_work();
         queues();
-        MemorySummary memory;
-        memory.workspace                             = {128, 64, 96};
-        memory.cuda_graph                            = GraphMemorySummary{42, -12, 5, -8};
-        memory.moe.emplace().fixed_experts_per_layer = {1, 7, 3};
+        inputs();
+        RankSnapshot memory;
+        memory.rank                                             = 1;
+        memory.node                                             = 3;
+        memory.memory.workspace                                 = {64, 96, 80};
+        memory.memory.experts.emplace().fixed_experts_per_layer = {1, 7, 3};
+        RankMemoryBudget budget;
+        budget.graphs = GraphMemorySummary{42, -12, 5, -8};
         wire::Encoder out;
         runtime::protocol::encode(out, memory);
+        runtime::protocol::encode(out, budget);
         const auto bytes = std::move(out).take();
         wire::Decoder in(bytes);
-        const auto report = runtime::protocol::memory_summary(in);
+        const auto report   = runtime::protocol::rank_snapshot(in);
+        const auto planning = runtime::protocol::memory_budget(in);
         in.finish();
-        require(report.workspace.peak_used_bytes == 96 &&
-                    report.cuda_graph->preparation_increment_bytes == -12 &&
-                    report.moe->fixed_experts_per_layer == std::vector<std::uint32_t>{1, 7, 3},
-                "resource report lost its values");
+        require(report.rank == 1 && report.node == 3 &&
+                    report.memory.workspace.required_peak_bytes == 96 &&
+                    planning.graphs->preparation_increment_bytes == -12 &&
+                    report.memory.experts->fixed_experts_per_layer ==
+                        std::vector<std::uint32_t>{1, 7, 3},
+                "resource observation lost rank identity, values or signed calibration");
+        RankExecutionObservation completion;
+        completion.path                                 = ExecutionPath::Graph;
+        completion.gpu                                  = {123, {}, 456, {}};
+        completion.communication_graph.calls[0]         = 37;
+        completion.communication_graph.payload_bytes[0] = 8192;
+        wire::Encoder observed;
+        runtime::protocol::encode(observed, completion);
+        const auto observed_bytes = std::move(observed).take();
+        wire::Decoder completed_input(observed_bytes);
+        const auto completed = runtime::protocol::rank_execution_observation(completed_input);
+        completed_input.finish();
+        require(completed.path == ExecutionPath::Graph && completed.gpu.result_stream_ns == 123 &&
+                    !completed.gpu.commit_stream_ns &&
+                    completed.communication_graph.calls[0] == 37 &&
+                    completed.communication_graph.payload_bytes[0] == 8192,
+                "completion observations lost GPU coverage or replayed communication work");
         std::cout << "native work, decision/commit contract and control queues passed\n";
         return 0;
     } catch (const std::exception& error) {

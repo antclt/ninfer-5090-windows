@@ -41,6 +41,9 @@
       "tg8_k3_graph": "the tool's own matrix cell and series labels",
       "tg_lengths_k": "the tool's own matrix cell and series labels"
     },
+    "tools/bench/probe_prefill_floor.py": {
+      "device_wait_exposed_seconds": "reads historic request log key superseded by observability unification"
+    },
     "tools/bench/run_serve_concurrency.py": {
       "concurrent_http_send": "the tool's own result keys",
       "ninfer_serve_concurrency_bench_point": "the tool's own result keys",
@@ -55,11 +58,15 @@
       "decode_device_wait_us_per_round_stddev": "the tool's own result keys and CSV column names",
       "decode_host_us_per_round_mean": "the tool's own result keys and CSV column names",
       "decode_host_us_per_round_stddev": "the tool's own result keys and CSV column names",
+      "decode_scheduler_yield_us_per_round_mean": "the tool's own result keys and CSV column names",
+      "decode_scheduler_yield_us_per_round_stddev": "the tool's own result keys and CSV column names",
       "decode_tok_s_mean": "the tool's own result keys and CSV column names",
       "decode_tok_s_stddev": "the tool's own result keys and CSV column names",
       "engine_host_exposed_ms_mean": "the tool's own result keys and CSV column names",
       "engine_host_exposed_ms_stddev": "the tool's own result keys and CSV column names",
       "ninfer_serve_corpus_result": "the tool's own result keys and CSV column names",
+      "prefill_tok_s_mean": "the tool's own result keys and CSV column names",
+      "prefill_tok_s_stddev": "the tool's own result keys and CSV column names",
       "prompt_tokens_mean": "the tool's own result keys and CSV column names",
       "prompt_tokens_stddev": "the tool's own result keys and CSV column names",
       "queue_wait_ms_mean": "the tool's own result keys and CSV column names",

@@ -32,9 +32,9 @@ struct QsaBatchView {
 };
 
 struct QsaProjectionView {
-    Tensor query;       // BF16 [256,24,T,B].
-    Tensor key;         // BF16 [256,2,T,B].
-    Tensor value;       // BF16 [256,2,T,B].
+    Tensor query;       // BF16 [256,Hq,T,B].
+    Tensor key;         // BF16 [256,Hkv,T,B].
+    Tensor value;       // BF16 [256,Hkv,T,B].
     Tensor index_query; // BF16 [128,4,T,B].
     Tensor index_key;   // BF16 [128,T,B], raw projection.
 };
@@ -132,15 +132,14 @@ struct QsaSparseGqaExecutionEnvelope {
     std::uint32_t max_visible_tokens = 262144;
 };
 
-/** Capacity over every positive T in [min_tokens,max_tokens], with fixed storage, B and envelope.
- * Includes only Op-local scratch, measured from a 256-byte-aligned workspace cursor.
+/** Capacity over every positive T in [min_tokens,max_tokens], with fixed storage, query/KV heads, B
+ * and envelope. Includes only Op-local scratch, measured from a 256-byte-aligned workspace cursor.
  * multiprocessor_count is the positive physical SM count used by execution.
  */
-[[nodiscard]] std::size_t
-qsa_sparse_gqa_workspace_capacity_bytes(KvCacheStorage storage, std::int32_t min_tokens,
-                                        std::int32_t max_tokens, std::int32_t batch_size,
-                                        QsaSparseGqaExecutionEnvelope envelope,
-                                        std::int32_t multiprocessor_count);
+[[nodiscard]] std::size_t qsa_sparse_gqa_workspace_capacity_bytes(
+    KvCacheStorage storage, std::int32_t query_heads, std::int32_t kv_heads,
+    std::int32_t min_tokens, std::int32_t max_tokens, std::int32_t batch_size,
+    QsaSparseGqaExecutionEnvelope envelope, std::int32_t multiprocessor_count);
 
 /**
  * Op: qsa_sparse_gqa
@@ -158,10 +157,10 @@ qsa_sparse_gqa_workspace_capacity_bytes(KvCacheStorage storage, std::int32_t min
  * K8V4 values represent R*V, so apply R^T to the fully reduced attention before the gate.
  *
  * Domain / numeric:
- * T>0, B=1..8. Query, gate and out are contiguous, 16-byte-aligned BF16 [256,24,T,B].
- * Cache supports BFloat16 (BF16 K / FP16 V), Fp8E4M3Row256, Int8Group64, Nvfp4Group16 and
- * Fp8KeyNvfp4Value. Data/scale planes follow paged_kv_storage_layout(storage,256), with
- * [leading_extent,64,2,G] geometry. Features are contiguous; naturally aligned positive,
+ * T>0, B=1..8. Query, gate and out are contiguous, 16-byte-aligned BF16 [256,Hq,T,B], (Hq,Hkv) in
+ * {(24,2),(12,1)}. Cache supports BFloat16 (BF16 K / FP16 V), Fp8E4M3Row256, Int8Group64,
+ * Nvfp4Group16 and Fp8KeyNvfp4Value. Data/scale planes follow paged_kv_storage_layout(storage,256),
+ * with [leading_extent,64,Hkv,G] geometry. Features are contiguous; naturally aligned positive,
  * non-overlapping page-major outer strides are used. Q and softmax probabilities are not
  * quantized to low-bit operands. The A16 numerical policy applies to the complete attention
  * and gate; intermediate arithmetic remains private. Decoded KV tiles stay on chip; there is
@@ -228,16 +227,19 @@ void qsa_sparse_gqa(const Tensor& query, const Tensor& output_gate,
  *
  * Logical shapes / supported domain:
  * The current rotary implementation accepts rotary_dim=64, interleaved sections [11,11,10].
- * T>0, B in [1,8], A=1 or 3. Projections and both outputs have the shapes above, are contiguous
- * and 16-byte aligned. Norm weights are contiguous, naturally aligned BF16 vectors. Positions
- * are contiguous I32 [T,B]; rho is contiguous I32 [T,A,B]. Metadata is contiguous Device I32 [B].
- * Tail/records follow QsaTailStateView's feature-contiguous, naturally aligned stride rules.
- * Main-cache data and scale planes:
- *   BFloat16: BF16 K / FP16 V [256,64,2,G]; no scales.
- *   Int8Group64: I8 K/V [256,64,2,G]; FP16 scales [4,64,2,G].
- *   Fp8E4M3Row256: FP8_E4M3FN K/V [256,64,2,G]; FP16 scales [1,64,2,G].
- *   Nvfp4Group16: packed U8 K/V [128,64,2,G]; U8 E4M3 scales [16,64,2,G].
- *   Fp8KeyNvfp4Value: the FP8 key planes and NVFP4 value planes above.
+ * Hkv=1 or 2, Hq=12*Hkv; index queries always have four heads. Cache and projections agree on
+ * Hkv. T>0, B in [1,8], A=1 or 3. Projections and both outputs have the shapes above, are
+ * contiguous and 16-byte aligned. Norm weights are contiguous, naturally aligned BF16 vectors.
+ * Positions are contiguous I32 [T,B]; rho is contiguous I32 [T,A,B]. Metadata is contiguous Device
+ * I32 [B]. Tail/records follow QsaTailStateView's feature-contiguous, naturally aligned stride
+ * rules. Main-cache data and scale planes:
+ *
+ * - BFloat16: BF16 K / FP16 V [256,64,Hkv,G]; no scales.
+ * - Int8Group64: I8 K/V [256,64,Hkv,G]; FP16 scales [4,64,Hkv,G].
+ * - Fp8E4M3Row256: FP8_E4M3FN K/V [256,64,Hkv,G]; FP16 scales [1,64,Hkv,G].
+ * - Nvfp4Group16: packed U8 K/V [128,64,Hkv,G]; U8 E4M3 scales [16,64,Hkv,G].
+ * - Fp8KeyNvfp4Value: the FP8 key planes and NVFP4 value planes above.
+ *
  * Cache planes are page-major with contiguous features and non-overlapping positive outer
  * strides; tables have contiguous I32 page entries and a non-overlapping row stride.
  * Both caches share G and the identical block_tables view. R and the state pool size are positive.

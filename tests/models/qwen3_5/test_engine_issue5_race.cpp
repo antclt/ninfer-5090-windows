@@ -170,8 +170,8 @@ int exercise_concurrent_cache_hit(const char* artifact) {
         return 1;
     }
     std::cout << "root published: prompt=" << source.prompt.prompt_tokens
-              << " path=" << static_cast<int>(source.prefix_reuse_path)
-              << " reused=" << source.reused_prompt_tokens << '\n';
+              << " path=" << static_cast<int>(source.stats.prefix_reuse_path)
+              << " reused=" << source.stats.reused_prompt_tokens << '\n';
 
     // The continuation of that session: same prefix, the assistant turn echoed back *including* its
     // reasoning content, then a new user line. That is what their client sends, and what makes the
@@ -212,7 +212,7 @@ int exercise_concurrent_cache_hit(const char* artifact) {
     //    The source above has completed (its result was consumed by `generate`), so its edge is released
     //    and its slot is eligible. The pressure request is a distinct, non-reusing prompt, as the
     //    reference scenario uses.
-    const ninfer::RuntimeStats before_pressure = engine.runtime_stats();
+    const ninfer::RuntimeStats before_pressure = engine.snapshot().runtime;
     // Pressure with a distinct, non-reusing prompt, exactly as `exercise_host_restore` does. Two earlier
     // attempts failed here for opposite reasons: one used a different session key with reuse disabled but
     // an oversized pool, and another reused the *same* key, which adds a private owner to the session
@@ -222,7 +222,7 @@ int exercise_concurrent_cache_hit(const char* artifact) {
     ninfer::PromptInput pressure = session_root(session_body(kRootWords), "issue5-race-pressure");
     const ninfer::GenerationResult pressure_result =
         engine.generate(engine.prepare(std::move(pressure)), request_options(2, false));
-    const ninfer::RuntimeStats after_pressure = engine.runtime_stats();
+    const ninfer::RuntimeStats after_pressure = engine.snapshot().runtime;
     std::cout << "pressure: outputs=" << pressure_result.generated_token_ids.size() << '\n';
     report("  after pressure", after_pressure);
     // Reported, not required. An earlier version failed the run when nothing was demoted, which made the
@@ -243,7 +243,7 @@ int exercise_concurrent_cache_hit(const char* artifact) {
     std::cout << "holder submitted; generating while the continuation starts\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
-    const ninfer::RuntimeStats before = engine.runtime_stats();
+    const ninfer::RuntimeStats before = engine.snapshot().runtime;
     ninfer::GenerationHandle hitter =
         engine.submit(engine.prepare(std::move(continuation)), request_options(16, true));
 
@@ -259,20 +259,20 @@ int exercise_concurrent_cache_hit(const char* artifact) {
     }
     try {
         const ninfer::GenerationResult hit = hitter.wait();
-        std::cout << "continuation finished: reused=" << hit.reused_prompt_tokens
-                  << " path=" << static_cast<int>(hit.prefix_reuse_path)
+        std::cout << "continuation finished: reused=" << hit.stats.reused_prompt_tokens
+                  << " path=" << static_cast<int>(hit.stats.prefix_reuse_path)
                   << " outputs=" << hit.generated_token_ids.size() << '\n';
         // Reported, not required, for the same reason as the demotion check above. Whether reuse took the
         // endpoint or the closure path is a proximate condition; the reporter's symptom is the underflow
         // and the permanent unavailability, and that is what this loop must be able to catch.
-        if (hit.reused_prompt_tokens == 0) {
+        if (hit.stats.reused_prompt_tokens == 0) {
             std::cout << "note: the continuation reused nothing (informational)\n";
         }
     } catch (const std::exception& error) {
         failure = error.what();
     }
 
-    const ninfer::RuntimeStats after = engine.runtime_stats();
+    const ninfer::RuntimeStats after = engine.snapshot().runtime;
     report("  after", after);
     if (after.context_transfers.state[1].images > before.context_transfers.state[1].images) {
         std::cout << "note: the continuation restored state from host, which is the path under test\n";

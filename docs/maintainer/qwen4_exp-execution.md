@@ -429,7 +429,7 @@ PLE cache 和进程内存分别计费；registered 范围不是另一份专家�
 | Main/MTP 物理执行与采用 | [execution](../../src/models/qwen4_exp/program/execution.cpp)、[mtp](../../src/models/qwen4_exp/program/mtp.cpp)、[commit](../../src/models/qwen4_exp/program/commit.cpp) |
 | 请求事务、页组与 checkpoint | [session](../../src/models/qwen4_exp/session/)、[directory](../../src/models/common/context/directory.h) |
 | StateImage 与本地上下文执行 | [state](../../src/models/qwen4_exp/state/)、[context](../../src/models/qwen4_exp/program/context.cpp) |
-| 静态 expert 排序 | [expert_priority](../../src/models/qwen4_exp/program/expert_priority.cpp) |
+| 静态 expert 排序 | [expert_priority](../../src/models/qwen4_exp/parallel/expert_priority.cpp) |
 
 [Tests](../../tests/README.md)维护 Op 数学、状态语义、PLE 和模型加载测试入口；
 [Benchmarks](../../bench/README.md)维护局部与完整 Engine 测量。
