@@ -43,7 +43,10 @@ RELEASES = Path(r"C:\AI\releases")
 
 EXES = ["ninfer-serve.exe", "ninfer.exe", "ninfer-perplexity.exe"]
 DLLS = ["avcodec-63.dll", "avformat-63.dll", "avutil-61.dll",
-        "swscale-10.dll", "swresample-7.dll"]
+        "swscale-10.dll", "swresample-7.dll",
+        # The engine's own shared libraries (ninfer_ops and ninfer_moe_cpu are SHARED since
+        # 35aede69); every executable above imports ninfer_ops.dll and exits 0xC0000135 without it.
+        "ninfer_ops.dll", "ninfer_moe_cpu.dll"]
 ROOT_FILES = ["README.md", "RELEASE_NOTES.md", "LICENSE", "NOTICE"]
 # The four start_*.bat are generated from the table, so they are derived from it here rather
 # than restated; the other three are hand-written and ship as they are.
@@ -58,8 +61,11 @@ LAUNCHER_FILES = [
 TOOL_FILES = ["upgrade_ninfer_v2_to_v3.py", "chat_templates"]
 
 # The converter, so an extracted archive can build an image from the sources it fetches: `python -m
-# tools.convert` needs both packages under `tools/`, and nothing else from tools/ is imported by them.
+# tools.convert` needs both packages under `tools/`.
 TOOL_PACKAGES = ["convert", "artifact"]
+# Data the converter reads from elsewhere under tools/: the proposal head's token ranking
+# (tools/convert/proposal.py DEFAULT_RANKING). Without it every build_model.py line fails.
+TOOL_DATA = ["freq_corpus/fixtures/ranking/ranking.train.counts.i64"]
 
 
 def _notes_version() -> str:
@@ -177,7 +183,8 @@ def main() -> int:
                                   (ROOT_FILES, REPO, stage),
                                   (LAUNCHER_FILES, REPO, stage),
                                   (TOOL_FILES, REPO / "tools", stage),
-                                  (TOOL_PACKAGES, REPO / "tools", stage / "tools")):
+                                  (TOOL_PACKAGES, REPO / "tools", stage / "tools"),
+                                  (TOOL_DATA, REPO / "tools", stage / "tools")):
         for name in group:
             source = location / name
             if not source.exists():
@@ -191,6 +198,7 @@ def main() -> int:
                 total += sum(f.stat().st_size for f in source.rglob("*")
                              if f.is_file() and "__pycache__" not in f.parts and f.suffix != ".pyc")
             else:
+                (dest / name).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest / name)
                 total += source.stat().st_size
     # The DLLs are LGPL, so their licence text has to travel with them.

@@ -30,6 +30,9 @@ REQUIRED = [
     "avutil-61.dll",
     "swscale-10.dll",
     "swresample-7.dll",
+    # The engine's shared libraries: without them every executable exits 0xC0000135 silently.
+    "ninfer_ops.dll",
+    "ninfer_moe_cpu.dll",
     "launcher_env.bat",
     "download_model.bat",
     "download_model.py",
@@ -41,6 +44,8 @@ REQUIRED = [
     "tools/convert/official_recipes.py",
     "tools/convert/qwen3_8_27b_nvfp4_calibration.json",
     "tools/artifact/writer.py",
+    # Read by tools/convert/proposal.py for every line's proposal head.
+    "tools/freq_corpus/fixtures/ranking/ranking.train.counts.i64",
     # Every launcher the packager stages, derived from the same table the packager derives it from.
     # This list was four hand-copied names, which meant the check could not fail for a launcher it
     # did not name -- so an archive that silently lost the Swift or NVIDIA lane passed, which is the
