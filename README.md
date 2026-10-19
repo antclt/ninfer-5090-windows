@@ -96,14 +96,18 @@ same engine natively on Windows 11 x64 with MSVC and CUDA, with no WSL2 or Docke
 
 ### Build
 
+You can run `build_windows.bat` from the repository root for an automated one-click build (which automatically downloads the matching FFmpeg LGPL shared dev files if missing, configures CMake with Ninja, compiles in Release mode, and stages the FFmpeg DLLs).
+
+Alternatively, compile manually from an x64 Native Tools Command Prompt:
+
 ```bat
 call "<VisualStudio>\VC\Auxiliary\Build\vcvars64.bat" x64
 cmake -B build -S . -G Ninja -DCMAKE_CUDA_ARCHITECTURES=120a ^
-      -DNINFER_ENABLE_AVX2=ON -DCMAKE_BUILD_TYPE=Release
+      -DNINFER_ENABLE_AVX2=ON -DCMAKE_BUILD_TYPE=Release -DNINFER_BUILD_MEDIA_ACQUIRE=ON
 cmake --build build --config Release -j
 ```
 
-producing `build/apps/ninfer-serve.exe`.
+producing `build/apps/ninfer-serve.exe`, `ninfer.exe`, and `ninfer-perplexity.exe`.
 
 Two build notes specific to Windows:
 
@@ -111,7 +115,7 @@ Two build notes specific to Windows:
   to consumers as the **`PkgConfig::FFMPEG`** target, so the upstream targets that link it
   need no changes.
 - The FFmpeg runtime DLLs must sit beside the executables. Copy `ffmpeg\bin\*.dll` into
-  `build\apps\` after building; without them the process exits immediately with
+  `build\apps\` after building (done automatically by `build_windows.bat`); without them the process exits immediately with
   `0xC0000135` (`STATUS_DLL_NOT_FOUND`) and prints nothing.
 
 ### Runtime notes
@@ -156,7 +160,7 @@ QUASAR carries 16.1 GiB and NVFP4-full 17.0 GiB of device weights, both of which
 for the full KV pool. Our earlier NVFP4 image carried 19.7 GiB and could not, which is why it
 was replaced.
 
-`--lm-head-draft` is set per profile because its value is not uniform; the measured gains behind
+The optimized proposal head (`--proposal-head optimized`, formerly `--lm-head-draft`) is set per profile because its value is not uniform; the measured gains behind
 each choice are recorded in [ADR-0005](docs/adr/0005-per-profile-flags-are-measured.md):
 
 - QUASAR: on for both routes;
@@ -186,7 +190,7 @@ rate.
 
 ### Context-cache bounds are set deliberately, and they matter
 
-The launchers pass `--host-context-mib 8192`: one shared Host quota covering StateImages, Main and
+The launchers pass `--host-cache-capacity 8192MiB`: one shared Host quota covering StateImages, Main and
 backend KV, pause snapshots and in-flight transfer destinations. Upstream `b9114396` replaced the
 five separate budgets this paragraph used to name (`--host-state-slots`, `--host-kv-mib`,
 `--max-shared-prefixes`, `--max-private-continuations`, `--max-long-anchors-per-continuation`), and
