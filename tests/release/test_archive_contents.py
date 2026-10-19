@@ -27,3 +27,10 @@ def test_converter_ranking_fixture_is_required_and_present() -> None:
     assert ranking_path in checker.REQUIRED
     assert "freq_corpus/fixtures/ranking/ranking.train.counts.i64" in packager.TOOL_DATA
     assert (REPO / ranking_path).is_file()
+
+
+if __name__ == "__main__":
+    test_shared_engine_libraries_are_required()
+    test_converter_ranking_fixture_is_required_and_present()
+    print("  archive contents checks passed")
+

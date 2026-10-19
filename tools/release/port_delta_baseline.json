@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-18",
+  "recorded": "2026-10-19",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -539,7 +539,7 @@
     },
     "src/distributed/deployment.cpp": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Recognize POSIX absolute paths starting with '/' as absolute on remote deployment nodes because std::filesystem::path::is_absolute() returns false on Windows without a drive letter."
     },
@@ -705,6 +705,18 @@
       "review": "product",
       "reason": "The DFlash2 NVFP4 linear route: the drafter's own shapes (feature, qkv, attention output, conv projection, selector) registered alongside the dense ones, with their launch entry points. A port addition -- upstream's NVFP4 dispatcher carries the dense shapes only."
     },
+    "src/ops/gated_residual/mix/dgx_spark/launch.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/ops/gated_residual/mix/rtx5090/launch.cu": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "src/ops/kv_cache/context_materialize/context_kv_materialize.cpp": {
       "status": "M",
       "disposition": "product",
@@ -765,6 +777,12 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path. MSVC alignment necessity, measured by tools/scripts/probe_tma_align.cmd and quoted in the file's own comment: CUtensorMap carries no alignment attribute under this build (cuda.h applies alignas(TENSOR_MAP_ALIGN) only when __cplusplus >= 201103L, and nvcc's MSVC host pass reports 199711L), so the by-value descriptor needs an explicit `alignas(64)`, and 128 is rejected with C2719. The struct above it declares no override for the same reason. Kept through the 2026-10-07 merge alongside upstream's new predicated-K block, which mutates the descriptor arrays and is why they are no longer const."
     },
+    "src/ops/linear/kernels/bf16/bf16_template_launch.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "src/ops/linear/kernels/fp8/fp8_a8_mma.cuh": {
       "status": "M",
       "disposition": "unknown",
@@ -806,6 +824,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "The DFlash2 NVFP4 linear route: the drafter's own shapes (feature, qkv, attention output, conv projection, selector) registered alongside the dense ones, with their launch entry points. A port addition -- upstream's NVFP4 dispatcher carries the dense shapes only."
+    },
+    "src/ops/linear/kernels/nvfp4/nvfp4_template_launch.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "src/ops/linear/projection/fp8/fp8_launch.cuh": {
       "status": "M",
@@ -1037,7 +1061,7 @@
     },
     "src/product/config/file.cpp": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Recognize POSIX absolute paths starting with '/' as absolute for distributed worker and artifact paths in TOML validation on Windows."
     },
@@ -1475,7 +1499,7 @@
     },
     "tests/test_cli_options.cpp": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Normalize NINFER_SOURCE_DIR with lexically_normal() so Windows path separators match the engine's canonical path representation in diagnostics."
     },

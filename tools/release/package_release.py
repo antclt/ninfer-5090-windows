@@ -162,7 +162,7 @@ def main() -> int:
         print("  documentation claims. Sizing them is a measurement, not a packaging decision.")
         return 1
 
-    for name in EXES:
+    for name in EXES + ["ninfer_ops.dll", "ninfer_moe_cpu.dll"]:
         image = BUILD / name
         if not image.exists():
             continue
