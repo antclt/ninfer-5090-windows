@@ -145,20 +145,20 @@ if not errorlevel 1 (
   --vision ^
   --spec dflash2 ^
   --draft-tokens 7 ^
-  --lm-head-draft ^
+  --proposal-head optimized ^
   --kv-dtype k8v4 ^
   --host 127.0.0.1 ^
   --port 8086 ^
   --model-id qwen3.8-27b-quasar-v3-dflash2-vision ^
   --max-context 262144 ^
-  --device-state-slots 1 ^
+  --extra-state-slots 1 ^
   --kv-capacity auto ^
   --prefill-chunk 8192 ^
   --max-concurrency 1 ^
-  --host-context-mib 8192 ^
+  --host-cache-capacity 8192MiB ^
   --preserve-thinking ^
-  --default-thinking-budget 4096 ^
-  --pending-timeout-ms 600000 ^
+  --thinking-budget 4096 ^
+  --pending-timeout 600s ^
   --chat-template %TEMPLATE%
 
 pause

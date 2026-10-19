@@ -59,7 +59,7 @@ def main() -> int:
     # The profile's shipped flags, with this harness's own port and model id. The quota under test is
     # appended, since it is what this script varies.
     args = [EXE, MODEL] + launcher_args(PROFILE, port=PORT, model_id=MODEL_ID) + [
-        "--host-context-mib", host_mib]
+        "--host-cache-capacity", f"{host_mib}MiB"]
     handle = log.open("w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(args, cwd=CWD, stdin=subprocess.DEVNULL, stdout=handle,
                             stderr=subprocess.STDOUT,
@@ -76,7 +76,7 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             time.sleep(2)
     if not ready:
-        print(f"   host-context-mib={host_mib}: FAILED TO START")
+        print(f"   host-cache-capacity={host_mib}MiB: FAILED TO START")
         stop_engine(proc)
         return 1
 

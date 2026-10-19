@@ -52,7 +52,7 @@ expect(varying_flags(profile(spec="mtp", draft=3))
        == ["--spec mtp", "--draft-tokens 3", "--kv-dtype fp8"],
        "speculation alone adds the backend and its depth")
 expect(varying_flags(profile(spec="dflash2", draft=7, lm_head=True))
-       == ["--spec dflash2", "--draft-tokens 7", "--lm-head-draft", "--kv-dtype fp8"],
+       == ["--spec dflash2", "--draft-tokens 7", "--proposal-head optimized", "--kv-dtype fp8"],
        "the proposal head rides with a speculative backend")
 expect(varying_flags(profile(lm_head=True)) == ["--kv-dtype fp8"],
        "a head without a backend adds nothing, because there is no head to select")
@@ -80,11 +80,11 @@ expect(len(args) == sum(1 if value is None and " " not in flag
                         for flag, value in flags),
        "each ordered flag flattens to its tokens, or to one token with its value")
 
-server_only = {"--host", "--port", "--model-id", "--max-concurrency", "--host-context-mib",
-               "--device-state-slots", "--pending-timeout-ms"}
+server_only = {"--host", "--port", "--model-id", "--max-concurrency", "--host-cache-capacity",
+               "--extra-state-slots", "--pending-timeout"}
 cli = cli_args(profile(vision=True, spec="mtp", draft=4, lm_head=True))
 expect(not (set(cli) & server_only), "the CLI flag set names no server-only flag")
-expect("--lm-head-draft" in cli, "the CLI flag set includes the proposal head it accepts")
+expect("--proposal-head" in cli and "optimized" in cli, "the CLI flag set includes the proposal head it accepts")
 expect("--vision" in cli and "--spec" in cli, "the CLI flag set includes what both interfaces share")
 
 # The header states the lane's KV format, and that word is rendered from the row rather than fixed in
@@ -98,5 +98,6 @@ if failures:
     for failure in failures:
         print(f"  FAIL  {failure}")
     raise SystemExit(1)
-print("  launcher generation checks passed")
-raise SystemExit(0)
+
+if __name__ == "__main__":
+    print("  launcher generation checks passed")

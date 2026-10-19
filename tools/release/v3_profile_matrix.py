@@ -577,9 +577,9 @@ def profile_args(profile: dict, log_jsonl: Path,
     args = [str(EXE), str(MODELS / profile["art"])]
     args += launcher_args(profile, port=PORT)
     if slots is not None:
-        at = args.index("--device-state-slots")
+        at = args.index("--extra-state-slots")
         args[at + 1] = slots
-    args += ["--log-stats-interval-ms", "2000", "--request-log-jsonl", str(log_jsonl),
+    args += ["--stats-interval", "2000ms", "--request-log-jsonl", str(log_jsonl),
              "--seed", "1234"]
     return args, profile["model_id"]
 
@@ -604,7 +604,7 @@ def build_args(art: str, spec: str, draft: int, vision: bool, max_context: int,
     if spec != "none":
         a += ["--spec", spec, "--draft-tokens", str(draft)]
         if lm_head:
-            a += ["--lm-head-draft"]
+            a += ["--proposal-head", "optimized"]
     if vision:
         a += ["--vision"]
     a += ["--kv-capacity", kv_capacity, "--kv-dtype", kv_dtype]
@@ -617,11 +617,11 @@ def build_args(art: str, spec: str, draft: int, vision: bool, max_context: int,
             # that the ladder reports as a context refusal, which is a measurement of nothing.
             value = template_path()
         a.append(flag) if value is None else a.extend([flag, value])
-    a += ["--log-stats-interval-ms", "2000",
+    a += ["--stats-interval", "2000ms",
           "--request-log-jsonl", str(log_jsonl),
           "--seed", "1234"]
     if greedy:
-        a += ["--greedy"]
+        a += ["--temperature", "0"]
     return a
 
 
@@ -948,7 +948,7 @@ def main() -> int:
                     help="verify mode: omit --lm-head-draft")
     ap.add_argument("--file", dest="files", action="append",
                     help="profile mode: shipped launcher file; repeatable, default all four")
-    ap.add_argument("--device-state-slots", dest="slots", default=None,
+    ap.add_argument("--extra-state-slots", "--device-state-slots", dest="slots", default=None,
                     help="profile mode: override the profile's slot count to choose the value")
     ap.add_argument("--kv-dtype", default="fp8",
                     choices=["bf16", "int8", "fp8", "nvfp4", "k8v4"],

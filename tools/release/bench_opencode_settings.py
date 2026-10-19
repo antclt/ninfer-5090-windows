@@ -293,7 +293,7 @@ def start(profile: dict, thinking_budget: int = 4096) -> tuple[subprocess.Popen,
     args = [EXE, str(Path(MODELS) / profile["art"])] + launcher_args(
         profile, port=port, model_id="settings-probe") + [
         "--request-log-jsonl", str(jsonl),
-        "--default-thinking-budget", str(thinking_budget)]
+        "--thinking-budget", str(thinking_budget)]
     handle = log.open("w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(args, cwd=CWD, stdin=subprocess.DEVNULL, stdout=handle,
                             stderr=subprocess.STDOUT, env=launcher_environment(profile))

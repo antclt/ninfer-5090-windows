@@ -149,7 +149,10 @@ def run_arm(artifact: Path, port: int, blocks: list[str], args: argparse.Namespa
         # one from either end of its range (it saturates acceptance), so the comparison has to run on
         # real text, and the lane's own proposal-head setting has to be able to change without
         # changing anything else.
-        if "--lm-head-draft" in lane_flags:
+        if "--proposal-head" in lane_flags:
+            idx = lane_flags.index("--proposal-head")
+            del lane_flags[idx:idx + 2]
+        elif "--lm-head-draft" in lane_flags:
             lane_flags.remove("--lm-head-draft")
     set_flag(lane_flags, "--chat-template", str(args.template))
     flags = lane_flags

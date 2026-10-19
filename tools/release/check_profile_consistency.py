@@ -264,18 +264,18 @@ def main() -> int:
                                          greedy=True, lm_head=True, kv_dtype="fp8")
         probe_flags = {token for token in probe if token.startswith("--")}
         for flag in ("--kv-capacity", "--kv-dtype", "--spec", "--draft-tokens",
-                     "--max-context", "--vision", "--lm-head-draft"):
+                     "--max-context", "--vision", "--proposal-head"):
             check(f"the probe emits {flag} even though it varies it", flag in probe_flags)
         # And the other half of the same class: a flag that leaves the invariant list entirely is
         # dropped by the probe while the launchers keep it -- which is how kv-dtype silently stopped
         # being passed at all. Assert the probe's flag set covers a launcher's, allowing the flags it
-        # deliberately varies and --device-state-slots, which the probe omits because the server's
+        # deliberately varies and --extra-state-slots, which the probe omits because the server's
         # default is the value every launcher ships (1); that omission is noted rather than fixed here.
         launcher_profile = next(p for p in PROFILES if p["file"] == "start_quasar_v3_dflash2_vision.bat")
         launcher_flags = {token for token in launcher_args(launcher_profile) if token.startswith("--")}
         varied = {"--kv-capacity", "--kv-dtype", "--spec", "--draft-tokens", "--max-context",
-                  "--lm-head-draft", "--vision", "--host", "--port", "--model-id",
-                  "--device-state-slots"}
+                  "--proposal-head", "--vision", "--host", "--port", "--model-id",
+                  "--extra-state-slots"}
         missing = launcher_flags - probe_flags - varied
         check("the probe covers every launcher flag it does not vary", not missing,
               f"missing {sorted(missing)}")
@@ -332,11 +332,11 @@ def main() -> int:
     tokens = line.split("QUASAR_ARGS=", 1)[1].rstrip('"').split() if line else []
     check("QUASAR_ARGS matches the CLI flag set", tokens == cli_args(mtp4),
           f"{len(tokens)} tokens against {len(cli_args(mtp4))} generated")
-    for flag in ("--vision", "--lm-head-draft", "--prefill-chunk", "--max-context",
+    for flag in ("--vision", "--proposal-head", "--prefill-chunk", "--max-context",
                  "--kv-capacity", "--kv-dtype"):
         check(f"QUASAR_ARGS passes {flag}", flag in tokens)
     for flag in ("--host", "--port", "--model-id", "--max-concurrency",
-                 "--host-context-mib", "--pending-timeout-ms"):
+                 "--host-cache-capacity", "--pending-timeout"):
         check(f"QUASAR_ARGS omits the server-only {flag}", flag not in tokens)
 
     print("\n=== retired launchers absent from the tree ===")
@@ -366,7 +366,7 @@ def main() -> int:
         body = read(WT / "tools" / "release" / name)
         check(f"{name} imports from profiles", "from profiles import" in body)
         check(f"{name} does not hand-write the cache bounds",
-              "--host-context-mib" not in body or "INVARIANT_FLAGS" in body
+              "--host-cache-capacity" not in body or "INVARIANT_FLAGS" in body
               or "launcher_args" in body)
 
     # The matrix explores combinations no profile covers, so it composes the invariants rather

@@ -382,10 +382,10 @@ INVARIANT_FLAGS: list[tuple[str, str | None]] = [
     # 8192 MiB is the value the old pair carried (16 slots out of a pinned 8 GiB), so this is the
     # direct translation rather than a new choice; it is re-measured, not assumed, because the new
     # cache sizes host State/KV, pause snapshots and in-flight destinations together.
-    ("--host-context-mib", "8192"),
+    ("--host-cache-capacity", "8192MiB"),
     ("--preserve-thinking", None),
-    ("--default-thinking-budget", "4096"),
-    ("--pending-timeout-ms", "600000"),
+    ("--thinking-budget", "4096"),
+    ("--pending-timeout", "600s"),
     # The template the lane renders with. The launcher resolves %TEMPLATE% beside itself; a harness
     # gets the source-tree path from launcher_args. Without this the lane inherits whichever template
     # its artifact happens to embed, and the two shipped artifacts embed different ones.
@@ -422,7 +422,7 @@ def varying_flags(profile: dict[str, Any]) -> list[str]:
         out.append(f"--spec {profile['spec']}")
         out.append(f"--draft-tokens {profile['draft']}")
         if profile["lm_head"]:
-            out.append("--lm-head-draft")
+            out.append("--proposal-head optimized")
     out.append(f"--kv-dtype {profile['kv_dtype']}")
     return out
 
@@ -556,7 +556,7 @@ def ordered_flags(profile: dict[str, Any]) -> list[tuple[str, str | None]]:
                 ("--port", str(profile["port"])),
                 ("--model-id", profile["model_id"]),
                 ("--max-context", str(profile["ctx"])),
-                ("--device-state-slots", str(profile["device_state_slots"]))])
+                ("--extra-state-slots", str(profile["device_state_slots"]))])
     out.extend(INVARIANT_FLAGS)
     return out
 
@@ -656,7 +656,7 @@ def cli_args(profile: dict[str, Any]) -> list[str]:
     if profile["spec"] != "none":
         out.extend(["--spec", profile["spec"], "--draft-tokens", str(profile["draft"])])
         if profile["lm_head"]:
-            out.append("--lm-head-draft")
+            out.extend(["--proposal-head", "optimized"])
     out.extend(["--max-context", str(profile["ctx"])])
     # The bound flags come from INVARIANT_FLAGS rather than being restated here, which is the drift
     # class the profile consistency gate exists to catch. kv-dtype is per-profile and comes from
