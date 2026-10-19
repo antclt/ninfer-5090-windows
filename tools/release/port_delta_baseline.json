@@ -215,9 +215,9 @@
     },
     "docs/maintainer/qwen4_exp-execution.md": {
       "status": "M",
-      "disposition": "unknown",
-      "review": "",
-      "reason": ""
+      "disposition": "documentation",
+      "review": "documentation",
+      "reason": "Fixed broken link to src/models/qwen4_exp/parallel/expert_priority.cpp to satisfy check_doc_links gate."
     },
     "docs/performance.md": {
       "status": "M",
@@ -1433,9 +1433,9 @@
     },
     "tests/ops/reduction/vocabulary_logprobs.cpp": {
       "status": "M",
-      "disposition": "unknown",
-      "review": "",
-      "reason": ""
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Added #include <array> and explicit std::array<int, 3> type arguments to fix MSVC CTAD inside braced initializer lists."
     },
     "tests/ops/sampling/accept_greedy.cpp": {
       "status": "M",
@@ -1445,9 +1445,9 @@
     },
     "tests/ops/sampling/vocabulary.cpp": {
       "status": "M",
-      "disposition": "unknown",
-      "review": "",
-      "reason": ""
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Added #include <array> and explicit std::array<int, 4> type arguments to fix MSVC CTAD inside braced initializer lists."
     },
     "tests/ops/softmax_attention/plain_and_packed.cpp": {
       "status": "M",
