@@ -43,6 +43,7 @@ foreach(isa IN ITEMS avx2 avx512 avx512_bf16)
 endforeach()
 
 add_library(ninfer_moe_cpu SHARED ${ninfer_moe_cpu_sources})
+set_target_properties(ninfer_moe_cpu PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 ninfer_internal_includes(ninfer_moe_cpu)
 target_link_libraries(ninfer_moe_cpu PUBLIC ninfer_core PRIVATE ninfer_cpu_executor
   ninfer_moe_cpu_avx2 ninfer_moe_cpu_avx512 ninfer_moe_cpu_avx512_bf16)

@@ -84,7 +84,7 @@ void down(Operands o, Down schedule, Scratch scratch, cudaStream_t stream) {
 template <int Features, int Tokens>
 void folded_up(Operands o, Scratch scratch, cudaStream_t stream) {
     using S               = FoldedUpSchedule<Features, Tokens>;
-    constexpr auto kernel = up_mma_mix_kernel<Features, Tokens>;
+    static constexpr auto kernel = up_mma_mix_kernel<Features, Tokens>;
     const int bytes       = common::prepare_shared<S::kSharedBytes, kernel, true>();
     common::for_each_token_slice(o.columns, Tokens, [&](int offset, int count) {
         const unsigned blocks = (kWidth / Features) * common::div_up(count, Tokens);
