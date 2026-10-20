@@ -1748,6 +1748,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "The same Win32 branching as tools/artifact/file_io.py, for the same reason."
+    },
+    "src/core/device_memory.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Native Windows implementation of read_system_memory via GlobalMemoryStatusEx; upstream assumes Linux /proc/meminfo."
     }
   }
 }

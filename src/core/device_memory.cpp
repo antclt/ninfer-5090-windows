@@ -5,9 +5,28 @@
 #include <fstream>
 #include <string>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace ninfer {
 namespace {
 void read_system_memory(DeviceMemorySnapshot& snapshot) {
+#if defined(_WIN32)
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (!GlobalMemoryStatusEx(&status)) {
+        throw std::runtime_error("cannot read system memory availability");
+    }
+    snapshot.system_available_bytes = static_cast<std::size_t>(status.ullAvailPhys);
+    snapshot.system_total_bytes     = static_cast<std::size_t>(status.ullTotalPhys);
+#else
     std::ifstream input("/proc/meminfo");
     std::string key, rest;
     std::uint64_t kib;
@@ -18,6 +37,7 @@ void read_system_memory(DeviceMemorySnapshot& snapshot) {
         if (snapshot.system_available_bytes && snapshot.system_total_bytes) return;
     }
     throw std::runtime_error("cannot read system memory availability");
+#endif
 }
 } // namespace
 
