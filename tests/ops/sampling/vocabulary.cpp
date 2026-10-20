@@ -33,13 +33,13 @@ struct Fixture {
     Fixture(int rows, int tokens, int batch, int ranks, int cap, bool penalties, bool masked)
         : v(rows), t(tokens), b(batch), r(ranks), k(cap), domain(v * r - 3),
           mask_stride((domain + 31) / 32), logits(std::size_t(v) * t * b * r),
-          counts(std::size_t(domain) * b), valid(b, t), drafts(std::max(1, t - 1) * b),
+          counts(std::size_t(domain) * b), valid(b, t), drafts(static_cast<std::size_t>(std::max(1, t - 1)) * b),
           masks(std::size_t(mask_stride) * t * b, UINT32_MAX), configs(b),
           d_logits(logits.size() * 2), d_counts(counts.size() * 4), d_valid(b * 4),
           d_drafts(drafts.size() * 4), d_masks(masks.size() * 4),
           d_configs(b * sizeof(ops::SamplingConfig)), d_keys(std::size_t(k) * t * b * r * 8),
           d_work(std::max<std::size_t>(
-              256, ops::vocabulary_candidates_workspace_capacity_bytes(v, t * b, k))),
+              256, ops::vocabulary_candidates_workspace_capacity_bytes(v, static_cast<std::int64_t>(t) * b, k))),
           keys(d_keys.span(), DType::I64, {k, t, b, r}),
           valid_view(d_valid.span(), DType::I32, {b}), workspace(d_work.span()) {
         if (t > 1) draft_view = Tensor(d_drafts.span(), DType::I32, {t - 1, b});
@@ -263,7 +263,7 @@ int sample_decisions(bool stochastic) {
 int acceptance(bool stochastic, int d = 5) {
     constexpr int batch = 8, ranks = 2;
     const int cap = stochastic ? 20 : 1;
-    std::vector<std::uint64_t> keys(cap * (d + 1) * batch * ranks);
+    std::vector<std::uint64_t> keys(static_cast<std::size_t>(cap) * (d + 1) * batch * ranks);
     std::vector<int> drafts(d * batch), extents(batch), lengths(batch, 30), anchors(batch),
         expected((d + 1) * batch), accepted(batch), licensed(batch);
     std::vector<ops::SamplingConfig> configs(batch);
@@ -276,7 +276,7 @@ int acceptance(bool stochastic, int d = 5) {
         for (int col = 0; col < d; ++col) drafts[b * d + col] = 100 + col;
         for (int col = 0; col <= extents[b]; ++col) {
             const int token = col == accepted[b] ? 200 + col : 100 + col;
-            keys[(((col % ranks) * batch + b) * (d + 1) + col) * cap] = key(.25F, token);
+            keys[static_cast<std::size_t>(((col % ranks) * batch + b) * (d + 1) + col) * cap] = key(.25F, token);
         }
         for (int col = 0; col < accepted[b]; ++col) expected[b * (d + 1) + col] = 100 + col;
         expected[b * (d + 1) + accepted[b]] = 200 + accepted[b];

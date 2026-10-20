@@ -257,7 +257,7 @@ void RankProgramImpl::validate_decision(runtime::ExecutionTicket ticket,
         if (row.member >= op.batch || seen[row.member] || !op.sampling[row.member].constrained ||
             row.positions !=
                 static_cast<std::uint32_t>(resources.frame.host_ingress->extents[row.member] + 1) ||
-            row.words.size() != words * row.positions || (row.dead_positions >> row.positions) != 0)
+            row.words.size() != static_cast<std::size_t>(words) * row.positions || (row.dead_positions >> row.positions) != 0)
             throw std::invalid_argument("Qwen3.5 decision mask has invalid shape or membership");
         seen[row.member] = true;
     }

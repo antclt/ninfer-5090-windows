@@ -76,7 +76,7 @@ Session::inspect_source(const RequestBasePlan& base, std::optional<CheckpointHan
             out.transfers.push_back(context::state_transfer_requirement(
                 {p.directory.states().image_bytes(), 1},
                 runtime::ContextTransferDirection::HostToDevice));
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
             const auto& storage     = p.directory.pool(pool);
             const auto& prefix      = c.snapshot.prefix(pool);
             std::uint32_t missing   = 0;
@@ -111,8 +111,8 @@ Session::inspect_source(const RequestBasePlan& base, std::optional<CheckpointHan
             finish_run();
             if (missing)
                 out.transfers.push_back(context::kv_transfer_requirement(
-                    {runtime::KvPoolId{pool}}, runtime::ContextTransferDirection::HostToDevice,
-                    missing, work));
+                    {runtime::KvPoolId{static_cast<std::uint16_t>(pool)}},
+                    runtime::ContextTransferDirection::HostToDevice, missing, work));
         }
     }
     for (const auto point : carried)
@@ -172,11 +172,11 @@ BindingReservation Session::start_binding(const RequestBasePlan& base, runtime::
             continue;
         if (!p.checkpoints.erasable(point)) return {.source_valid = false};
         retired.push_back(point);
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             retired_prefixes[pool].push_back(&p.checkpoints.at(point).snapshot.prefix(pool));
     }
     if (consume)
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             retired_prefixes[pool].push_back(&checkpoint->snapshot.prefix(pool));
     const auto released = p.footprint(retired, true);
     BindingReservation result;
@@ -184,7 +184,7 @@ BindingReservation Session::start_binding(const RequestBasePlan& base, runtime::
         states.device_occupied() - released.state_slots == states.device_capacity())
         result.shortage.state_slots = 1;
     result.capacity_possible = true;
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
         const auto& storage = p.directory.pool(pool);
         const auto* prefix  = checkpoint ? &checkpoint->snapshot.prefix(pool) : nullptr;
         const auto end      = pool == 0 ? peak : mtp_history_frontier(peak);
@@ -241,7 +241,7 @@ BindingReservation Session::start_binding(const RequestBasePlan& base, runtime::
             else if (const auto clone = p.checkpoints.reserve())
                 tx.clones.emplace_back(point, *clone);
         }
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
             const auto* prefix = checkpoint ? &checkpoint->snapshot.prefix(pool) : nullptr;
             migration.add_binding(pool, p.directory.pool(pool).histories().prepare_binding(
                                             prefix, prefix ? prefix->frontier() : 0,
@@ -299,7 +299,7 @@ ContextProgress detail::SessionImpl::complete_context() {
         if (auto* tx = std::get_if<detail::BindOperation>(&operation.action)) {
             if (!tx->binding) throw std::logic_error("binding operation has no prepared sequence");
             auto& s = *tx->binding;
-            for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+            for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
                 s.histories[pool] = migration.binding(pool)->commit();
             using StateAction = detail::StateBindingAction;
             if (tx->state_action == StateAction::Move) {
@@ -401,7 +401,7 @@ ResourceReservation Session::reserve_units(std::span<const ExecutionUnit> units)
             throw std::logic_error("execution reservation repeats a sequence");
         Need need{&s, std::max(s.recovery_peak, p.unit_end(s, unit.kind, unit.tokens))};
         if (need.end > p.shape.max_context) throw std::out_of_range("execution exceeds context");
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
             const auto& histories = p.directory.pool(pool).histories();
             const auto handle     = s.histories[pool].handle();
             const auto begin      = pool == 0 ? s.continuation.metadata.main_frontier
@@ -415,7 +415,7 @@ ResourceReservation Session::reserve_units(std::span<const ExecutionUnit> units)
         needed.push_back(need);
     }
     ContextResources shortage;
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
         const auto free = p.directory.pool(pool).allocation().available_pages();
         if (additional.kv_page_groups[pool] > free)
             shortage.kv_page_groups[pool] = additional.kv_page_groups[pool] - free;
@@ -423,7 +423,7 @@ ResourceReservation Session::reserve_units(std::span<const ExecutionUnit> units)
     if (shortage.first_kv_deficit()) return {.shortage = shortage};
     for (std::size_t i = 0; i < units.size(); ++i) {
         auto& s = *needed[i].sequence;
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             p.directory.pool(pool).histories().reserve_growth(s.histories[pool].handle(),
                                                               needed[i].pages[pool]);
         s.permit             = units[i];

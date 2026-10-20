@@ -581,8 +581,8 @@ int run(bool ties = false, bool dependent = false) {
         const auto pack = [&]<class T>(const std::vector<T>& values, int stride) {
             std::vector<T> out;
             for (int b : order)
-                out.insert(out.end(), values.begin() + b * stride,
-                           values.begin() + (b + 1) * stride);
+                out.insert(out.end(), values.begin() + static_cast<std::ptrdiff_t>(b) * stride,
+                           values.begin() + static_cast<std::ptrdiff_t>(b + 1) * stride);
             return out;
         };
         const auto pi = pack(candidate_ids, kSteps * kCandidates);

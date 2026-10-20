@@ -17,7 +17,7 @@ context::PhysicalReclaim<ContextResources>
 physical_facts(const SessionImpl& program, std::span<const CheckpointHandle> allowed,
                std::span<const CheckpointHandle> excluded, ContextResources shortage) {
     std::array<context::ReclaimPool, ContextResources::pool_capacity> pools;
-    for (std::uint16_t i = 0; i < program.directory.pool_count(); ++i) {
+    for (std::uint32_t i = 0; i < program.directory.pool_count(); ++i) {
         const auto& pool = program.directory.pool(i);
         pools[i]         = {&pool.histories(), &pool.pages(), program.pools[i].host_page_stride};
     }
@@ -35,7 +35,7 @@ void seal(Demotion& plan) {
     plan.checkpoint_revision = p.checkpoints.revision();
     for (const auto image : plan.images)
         plan.image_epochs.push_back(p.directory.states().content_epoch(image));
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
         for (const auto page : plan.pages[pool]) {
             const auto& store = p.directory.pool(pool).pages();
             plan.page_versions[pool].push_back(
@@ -51,7 +51,7 @@ quote_release(const SessionImpl& p, const context::PhysicalReclaim<ContextResour
     auto proof   = std::make_shared<Release>();
     proof->owner = &p;
     for (const auto group : selection.freed())
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             if (shortage.kv_page_groups[pool])
                 for (const auto& page : facts.groups[group].pages[pool])
                     if (page.releasable &&
@@ -65,19 +65,19 @@ bool valid_demotion(const SessionImpl& p, const Demotion& plan, bool refresh_hol
     for (const auto h : plan.records)
         if (!p.checkpoints.erasable(h)) return false;
     ContextResources needed{.state_slots = static_cast<std::uint32_t>(plan.images.size())};
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
         needed.kv_page_groups[pool] = plan.pages[pool].size();
     std::vector<bool> images;
     std::array<std::vector<bool>, 2> pages;
     if (refresh_holders) {
         const auto facts = physical_facts(p, plan.records, {}, needed);
         images.resize(p.directory.states().capacity());
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             pages[pool].resize(p.directory.pool(pool).pages().capacity());
         for (const auto& group : facts.groups) {
             for (const auto image : group.states)
                 images[p.directory.states().descriptor_index(image)] = true;
-            for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+            for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
                 for (const auto& page : group.pages[pool])
                     pages[pool][p.directory.pool(pool).pages().descriptor_index(page.handle)] =
                         true;
@@ -94,7 +94,7 @@ bool valid_demotion(const SessionImpl& p, const Demotion& plan, bool refresh_hol
                                                             states.checkpoint_references(image)))
             return false;
     }
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
         const auto& store = p.directory.pool(pool).pages();
         if (plan.pages[pool].size() != plan.page_versions[pool].size()) return false;
         for (std::size_t i = 0; i < plan.pages[pool].size(); ++i) {
@@ -162,7 +162,7 @@ ContextResources SessionImpl::footprint(std::span<const CheckpointHandle> input,
         out.state_slots += states.device_resident(image);
         if (states.host_resident(image)) out.host_bytes += directory.states().image_bytes();
     }
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool) {
         const auto& storage = directory.pool(pool);
         std::vector<context::PageId> pages;
         if (released) {
@@ -196,7 +196,7 @@ std::shared_ptr<Demotion> SessionImpl::demotion(std::span<const CheckpointHandle
         for (const auto image : checkpoint_images(out->records))
             if (directory.states().device_resident(image) && !directory.states().source_pins(image))
                 out->images.push_back(image);
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool)
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool)
         if (shortage.kv_page_groups[pool]) {
             const auto& pages = directory.pool(pool).pages();
             for (const auto page : checkpoint_pages(out->records, pool))
@@ -215,7 +215,7 @@ ContextDemotion SessionImpl::describe_demotion(std::shared_ptr<const Demotion> p
     for (const auto image : plan->images)
         if (!directory.states().host_resident(image))
             out.host_bytes += directory.states().image_bytes();
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool) {
         out.released.kv_page_groups[pool] = plan->pages[pool].size();
         for (const auto page : plan->pages[pool])
             if (!directory.pool(pool).pages().host_replica_current(page))
@@ -240,7 +240,7 @@ bool SessionImpl::prepare_demotion(context::ContextTransaction& migration, const
         }
     }
     std::array<std::vector<context::PageId>, 2> redundant_pages;
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool) {
         auto& store = directory.pool(pool).pages();
         std::vector<context::PageId> pages;
         for (auto page : plan.pages[pool]) {
@@ -261,7 +261,7 @@ bool SessionImpl::prepare_demotion(context::ContextTransaction& migration, const
     for (const auto image : redundant)
         if (!directory.states().drop_device_replica(image))
             throw std::logic_error("state demotion lost exclusivity");
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool)
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool)
         for (const auto page : redundant_pages[pool])
             if (!directory.pool(pool).pages().drop_device_replica(page))
                 throw std::logic_error("KV demotion lost exclusivity");
@@ -501,7 +501,7 @@ std::size_t Session::release_redundant_host(std::span<const CheckpointHandle> ex
             continue;
         (void)p.directory.states().drop_host_replica(image);
     }
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
         const auto protected_pages = p.checkpoint_pages(excluded, pool);
         auto& store                = p.directory.pool(pool).pages();
         std::vector<context::PageId> drop;

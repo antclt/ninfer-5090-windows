@@ -1777,7 +1777,7 @@ public:
                     mask.member         = row.member;
                     mask.positions      = row.drafts.size() + 1;
                     mask.dead_positions = 1;
-                    mask.words.resize(stride * mask.positions, 0);
+                    mask.words.resize(static_cast<std::size_t>(stride) * mask.positions, 0);
                     for (std::size_t column = 0; column < mask.positions; ++column)
                         mask.words[column * stride] = 1;
                     input.rows.push_back(std::move(mask));

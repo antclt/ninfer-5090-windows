@@ -693,8 +693,8 @@ int full_prefix_case(int kv_heads, KvCacheStorage storage, int width, int batch,
             f32_to_bf16(static_cast<float>(static_cast<int>((i * 13 + 5) % 251) - 125) / 32);
     }
     std::fill_n(input_k.begin(), kFullHeadDim, std::uint16_t{0});
-    std::vector<std::int32_t> counts(batch), rows(batch), positions(width * batch);
-    std::vector<std::int32_t> mapping(logical_pages * table_rows);
+    std::vector<std::int32_t> counts(batch), rows(batch), positions(static_cast<std::size_t>(width) * batch);
+    std::vector<std::int32_t> mapping(static_cast<std::size_t>(logical_pages) * table_rows);
     for (std::size_t i = 0; i < mapping.size(); ++i) mapping[i] = static_cast<int>(2 * i + 1);
 
     DeviceBuffer d_k = to_device(input_k), d_v = to_device(input_v);

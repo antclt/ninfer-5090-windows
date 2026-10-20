@@ -27,7 +27,7 @@ namespace {
 
 int prepare_verify_case(int k, int batch) {
     const int width = k + 1;
-    std::vector<std::int32_t> anchors(batch), lengths(batch), extents(batch), drafts(k * batch);
+    std::vector<std::int32_t> anchors(batch), lengths(batch), extents(batch), drafts(static_cast<std::size_t>(k) * batch);
     for (int b = 0; b < batch; ++b) {
         anchors[b] = 70000 + 11 * b;
         lengths[b] = 131072 + 1009 * b;
@@ -37,7 +37,7 @@ int prepare_verify_case(int k, int batch) {
     DeviceBuffer d_lengths = to_device(lengths);
     DeviceBuffer d_drafts  = to_device(drafts);
     DeviceBuffer d_extents = to_device(extents);
-    GuardedDeviceBuffer d_full(width * batch * sizeof(std::int32_t));
+    GuardedDeviceBuffer d_full(static_cast<std::size_t>(width) * batch * sizeof(std::int32_t));
     GuardedDeviceBuffer d_ids(d_full.bytes()), d_positions(d_full.bytes());
     Tensor a(d_anchors.span(), DType::I32, {batch}), l(d_lengths.span(), DType::I32, {batch});
     Tensor d(d_drafts.span(), DType::I32, {k, batch}), e(d_extents.span(), DType::I32, {batch});
@@ -66,7 +66,7 @@ int prepare_verify_case(int k, int batch) {
         else
             launch();
         context.synchronize();
-        std::vector<std::int32_t> expected_ids(width * batch), expected_positions(width * batch);
+        std::vector<std::int32_t> expected_ids(static_cast<std::size_t>(width) * batch), expected_positions(static_cast<std::size_t>(width) * batch);
         for (int b = 0; b < batch; ++b)
             for (int j = 0; j < width; ++j) {
                 expected_ids[b * width + j] =

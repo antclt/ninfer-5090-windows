@@ -453,7 +453,7 @@ public:
         retire(ticket);
         for (std::uint32_t lane = 0; lane < kBatch; ++lane) {
             const auto begin = target.begin() + std::size_t(lane) * width * hidden;
-            hidden_[lane].insert(hidden_[lane].end(), begin, begin + accepted[lane] * hidden);
+            hidden_[lane].insert(hidden_[lane].end(), begin, begin + static_cast<std::size_t>(accepted[lane]) * hidden);
             rows_[lane].main_frontier += accepted[lane];
             rows_[lane].backend_frontier = rows_[lane].main_frontier - 1;
             for (int axis = 0; axis < 3; ++axis)

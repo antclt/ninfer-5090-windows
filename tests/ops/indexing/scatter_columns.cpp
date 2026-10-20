@@ -13,7 +13,7 @@ namespace {
 template <class Word>
 int run(DType type, int features, int tokens, int batch) {
     const int slots = batch * 2 + 1, stride = features + 16;
-    std::vector<Word> values(features * tokens * batch), initial(slots * stride, Word(0xabcd));
+    std::vector<Word> values(static_cast<std::size_t>(features) * tokens * batch), initial(static_cast<std::size_t>(slots) * stride, Word(0xabcd));
     for (std::size_t i = 0; i < values.size(); ++i) values[i] = Word(i * 7919 + 0x8000);
     std::vector<int> columns(batch), selected(batch);
     auto input = to_device(values), dc = to_device(columns), ds = to_device(selected);
@@ -37,8 +37,8 @@ int run(DType type, int features, int tokens, int batch) {
             columns[b]  = (phase + b) % (tokens + 1) - 1;
             selected[b] = columns[b] < 0 ? INT32_MAX : ((b + phase) % batch) * 2;
             if (columns[b] >= 0)
-                std::copy_n(values.begin() + (b * tokens + columns[b]) * features, features,
-                            expected.begin() + selected[b] * stride);
+                std::copy_n(values.begin() + static_cast<std::ptrdiff_t>(b * tokens + columns[b]) * features, features,
+                            expected.begin() + static_cast<std::ptrdiff_t>(selected[b]) * stride);
         }
         CUDA_CHECK(cudaMemcpyAsync(output.data(), initial.data(), output.bytes(),
                                    cudaMemcpyHostToDevice, device.stream()));

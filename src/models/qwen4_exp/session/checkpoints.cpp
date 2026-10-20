@@ -9,7 +9,7 @@ std::optional<CheckpointHandle> SessionImpl::detach(Sequence& s, runtime::Checkp
     if (!s.request->can_checkpoint(f)) return {};
     auto identity = capture_identity(s);
     std::vector<context::HistoryPrefix> prefixes;
-    for (std::uint16_t pool = 0; pool < directory.pool_count(); ++pool)
+    for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool)
         prefixes.push_back(directory.pool(pool).histories().retain_prefix(
             s.histories[pool].handle(),
             pool == 0 ? f : s.continuation.metadata.mtp_frontier.value()));
@@ -122,7 +122,7 @@ bool Session::start_capture(SequenceHandle h) {
         migration.own_state(reservation.destination);
         reservation.destination = {};
         std::vector<context::HistoryPrefix> prefixes;
-        for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool)
+        for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool)
             prefixes.push_back(p.directory.pool(pool).histories().retain_prefix(
                 s.histories[pool].handle(), pool == 0
                                                 ? s.continuation.metadata.main_frontier
@@ -154,7 +154,7 @@ std::optional<std::size_t> Session::pause_host_bytes(SequenceHandle h) const {
     std::size_t bytes = p.directory.states().host_resident(s.continuation.image)
                             ? 0
                             : p.directory.states().image_bytes();
-    for (std::uint16_t pool = 0; pool < p.directory.pool_count(); ++pool) {
+    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
         const auto& storage = p.directory.pool(pool);
         const auto frontier = pool == 0 ? s.continuation.metadata.main_frontier
                                         : s.continuation.metadata.mtp_frontier.value();

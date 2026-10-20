@@ -116,7 +116,7 @@ int gate_rounding(DeviceContext& device, KvCacheStorage storage = KvCacheStorage
     f.envelope.max_visible_tokens = bound;
     f.reset();
     std::fill(f.ghost.begin(), f.ghost.end(), f32_to_bf16(1.0f));
-    const int page = f.tables[f.selectors[0] * f.table_stride];
+    const int page = f.tables[static_cast<std::size_t>(f.selectors[0]) * f.table_stride];
     for (int h = 0; h < f.kv_heads; ++h)
         for (int d = 0; d < 256; ++d)
             f.values.host[f.values.offset(d, h, 0, page)] = half_bits(1.00390625f);

@@ -124,12 +124,12 @@ ExecutionPlan physical_plan(std::shared_ptr<const execution::ModelProfile> profi
             2ULL * o.speculative.draft_tokens * o.max_concurrency * sizeof(TokenId);
     if (out.persistent.buffers.mtp && out.profile->ple_placement == ple::Placement::Device)
         out.pinned_draft_bytes =
-            (o.speculative.draft_tokens + 1) * o.max_concurrency * sizeof(TokenId);
+            static_cast<std::size_t>(o.speculative.draft_tokens + 1) * o.max_concurrency * sizeof(TokenId);
     if (out.persistent.buffers.sampled_ids) {
         out.pinned_sampling_bytes =
             o.max_concurrency *
             (sizeof(ops::SamplingConfig) + sizeof(std::int32_t) +
-             (o.speculative.draft_tokens + 1) * ((out.profile->public_tokens + 31) / 32) *
+             static_cast<std::size_t>(o.speculative.draft_tokens + 1) * ((out.profile->public_tokens + 31) / 32) *
                  sizeof(std::uint32_t));
         const auto& buffers = out.persistent.buffers;
         const auto end =

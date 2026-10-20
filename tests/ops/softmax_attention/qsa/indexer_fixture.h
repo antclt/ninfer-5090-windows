@@ -44,8 +44,8 @@ struct Fixture {
           pages(pages_per_row * B + 2), table_stride(table_width + (layout ? 3 : 0)),
           pattern(values), key_row_stride(layout ? 129 : 128),
           key_page_stride(16 * key_row_stride + (layout ? 3 : 0)), q_host(std::size_t(512) * T * B),
-          k_host(key_page_stride * pages), positions(T * B), valid(B), table_rows(B),
-          tables(table_stride * (B + 2)), q(q_host.size() * 2), keys(k_host.size() * 2),
+          k_host(static_cast<std::size_t>(key_page_stride) * pages), positions(static_cast<std::size_t>(T) * B), valid(B), table_rows(B),
+          tables(static_cast<std::size_t>(table_stride) * (B + 2)), q(q_host.size() * 2), keys(k_host.size() * 2),
           pos(positions.size() * 4), lengths(B * 4), rows(B * 4), table(tables.size() * 4),
           ids(std::size_t(512) * T * B * 4), counts(std::size_t(T) * B * 4) {
         query = Tensor(q.span(), DType::BF16, {128, 4, T, B});

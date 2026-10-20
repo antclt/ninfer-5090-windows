@@ -128,7 +128,7 @@ int run_batch_case(int width, int batch, bool dense) {
         CUDA_CHECK(cudaGraphDestroy(graph));
     }
     CUDA_CHECK(cudaStreamDestroy(stream));
-    std::vector<std::int32_t> expected_ids(width * batch), expected_positions(width * batch);
+    std::vector<std::int32_t> expected_ids(static_cast<std::size_t>(width) * batch), expected_positions(static_cast<std::size_t>(width) * batch);
     for (int b = 0; b < batch; ++b)
         for (int j = 0; j < width; ++j) {
             expected_ids[b * width + j]       = j == 0 ? anchors[b] : mask;

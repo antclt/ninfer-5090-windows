@@ -19,7 +19,7 @@ constexpr double kU          = 0x1p-24;
 constexpr double kScoreGamma = (132 * kU) / (1 - 132 * kU);
 
 int verify(Fixture& f, const std::string& label, bool preserved = true) {
-    auto counts  = from_device<int>(f.counts.data(), f.T * f.B);
+    auto counts  = from_device<int>(f.counts.data(), static_cast<std::size_t>(f.T) * f.B);
     auto ids     = from_device<int>(f.ids.data(), std::size_t(512) * f.T * f.B);
     int failures = 0;
     for (int b = 0; b < f.B; ++b)

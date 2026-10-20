@@ -9,11 +9,11 @@ SessionImpl::SessionImpl(std::shared_ptr<const ModelDefinition> model, SessionPl
       directory(plan.context), checkpoints(plan.context.state.logical_capacity * 8ULL) {
     if (!definition) throw std::invalid_argument("invalid Qwen4Exp session definition");
     releases.reserve(shape.max_concurrency);
-    for (std::uint16_t i = 0; i < pool_count(); ++i) {
+    for (std::uint32_t i = 0; i < pool_count(); ++i) {
         const auto& spec = plan.context.pools[i];
         const auto host  = plan_host_kv_page_layout(spec.geometry);
         pools.push_back(
-            {{i}, i == 0 ? "main" : "mtp", &spec.geometry, spec.device_pages, host.page_stride});
+            {{static_cast<std::uint16_t>(i)}, i == 0 ? "main" : "mtp", &spec.geometry, spec.device_pages, host.page_stride});
     }
 }
 

@@ -411,7 +411,7 @@ private:
                 expected = i % 7 + group_.size();
             else {
                 const auto index =
-                    w.operation == Operation::Scatter ? group_.rank() * w.count + i : i;
+                    w.operation == Operation::Scatter ? static_cast<std::size_t>(group_.rank()) * w.count + i : i;
                 for (std::uint32_t rank = 0; rank < group_.size(); ++rank)
                     expected += index % 7 + rank + 1;
             }

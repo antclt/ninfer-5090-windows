@@ -392,8 +392,8 @@ int run_batch_case(CudaExecutionView execution, const Geometry& geometry, KvCach
         std::vector<double> reference(q.size(), 0.0);
         for (int b = 0; b < batch; ++b)
             if (valid[b]) {
-                const std::vector<int> row_positions(positions.begin() + b * width,
-                                                     positions.begin() + b * width + valid[b]);
+                const std::vector<int> row_positions(positions.begin() + static_cast<std::ptrdiff_t>(b) * width,
+                                                     positions.begin() + static_cast<std::ptrdiff_t>(b) * width + valid[b]);
                 auto row_q = extract_request_columns(q, q_column_elements, width, b, valid[b]);
                 auto row_k = extract_request_columns(k, kv_column_elements, width, b, valid[b]);
                 auto row_v = extract_request_columns(v, kv_column_elements, width, b, valid[b]);

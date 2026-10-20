@@ -42,7 +42,7 @@ DeviceBuffer device_config(const ops::SamplingConfig& config) {
 
 int prepare_verify_case(int k, int batch) {
     const int width = k + 1;
-    std::vector<std::int32_t> anchors(batch), lengths(batch), extents(batch), drafts(k * batch);
+    std::vector<std::int32_t> anchors(batch), lengths(batch), extents(batch), drafts(static_cast<std::size_t>(k) * batch);
     for (int b = 0; b < batch; ++b) {
         anchors[b] = 70000 + 11 * b;
         lengths[b] = 131072 + 1009 * b;
@@ -52,7 +52,7 @@ int prepare_verify_case(int k, int batch) {
     DeviceBuffer d_lengths = to_device(lengths);
     DeviceBuffer d_drafts  = to_device(drafts);
     DeviceBuffer d_extents = to_device(extents);
-    GuardedDeviceBuffer d_full(width * batch * sizeof(std::int32_t));
+    GuardedDeviceBuffer d_full(static_cast<std::size_t>(width) * batch * sizeof(std::int32_t));
     GuardedDeviceBuffer d_ids(d_full.bytes()), d_positions(d_full.bytes());
     Tensor a(d_anchors.span(), DType::I32, {batch}), l(d_lengths.span(), DType::I32, {batch});
     Tensor d(d_drafts.span(), DType::I32, {k, batch}), e(d_extents.span(), DType::I32, {batch});
@@ -81,7 +81,7 @@ int prepare_verify_case(int k, int batch) {
         else
             launch();
         context.synchronize();
-        std::vector<std::int32_t> expected_ids(width * batch), expected_positions(width * batch);
+        std::vector<std::int32_t> expected_ids(static_cast<std::size_t>(width) * batch), expected_positions(static_cast<std::size_t>(width) * batch);
         for (int b = 0; b < batch; ++b)
             for (int j = 0; j < width; ++j) {
                 expected_ids[b * width + j] = j > 0 && j <= extents[b] ? drafts[b * k + j - 1] : anchors[b];
@@ -321,7 +321,7 @@ struct SparseAcceptSuite {
                                         const std::vector<ops::SamplingConfig>& configs,
                                         const std::vector<std::int32_t>& token_counts) {
         SparseExpected expected{
-            .licensed_tokens = std::vector<std::int32_t>(kSparseColumns * kSparseBatch, 0),
+            .licensed_tokens = std::vector<std::int32_t>(static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 0),
             .licensed_counts = std::vector<std::int32_t>(kSparseBatch),
             .accepted        = std::vector<std::int32_t>(kSparseBatch),
             .lengths         = initial_lengths,
@@ -427,7 +427,7 @@ struct SparseAcceptSuite {
 
         GuardedDeviceBuffer d_lengths(kSparseBatch * sizeof(std::int32_t));
         GuardedDeviceBuffer d_anchors(kSparseBatch * sizeof(std::int32_t));
-        GuardedDeviceBuffer d_licensed(kSparseColumns * kSparseBatch * sizeof(std::int32_t));
+        GuardedDeviceBuffer d_licensed(static_cast<std::size_t>(kSparseColumns) * kSparseBatch * sizeof(std::int32_t));
         GuardedDeviceBuffer d_licensed_counts(kSparseBatch * sizeof(std::int32_t));
         GuardedDeviceBuffer d_accepted(kSparseBatch * sizeof(std::int32_t));
         initialize(d_lengths, initial_lengths);
@@ -597,12 +597,12 @@ struct SparseAcceptSuite {
     }
 
     int sparse_greedy_direct_case(int pattern = 0, bool general = false) {
-        std::vector<std::int32_t> targets(kSparseColumns * kSparseBatch),
-            drafts(kSparseDrafts * kSparseBatch);
+        std::vector<std::int32_t> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch),
+            drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
-        std::vector<int> ids(kSparseCandidates * kSparseDrafts * kSparseBatch),
+        std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
             extents(kSparseBatch), lengths(kSparseBatch), anchors(kSparseBatch, -1);
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
@@ -644,12 +644,12 @@ struct SparseAcceptSuite {
     }
 
     int generated_general_case() {
-        std::vector<int> targets(kSparseColumns * kSparseBatch),
-            drafts(kSparseDrafts * kSparseBatch);
+        std::vector<int> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch),
+            drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
-        std::vector<int> ids(kSparseCandidates * kSparseDrafts * kSparseBatch),
+        std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
             extents(kSparseBatch), lengths(kSparseBatch), anchors(kSparseBatch, -1);
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
@@ -710,9 +710,9 @@ struct SparseAcceptSuite {
     }
 
     int grammar_mask_case() {
-        std::vector<int> targets(kSparseColumns * kSparseBatch, 42),
-            drafts(kSparseDrafts * kSparseBatch),
-            ids(kSparseCandidates * kSparseDrafts * kSparseBatch),
+        std::vector<int> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 42),
+            drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch),
+            ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
             extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 70),
             anchors(kSparseBatch, 0);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
@@ -721,7 +721,7 @@ struct SparseAcceptSuite {
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
         std::vector<int> history(kSparseTokenDomain * kSparseBatch, 0);
-        masks.assign(kSparseColumns * kSparseBatch * mask_words, 0);
+        masks.assign(static_cast<std::size_t>(kSparseColumns) * kSparseBatch * mask_words, 0);
         const int a = kSparseTokenDomain - 2, b = kSparseTokenDomain - 1, x = 42;
         for (int row = 0; row < kSparseBatch; ++row) {
             configs[row].temperature = row < kSparseBatch / 2 ? 0.0f : 1.0f;
@@ -748,12 +748,12 @@ struct SparseAcceptSuite {
     }
 
     int repeated_history_case(bool stochastic) {
-        std::vector<int> targets(kSparseColumns * kSparseBatch, 100),
-            drafts(kSparseDrafts * kSparseBatch, 100);
+        std::vector<int> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 100),
+            drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch, 100);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
-        std::vector<int> ids(kSparseCandidates * kSparseDrafts * kSparseBatch),
+        std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
             extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 7000),
             anchors(kSparseBatch, -1);
         std::vector<float> q(ids.size(), 0.0f);
@@ -816,8 +816,8 @@ struct SparseAcceptSuite {
         logits[sparse_logit_index(0, 0, 1)] = f32_to_bf16(3.7f);
         logits[sparse_logit_index(0, 1, 0)] = f32_to_bf16(4.0f);
         logits[sparse_logit_index(0, 1, 1)] = f32_to_bf16(3.7f);
-        std::vector<std::int32_t> drafts(kSparseDrafts * kSparseBatch, 0);
-        std::vector<std::int32_t> candidate_ids(kSparseCandidates * kSparseDrafts * kSparseBatch, 0);
+        std::vector<std::int32_t> drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch, 0);
+        std::vector<std::int32_t> candidate_ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch, 0);
         std::vector<float> proposal_q(candidate_ids.size(), 0.0f);
         const std::vector<std::int32_t> lengths{4096};
         const std::vector<std::int32_t> anchors{-1};
@@ -905,7 +905,7 @@ struct SparseAcceptSuite {
         host.token_counts            = static_cast<std::int32_t*>(d_token_counts.data());
         DeviceBuffer d_configs       = to_device(std::vector<ops::SamplingConfig>{host});
         DeviceBuffer d_targets       = to_device(std::vector<std::int32_t>(
-            kSparseColumns * kSparseBatch, 0));
+            static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 0));
         DeviceBuffer d_extents       = to_device(std::vector<std::int32_t>{0});
         GuardedDeviceBuffer d_lengths(sizeof(std::int32_t));
         GuardedDeviceBuffer d_anchors(sizeof(std::int32_t));
@@ -1039,12 +1039,12 @@ struct SparseAcceptSuite {
     }
 
     int sparse_general_mixed_case() {
-        std::vector<std::int32_t> targets(kSparseColumns * kSparseBatch);
+        std::vector<std::int32_t> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
-        std::vector<std::int32_t> drafts(kSparseDrafts * kSparseBatch);
-        std::vector<std::int32_t> candidate_ids(kSparseCandidates * kSparseDrafts * kSparseBatch);
+        std::vector<std::int32_t> drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch);
+        std::vector<std::int32_t> candidate_ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch);
         std::vector<float> proposal_q(candidate_ids.size(), 0.0f);
         std::vector<std::int32_t> extents{2, 1, 1, kSparseDrafts, 0, 3, 2, 4};
         for (auto& extent : extents) extent = std::min(extent, kSparseDrafts);

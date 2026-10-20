@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-19",
+  "recorded": "2026-10-20",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -215,7 +215,7 @@
     },
     "docs/maintainer/qwen4_exp-execution.md": {
       "status": "M",
-      "disposition": "documentation",
+      "disposition": "unknown",
       "review": "documentation",
       "reason": "Fixed broken link to src/models/qwen4_exp/parallel/expert_priority.cpp to satisfy check_doc_links gate."
     },
@@ -296,6 +296,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- measure: measured. Open it before changing this path."
+    },
+    "examples/cli/send_to_serve.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "include/ninfer/ops/candidate_selector.h": {
       "status": "M",
@@ -507,6 +513,12 @@
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: adds <string> for std::to_string, which libstdc++ provides transitively through another header and MSVC does not (C2039). Same class as the <span> include the previous merge added to generation_service.h."
     },
+    "src/core/device_memory.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Native Windows implementation of read_system_memory via GlobalMemoryStatusEx; upstream assumes Linux /proc/meminfo."
+    },
     "src/core/io/file.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -657,6 +669,18 @@
       "review": "",
       "reason": ""
     },
+    "src/models/qwen3_5/program/inputs.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/qwen3_5/program/program.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "src/models/qwen3_5/state/decoder_state.cpp": {
       "status": "M",
       "disposition": "refactor",
@@ -668,6 +692,36 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "A comment recording that the draft attention consumes one fused query+key+value parent while the artifact declares only the three logical parameters: parameters.cpp assembles the parent with ops::prepare_attn_input_proj_weights, and requiring a fused parameter of its own would reject every upstream-generated artifact, since the converter groups the three."
+    },
+    "src/models/qwen4_exp/program/planning.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/qwen4_exp/session/checkpoints.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/qwen4_exp/session/context.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/qwen4_exp/session/reclaim.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "src/models/qwen4_exp/session/session.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "src/ops/CMakeLists.txt": {
       "status": "M",
@@ -1293,6 +1347,12 @@
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: sched_getcpu() has no MSVC equivalent; current_processor() reads GetCurrentProcessorNumberEx and flattens (group, index) the same way core/cpu/system.h numbers CpuAffinity, so the assertion that each worker runs on its planned CPU still compares like with like."
     },
+    "tests/distributed/test_execution.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/expert_cache_cuda_errors.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -1335,6 +1395,18 @@
       "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test and the affected tests. Upstream's code is Linux/GCC-shaped here and does not compile or link under MSVC 14.51 as written. Nothing parses this line; it is printed for a human reading the test output.",
       "reason": "peak_rss_kib() reads PeakWorkingSetSize through GetProcessMemoryInfo on Windows and getrusage elsewhere, so the diagnostic line keeps its field and unit on both. sys/resource.h has no MSVC equivalent and is now included only off _WIN32."
     },
+    "tests/models/qwen3_5/test_mtp_history_real.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/models/qwen3_5/test_native_transactions.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/models/qwen3_5/tests.cmake": {
       "status": "M",
       "disposition": "windows",
@@ -1368,6 +1440,42 @@
     "tests/models/qwen4_exp/tests.cmake": {
       "status": "M",
       "disposition": "windows",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/indexing/position.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/indexing/scatter_bf16_batch.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/indexing/scatter_columns.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/kv_cache/append_full.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/kv_cache/append_prefix.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/kv_cache/context_kv_materialize.cpp": {
+      "status": "M",
+      "disposition": "unknown",
       "review": "",
       "reason": ""
     },
@@ -1431,9 +1539,15 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
+    "tests/ops/ple/test_lookup.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/ops/reduction/vocabulary_logprobs.cpp": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Added #include <array> and explicit std::array<int, 3> type arguments to fix MSVC CTAD inside braced initializer lists."
     },
@@ -1443,11 +1557,53 @@
       "review": "windows",
       "reason": "MSVC cannot deduce template arguments for std::initializer_list of std::array without an explicit struct or type."
     },
+    "tests/ops/sampling/accept_sparse.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/sampling/candidate_selector.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/ops/sampling/vocabulary.cpp": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Added #include <array> and explicit std::array<int, 4> type arguments to fix MSVC CTAD inside braced initializer lists."
+    },
+    "tests/ops/sequence/masked_block.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/sequence/ragged_prefix.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/sequence/shifted_prefix.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/sequence/verify.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
+    "tests/ops/softmax_attention/causal/runner.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "tests/ops/softmax_attention/plain_and_packed.cpp": {
       "status": "M",
@@ -1461,17 +1617,35 @@
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: replaces _Float16 with __half for the binary16 oracle conversions: _Float16 is a Clang/GCC type with no MSVC x64 equivalent, and __half is the same IEEE binary16 with the same round-to-nearest-even conversion."
     },
+    "tests/ops/softmax_attention/qsa/indexer_fixture.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/ops/softmax_attention/qsa/sparse_gqa_fixture.h": {
       "status": "M",
       "disposition": "unknown",
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: the same replacement, and half()/unhalf() renamed to half_bits()/half_value() because <cuda_fp16.h> brings a global `half` type and the helper name became ambiguous."
     },
+    "tests/ops/softmax_attention/qsa/test_indexer.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
+    },
     "tests/ops/softmax_attention/qsa/test_sparse_gqa.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "the renamed helpers' call sites."
+    },
+    "tests/ops/softmax_attention/sliding_window_attention.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "tests/ops/tests.cmake": {
       "status": "M",
@@ -1574,6 +1748,12 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "Subprocess call states encoding='utf-8'. Upstream's new file spawns its probe with text=True and no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and this payload is not ASCII by construction. Windows necessity, found by check_subprocess_encoding.py, the gate that exists because upstream wrote the same defect twice before. No assertion changed."
+    },
+    "third_party/llama-jinja/jinja/json.cpp": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "",
+      "reason": ""
     },
     "third_party/llama-jinja/jinja/runtime.cpp": {
       "status": "M",
@@ -1748,12 +1928,6 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "The same Win32 branching as tools/artifact/file_io.py, for the same reason."
-    },
-    "src/core/device_memory.cpp": {
-      "status": "M",
-      "disposition": "windows",
-      "review": "windows",
-      "reason": "Native Windows implementation of read_system_memory via GlobalMemoryStatusEx; upstream assumes Linux /proc/meminfo."
     }
   }
 }

@@ -59,6 +59,9 @@
 # every push.
 name: gpu-suite
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
 

@@ -120,8 +120,8 @@ void RankProgramImpl::initialize_forward(ComputeOperation& operation, const Forw
         positions[i] = static_cast<std::int32_t>(row.main_frontier + i);
     auto* rope = static_cast<std::int32_t*>(host.rope_positions.data);
     for (int axis = 0; axis < 3; ++axis)
-        std::copy_n(window.rope_positions.begin() + axis * columns + offset, operation.width,
-                    rope + axis * operation.width);
+        std::copy_n(window.rope_positions.begin() + static_cast<std::size_t>(axis) * columns + offset, operation.width,
+                    rope + static_cast<std::size_t>(axis) * operation.width);
     upload_input(operation.width, 1);
     const auto prompt_begin = window.prompt_begin + offset;
     if (window.vision && prompt_begin < window.vision->plan.uses.back().end) {
@@ -198,7 +198,7 @@ void RankProgramImpl::initialize_decode(ComputeOperation& operation, const Decod
             positions[offset] = static_cast<int>(work.rows[row].binding.main_frontier +
                                                  std::min(column, work.rows[row].draft_extent));
             for (int axis = 0; axis < 3; ++axis)
-                rope[axis * columns + offset] =
+                rope[static_cast<std::size_t>(axis) * columns + offset] =
                     positions[offset] + work.rows[row].binding.rope_delta;
         }
     }

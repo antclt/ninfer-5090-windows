@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
         for (int batch = 1; batch <= 8; ++batch) {
             if (batch != 1 && batch != 8 && width != 1 && width != 3 && width != 8 && width != 16)
                 continue;
-            std::vector<int> counts(batch), slots(batch), positions(width * batch, -12345);
+            std::vector<int> counts(batch), slots(batch), positions(static_cast<std::size_t>(width) * batch, -12345);
             for (int b = 0; b < batch; ++b) {
                 counts[b] = b == batch - 1 || b % 3 == 2 ? width
                             : b % 3 == 1                 ? std::max(1, width / 2)

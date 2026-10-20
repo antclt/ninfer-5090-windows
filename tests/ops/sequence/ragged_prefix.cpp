@@ -25,7 +25,7 @@ int run_case(int rows, int width, int batch, bool padded, int mode, bool replay)
         source[i] = static_cast<std::uint16_t>((i * 40503) ^ (i >> 13) ^ (i >> 19));
     GuardedDeviceBuffer input(source.size() * 2), dl(batch * 4), ds(batch * 4), de(batch * 4),
         destination(static_cast<std::size_t>(rows) * width * batch * 2),
-        positions(width * batch * 4), counts(batch * 4);
+        positions(static_cast<std::size_t>(width) * batch * 4), counts(batch * 4);
     Tensor x(input.span(), DType::BF16, {rows, width, 8});
     x.nb[1] = column_stride * 2;
     x.nb[2] = lane_stride * 2;
@@ -42,7 +42,7 @@ int run_case(int rows, int width, int batch, bool padded, int mode, bool replay)
                                    device.execution_view());
     };
     std::vector<int> lanes(batch), starts(batch), ends(batch), expected_counts(batch),
-        expected_positions(width * batch);
+        expected_positions(static_cast<std::size_t>(width) * batch);
     std::vector<std::uint16_t> expected(static_cast<std::size_t>(rows) * width * batch);
     int failures = 0;
     for (int phase = 0; phase < (replay ? 2 : 1); ++phase) {

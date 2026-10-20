@@ -10,6 +10,9 @@
 # %USERPROFILE%\.config\opencode (absent on CI, which it reports as skipped rather than failing).
 name: ci
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [dev, main]

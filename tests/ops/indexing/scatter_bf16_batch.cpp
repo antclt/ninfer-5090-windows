@@ -37,7 +37,7 @@ int run_case(int d, int width, int batch, bool padded, int mode, bool replay, in
     for (int slice = 0; slice < features; ++slice) {
         x[slice] =
             Tensor(input.span().subspan(slice * source_count * 2), DType::BF16, {d, width, batch});
-        y[slice] = Tensor(destination.span().subspan(slice * d * 2), DType::BF16, {d, width, 8});
+        y[slice] = Tensor(destination.span().subspan(static_cast<std::size_t>(slice) * d * 2), DType::BF16, {d, width, 8});
         y[slice].nb[1] = column_stride * 2;
         y[slice].nb[2] = lane_stride * 2;
         y[slice].nb[3] = lane_stride * 8 * 2;
@@ -75,7 +75,7 @@ int run_case(int d, int width, int batch, bool padded, int mode, bool replay, in
             for (int b = 0; b < batch; ++b)
                 for (int j = 0; j < hv[b]; ++j)
                     for (int row = 0; row < d; ++row)
-                        expected[hl[b] * lane_stride + j * column_stride + slice * d + row] =
+                        expected[static_cast<std::size_t>(hl[b]) * lane_stride + static_cast<std::size_t>(j) * column_stride + static_cast<std::size_t>(slice) * d + row] =
                             source[slice * source_count + (std::size_t(b) * width + j) * d + row];
         };
         const std::string label = "scatter_bf16_batch D=" + std::to_string(d) +

@@ -571,7 +571,7 @@ public:
         if (upper < 0) upper = width;
         const auto elements = static_cast<std::size_t>(kHeadDim) * kKVHeads * width * batch;
         std::vector<std::uint16_t> input_k(elements), input_v(elements);
-        std::vector<int> positions(width * batch), counts(batch), lanes(batch);
+        std::vector<int> positions(static_cast<std::size_t>(width) * batch), counts(batch), lanes(batch);
         GuardedDeviceBuffer dk(elements * 2), dv(elements * 2), dp(positions.size() * 4),
             dc(batch * 4), dl(batch * 4);
         Tensor k(dk.span(), DType::BF16, {kHeadDim, kKVHeads, width, batch}),

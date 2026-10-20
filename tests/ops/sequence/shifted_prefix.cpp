@@ -12,7 +12,7 @@ using namespace ninfer::test;
 
 namespace {
 int run(int width, int batch) {
-    std::vector<int> ids(width * batch), positions(ids.size()), rope(ids.size() * 3), prefix(batch);
+    std::vector<int> ids(static_cast<std::size_t>(width) * batch), positions(ids.size()), rope(ids.size() * 3), prefix(batch);
     std::iota(ids.begin(), ids.end(), 31);
     for (int b = 0; b < batch; ++b)
         for (int j = 0; j < width; ++j) {
@@ -21,7 +21,7 @@ int run(int width, int batch) {
         }
     auto di = to_device(ids), dp = to_device(positions), dr = to_device(rope),
          dn = to_device(prefix);
-    GuardedDeviceBuffer oi((width - 1) * batch * 4), op(oi.bytes()), orope(oi.bytes() * 3);
+    GuardedDeviceBuffer oi(static_cast<std::size_t>(width - 1) * batch * 4), op(oi.bytes()), orope(oi.bytes() * 3);
     GuardedDeviceBuffer on(batch * 4), ol(batch * 4), oa(batch * 4);
     Tensor i(di.span(), DType::I32, {width, batch}), p(dp.span(), DType::I32, {width, batch});
     Tensor r(dr.span(), DType::I32, {width, 3, batch}), n(dn.span(), DType::I32, {batch});
@@ -48,7 +48,7 @@ int run(int width, int batch) {
         else
             launch();
         device.synchronize();
-        std::vector<int> expected_ids((width - 1) * batch), expected_positions(expected_ids.size());
+        std::vector<int> expected_ids(static_cast<std::size_t>(width - 1) * batch), expected_positions(expected_ids.size());
         std::vector<int> expected_rope(expected_ids.size() * 3), lengths(batch), last(batch),
             active(batch);
         for (int b = 0; b < batch; ++b) {

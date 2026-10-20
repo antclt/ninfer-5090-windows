@@ -224,7 +224,7 @@ def main() -> int:
         api_key = os.environ.get(args.api_key_env)
         if not api_key:
             print(
-                f"send_to_serve: environment variable {args.api_key_env!r} is not set",
+                "send_to_serve: configured API key environment variable is not set",
                 file=sys.stderr,
             )
             return 2

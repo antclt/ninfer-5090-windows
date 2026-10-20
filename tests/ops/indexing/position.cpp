@@ -80,7 +80,7 @@ int offset_case(std::int32_t count, std::int32_t delta_value, bool in_place) {
 
 int lane_offset_case(int width, int batch, int axes, bool in_place) {
     const int lane_size = width * axes;
-    std::vector<std::int32_t> source(lane_size * batch), delta(batch), expected(source.size());
+    std::vector<std::int32_t> source(static_cast<std::size_t>(lane_size) * batch), delta(batch), expected(source.size());
     for (int b = 0; b < batch; ++b) {
         delta[b] = 512 * b - 37;
         for (int i = 0; i < lane_size; ++i) source[b * lane_size + i] = 131072 + 7 * b + 3 * i;

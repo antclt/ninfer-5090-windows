@@ -83,7 +83,7 @@ struct Fixture {
 
     Fixture(int tokens, int batch, bool padded, bool wide = false)
         : t(tokens), b(batch), stride(t + (padded ? 3 : 0)), tail_stride(padded ? 5 : 2),
-          slots(b + 2), ids(stride * b), tail(tail_stride * slots), valid(b), selected(b),
+          slots(b + 2), ids(static_cast<std::size_t>(stride) * b), tail(static_cast<std::size_t>(tail_stride) * slots), valid(b), selected(b),
           d_ids(ids.size() * 4), d_tail(tail.size() * 4), d_valid(b * 4), d_selected(b * 4),
           output(std::size_t(2560) * t * b * 2), input(d_ids.span(), DType::I32, {t, b}),
           counts(d_valid.span(), DType::I32, {b}), result(output.span(), DType::BF16, {2560, t, b}),
@@ -125,8 +125,8 @@ struct Fixture {
         std::fill(ids.begin(), ids.end(), -777);
         std::fill(tail.begin(), tail.end(), -999);
         for (int s = 0; s < slots; ++s) {
-            tail[s * tail_stride]     = (s * 13 + phase) % 251;
-            tail[s * tail_stride + 1] = s % 2 ? eos : 19;
+            tail[static_cast<std::size_t>(s) * tail_stride]     = (s * 13 + phase) % 251;
+            tail[static_cast<std::size_t>(s) * tail_stride + 1] = s % 2 ? eos : 19;
         }
         for (int row = 0; row < b; ++row) {
             valid[row]    = row == 0 && b > 1 && phase == 0 ? 0 : std::max(1, t - row % t);

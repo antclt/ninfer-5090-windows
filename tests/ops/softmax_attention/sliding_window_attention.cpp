@@ -201,7 +201,7 @@ int run_case(Cache& cache, int width, int batch, int base_context, int envelope_
     round_to_bf16(qk);
     round_to_bf16(qv);
     const auto q_base = bf16_bits(q), k_base = bf16_bits(qk), v_base = bf16_bits(qv);
-    std::vector<int> lengths(batch), positions(width * batch), valid(batch), lanes(batch);
+    std::vector<int> lengths(batch), positions(static_cast<std::size_t>(width) * batch), valid(batch), lanes(batch);
     constexpr std::array<int, 8> small_lengths{0, 1, 31, 32, 63, 64, 95, 96};
     for (int b = 0; b < batch; ++b) {
         lengths[b] = base_context < 0 ? small_lengths[(b + width) % 8]

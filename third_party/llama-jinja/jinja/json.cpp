@@ -47,7 +47,7 @@ void write_json(std::ostringstream& out, const value& input, int level, int inde
         out << (object ? '{' : '[');
         for (size_t i = 0; i < size; ++i) {
             if (i) out << item_separator;
-            if (indent >= 0) out << '\n' << std::string((level + 1) * indent, ' ');
+            if (indent >= 0) out << '\n' << std::string(static_cast<std::size_t>(level + 1) * indent, ' ');
             if (object) {
                 const auto& key = entries[i].first;
                 std::string name;
@@ -66,7 +66,7 @@ void write_json(std::ostringstream& out, const value& input, int level, int inde
             write_json(out, object ? entries[i].second : input->val_arr[i], level + 1, indent,
                        item_separator, key_separator, ensure_ascii, sort_keys, ancestors);
         }
-        if (size && indent >= 0) out << '\n' << std::string(level * indent, ' ');
+        if (size && indent >= 0) out << '\n' << std::string(static_cast<std::size_t>(level) * indent, ' ');
         out << (object ? '}' : ']');
         ancestors.pop_back();
     } else {
