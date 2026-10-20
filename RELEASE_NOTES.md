@@ -1,4 +1,20 @@
-# NInfer Windows v1.2.0 (RTX 5090)
+# NInfer Windows v1.2.1 (RTX 5090)
+
+## What changed in 1.2.1
+
+A quick-turnaround patch release following `v1.2.0`, incorporating full upstream synchronization and critical Windows runtime stability fixes:
+
+- **Upstream Synchronization (39 commits)**: Merged all algorithmic and architectural updates from upstream `Neroued/ninfer@dev` (`05327b22..46ee5c3b`):
+  - Unified `RequestStats` and `EngineSnapshot` runtime observability (`engine.snapshot().runtime`, `snapshot().ranks.at(0).memory`), retiring superseded `publish_kv_capacity`.
+  - Upstream distributed startup, worker loops, and model preparation.
+  - Clamped Expert Parallel (EP) MoE fixtures, Sigmoid routing oracles, and SwiGLU BF16 tests.
+  - Upstream observability clocks, host timing refactors, and vocabulary reduction / sampling operations.
+- **Native Windows Memory Planning Fix**: Resolved fatal engine startup failure (`cannot read system memory availability`) caused by upstream's Linux-only `/proc/meminfo` query by implementing native Windows `GlobalMemoryStatusEx` in `src/core/device_memory.cpp`.
+- **MSVC 19.44 / 14.51 Template & CTAD Portability**: Fixed MSVC class template argument deduction (CTAD) in braced initializer lists across `vocabulary_logprobs.cpp` and `vocabulary.cpp` with explicit `std::array<int, N>` types and included `<array>`.
+- **PE Import Dependency Audit**: Integrated zero-dependency PE header import analysis into release packaging (`package_release.py` and `check_archive_contents.py`) to permanently prevent missing DLL errors at packaging time.
+- **Hardware Verification**: Re-verified all 8 production launchers on RTX 5090 hardware: all 8 lanes load in ~7.5s, commit 262,144 KV tokens, and pass chat completion and image multimodal inference.
+
+---
 
 ## What changed in 1.2.0
 
