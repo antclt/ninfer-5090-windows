@@ -24,17 +24,29 @@ import subprocess
 import sys
 from pathlib import Path
 
+from typing import TypedDict
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from download_model import HF_SRC, SOURCES, fetch, report  # noqa: E402
+from download_model import SOURCES, fetch, is_source_complete, report  # noqa: E402
+
+
+class LineSpec(TypedDict):
+    recipe: str
+    primary: str
+    sources: dict[str, str]
+    artifact: str
+    name: str
+    note: str
+
 
 # line -> the recipe, the source that is `--model`, the named sources, and the image's identity.
 #
 # The recipes and their source sets are the ones the artifact reference records per line, and `--name` is
 # the value the shipped image carries, so a rebuild differs from what this port ships only in the 16-byte
 # artifact id -- a random `uuid4()` (tools/artifact/writer.py:141) -- if it differs at all.
-LINES: dict[str, dict[str, object]] = {
+LINES: dict[str, LineSpec] = {
     "quasar": {
         "recipe": "qwen3_8_27b_nvfp4_qat",
         "primary": "QUASAR-QAT/Qwen3.8-27B-QUASAR-NVFP4",
@@ -135,10 +147,10 @@ def main() -> int:
 
     if not args.dry_run:
         needed = [str(spec["primary"]), *dict(spec["sources"]).values()]
-        missing = [repo for repo in needed if not os.path.isdir(local_dir(root, repo))]
+        missing = [repo for repo in needed if not is_source_complete(root, repo)]
         for repo in missing:
             print(f"[INFO] fetching {repo}")
-            if not fetch(repo, root):
+            if not fetch(repo, root) or not is_source_complete(root, repo):
                 print(f"[FAILED] could not fetch {repo}", file=sys.stderr)
                 return 1
         if missing:

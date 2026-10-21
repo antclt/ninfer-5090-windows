@@ -71,12 +71,14 @@ SOURCES: dict[str, tuple[str, str, str]] = {
 
 
 def dir_stats(path: str) -> tuple[int, int]:
-    """(file count, total bytes) for a directory, or (0, 0) if absent."""
+    """(file count, total bytes) for a directory, excluding .cache, or (0, 0) if absent."""
     if not os.path.isdir(path):
         return 0, 0
     count = 0
     total = 0
-    for root, _dirs, files in os.walk(path):
+    for root, dirs, files in os.walk(path):
+        if ".cache" in dirs:
+            dirs.remove(".cache")
         for name in files:
             count += 1
             try:
@@ -84,6 +86,114 @@ def dir_stats(path: str) -> tuple[int, int]:
             except OSError:
                 pass
     return count, total
+
+
+def clean_incomplete(dest: str) -> int:
+    """Remove orphaned huggingface_hub *.incomplete temp files under <dest>/.cache/huggingface."""
+    hf_cache = os.path.join(dest, ".cache", "huggingface")
+    if not os.path.isdir(hf_cache):
+        return 0
+    removed = 0
+    for root, _dirs, files in os.walk(hf_cache):
+        for name in files:
+            if name.endswith(".incomplete"):
+                try:
+                    os.remove(os.path.join(root, name))
+                    removed += 1
+                except OSError:
+                    pass
+    return removed
+
+
+def is_source_complete(root: str, repo: str) -> bool:
+    """Return True iff repo's local checkpoint under root has all required metadata and weight shards."""
+    if repo not in SOURCES:
+        return False
+    local, _why, revision = SOURCES[repo]
+    dest = os.path.join(root, local)
+    if not os.path.isdir(dest):
+        return False
+
+    cache_dir = os.path.join(dest, ".cache")
+    if os.path.isdir(cache_dir):
+        for c_root, _dirs, files in os.walk(cache_dir):
+            for name in files:
+                if name.endswith(".incomplete"):
+                    return False
+
+    sources_json = os.path.join(root, "sources.json")
+    if os.path.isfile(sources_json):
+        try:
+            with open(sources_json, encoding="utf-8") as handle:
+                entry_data = json.load(handle).get(repo, {})
+            if not isinstance(entry_data, dict):
+                return False
+            recorded = entry_data.get("revision", "")
+            if not isinstance(recorded, str):
+                return False
+            if recorded and (
+                len(recorded) < 12
+                or not (recorded.startswith(revision) or revision.startswith(recorded))
+            ):
+                return False
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+            return False
+
+    is_dflash2 = repo == "z-lab/Qwen3.8-27B-DFlash2"
+    required_files = ["config.json"]
+    if not is_dflash2:
+        required_files.extend([
+            "generation_config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "preprocessor_config.json",
+            "video_preprocessor_config.json",
+        ])
+    if repo in ("nvidia/Qwen3.8-27B-NVFP4", "ukisai/Swift-1.5-Qwen3.8-27b-NVFP4"):
+        required_files.append("hf_quant_config.json")
+    for req in required_files:
+        req_path = os.path.join(dest, req)
+        try:
+            if not os.path.isfile(req_path) or os.path.getsize(req_path) == 0:
+                return False
+        except OSError:
+            return False
+
+    index_path = os.path.join(dest, "model.safetensors.index.json")
+    single_path = os.path.join(dest, "model.safetensors")
+    if os.path.isfile(index_path):
+        try:
+            with open(index_path, encoding="utf-8") as handle:
+                index_data = json.load(handle)
+            weight_map = index_data.get("weight_map")
+            if not isinstance(weight_map, dict) or not weight_map:
+                return False
+            shards = {os.path.normpath(shard) for shard in weight_map.values() if isinstance(shard, str)}
+            if not shards:
+                return False
+            for shard in shards:
+                shard_path = os.path.join(dest, shard)
+                if not os.path.isfile(shard_path) or os.path.getsize(shard_path) <= 8:
+                    return False
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+            return False
+        return True
+
+    if not is_dflash2:
+        # All non-DFlash2 sources in SOURCES are sharded checkpoints with model.safetensors.index.json
+        # (including unsloth/Qwen3.8-27B-NVFP4, which shards across model.safetensors + model_mtp.safetensors).
+        return False
+
+    try:
+        if os.path.isfile(single_path) and os.path.getsize(single_path) > 8:
+            for entry in os.listdir(dest):
+                if entry != "model.safetensors" and entry.endswith(".safetensors"):
+                    return False
+            return True
+    except OSError:
+        return False
+
+    return False
 
 
 def report(root: str, repos: list[str]) -> bool:
@@ -96,6 +206,9 @@ def report(root: str, repos: list[str]) -> bool:
         if count == 0:
             ok = False
             state = "MISSING"
+        elif not is_source_complete(root, repo):
+            ok = False
+            state = "INCOMPLETE"
         else:
             state = "present"
         print(f"{repo:<40} {count:>7} {total / (1 << 30):>8.2f}  {revision[:12]:<12}  {state}  ({why})")
@@ -148,13 +261,33 @@ def fetch(repo: str, root: str) -> bool:
         return False
 
     print(f"[INFO] {repo} @ {revision[:12]} -> {dest}")
+    clean_incomplete(dest)
+    was_complete = is_source_complete(root, repo)
+    sentinel_dir = os.path.join(dest, ".cache")
+    sentinel = os.path.join(sentinel_dir, "ninfer_fetch.incomplete")
     started = time.time()
     try:
-        resolved = HfApi().model_info(repo_id=repo, revision=revision).sha
+        resolved = HfApi().model_info(repo_id=repo, revision=revision).sha or revision
+        os.makedirs(sentinel_dir, exist_ok=True)
+        with open(sentinel, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"{repo}@{revision}\n")
         snapshot_download(repo_id=repo, local_dir=dest, revision=revision)
-    except Exception as exc:  # noqa: BLE001 - report any transport/auth/disk failure the same way
-        print(f"  FAILED: {exc}", file=sys.stderr)
-        return False
+    except BaseException as exc:  # noqa: BLE001 - clean orphaned *.incomplete on KeyboardInterrupt too
+        clean_incomplete(dest)
+        if was_complete and os.path.isfile(sentinel):
+            try:
+                os.remove(sentinel)
+            except OSError:
+                pass
+        if isinstance(exc, Exception):
+            print(f"  FAILED: {exc}", file=sys.stderr)
+            return False
+        raise
+    clean_incomplete(dest)
+    try:
+        os.remove(sentinel)
+    except OSError:
+        pass
     record_revision(root, repo, local, resolved)
     print(f"  done in {time.time() - started:.0f}s  at {resolved[:12]}")
     return True

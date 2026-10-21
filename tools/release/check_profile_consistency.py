@@ -316,12 +316,23 @@ def main() -> int:
         check("every source carries a 40-hex revision pin",
               all(len(entry[2]) == 40 and all(c in "0123456789abcdef" for c in entry[2])
                   for entry in module.SOURCES.values()))
+        check("download_model.py validates source completeness beyond directory presence",
+              hasattr(module, "is_source_complete"))
     check("download_model.py fetches at the pinned revision",
           "snapshot_download(repo_id=repo, local_dir=dest, revision=revision)" in download)
     check("download_model.py records the resolved revision", "sources.json" in download)
+    build_script = read(WT / "build_model.py")
+    check("build_model.py checks source completeness rather than os.path.isdir",
+          "is_source_complete(" in build_script and "os.path.isdir(" not in build_script)
 
     env = read(WT / "launcher_env.bat")
     check("launcher_env.bat names the QUASAR artifact", QUASAR in env)
+    check("launcher_env.bat accepts Python 3.11+",
+          "sys.version_info >= (3, 11)" in env and "== (3, 11)" not in env)
+    check("launcher_env.bat falls back to py -3 when 3.11 is not installed",
+          "py -3 -c" in env)
+    check("launcher_env.bat preserves caller-supplied PYTHON_EXE",
+          "if defined PYTHON_EXE goto :python_resolved" in env)
 
     # QUASAR_ARGS feeds test_prompt.bat and test_vision.bat, which invoke ninfer.exe -- the
     # offline CLI, a different interface from the server. It rejects --host, --port, --model-id,
