@@ -85,7 +85,7 @@ REM ninfer_context_cost_test cannot start under ASan on this machine. It exits 0
 REM it imports, api-ms-win-crt-filesystem-l1-1-0.dll, does not resolve for this build, while the same
 REM test passes in the normal build (build-test). Its ASan coverage is therefore absent, and saying so
 REM is the point of this note.
-set "TESTS=ninfer_resource_manager_test ninfer_artifact_reader_test ninfer_kv_capacity_test"
+set "TESTS=ninfer_resource_manager_test ninfer_artifact_reader_test ninfer_context_capacity_test"
 set "ASAN_SKIPPED=ninfer_context_cost_test"
 
 REM The build must use the project's Python and not whatever find_package(Python3) finds: the tests'

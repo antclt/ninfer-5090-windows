@@ -5,7 +5,7 @@
 
 namespace ninfer::bench::qsa {
 
-enum class Projection { QueryGate, KeyValueIndex, Joint };
+enum class Projection { QueryGate, KeyValueIndex, Joint, KeyValueIndexKey };
 
 inline const char* name(Projection p) {
     switch (p) {
@@ -14,7 +14,9 @@ inline const char* name(Projection p) {
     case Projection::KeyValueIndex:
         return "kv-index";
     case Projection::Joint:
-        return "qkgv-index";
+        return "joint";
+    case Projection::KeyValueIndexKey:
+        return "kv-index-key";
     }
     throw std::invalid_argument("invalid QSA projection");
 }
@@ -26,7 +28,9 @@ inline std::vector<int> segments(Projection p, int kv_heads) {
     case Projection::KeyValueIndex:
         return {256 * kv_heads, 256 * kv_heads, 512, 128};
     case Projection::Joint:
-        return {3072 * kv_heads, 256 * kv_heads, 3072 * kv_heads, 256 * kv_heads, 512, 128};
+        return {256 * kv_heads, 256 * kv_heads, 128, 3072 * kv_heads, 3072 * kv_heads, 512};
+    case Projection::KeyValueIndexKey:
+        return {256 * kv_heads, 256 * kv_heads, 128};
     }
     throw std::invalid_argument("invalid QSA projection");
 }
@@ -80,32 +84,33 @@ inline Options parse_options(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string_view flag = argv[i];
         if (flag == "--help" || flag == "-h") {
-            std::cout << "QSA Op benchmark\n"
-                         "  --op input-proj|tail-extract|prepare|indexer|sparse-gqa (default "
-                         "input-proj)\n"
-                         "  --projection qg|kv-index|qkgv-index|all\n"
-                         "  --kv-heads 1|2 (input projection/prepare/sparse GQA, default 2)\n"
-                         "  --entry split|linear|both\n"
-                         "  --tokens M[,M...] or --sweep START:END[:STEP] --rounds N\n"
-                         "Prepare: --tokens T[,T...] --batch B --axes 1|3 --inplace\n"
-                         "  --kv-cache bf16|int8|fp8|nvfp4|k8v4 (default bf16)\n"
-                         "  --base-positions F[,F...] --valid dense|N[,N...] --layout "
-                         "contiguous|layered|unaligned\n"
-                         "Indexer: --tokens T[,T...] --batch B --contexts L[,L...]\n"
-                         "  --context-capacity N (default maximum L) --score-pattern random|ties\n"
-                         "  --valid dense|N[,N...] --layout contiguous|layered|unaligned\n"
-                         "Sparse GQA: --tokens T[,T...] --batch B --contexts L[,L...]\n  "
-                         "--query-heads Hq --kv-heads Hkv (24/2 or 12/1)\n  --prefix-tokens "
-                         "P[,P...] (derive each context as prefix + valid length)\n"
-                         "  --selection random|shared|contiguous --selected-blocks 0..512\n"
-                         "  --context-capacity N (default maximum L)\n"
-                         "  --kv-cache bf16|int8|fp8|nvfp4|k8v4 (default bf16)\n"
-                         "  --valid dense|N[,N...] --layout contiguous|layered|unaligned\n"
-                         "Tail extraction:\n"
-                         "  --capacity R[,R...] --batch B --base-positions F0[,F0...]\n"
-                         "  --valid dense|N[,N...] --accepted dense|mixed|N[,N...]\n"
-                         "  --layout contiguous|layered|unaligned --inplace\n"
-                         "A single F0/count broadcasts to all B rows. B=1..8.\n";
+            std::cout
+                << "QSA Op benchmark\n"
+                   "  --op input-proj|tail-extract|prepare|prepare-kv|indexer|sparse-gqa (default "
+                   "input-proj)\n"
+                   "  --projection qg|kv-index|joint|kv-index-key|all\n"
+                   "  --kv-heads 1|2 (input projection/prepare/sparse GQA, default 2)\n"
+                   "  --entry split|linear|both\n"
+                   "  --tokens M[,M...] or --sweep START:END[:STEP] --rounds N\n"
+                   "Prepare: --tokens T[,T...] --batch B --axes 1|3 --inplace\n"
+                   "  --kv-cache bf16|int8|fp8|nvfp4|k8v4 (default bf16)\n"
+                   "  --base-positions F[,F...] --valid dense|N[,N...] --layout "
+                   "contiguous|layered|unaligned\n"
+                   "Indexer: --tokens T[,T...] --batch B --contexts L[,L...]\n"
+                   "  --context-capacity N (default maximum L) --score-pattern random|ties\n"
+                   "  --valid dense|N[,N...] --layout contiguous|layered|unaligned\n"
+                   "Sparse GQA: --tokens T[,T...] --batch B --contexts L[,L...]\n  "
+                   "--query-heads Hq --kv-heads Hkv (24/2 or 12/1)\n  --prefix-tokens "
+                   "P[,P...] (derive each context as prefix + valid length)\n"
+                   "  --selection random|shared|contiguous --selected-blocks 0..512\n"
+                   "  --context-capacity N (default maximum L)\n"
+                   "  --kv-cache bf16|int8|fp8|nvfp4|k8v4 (default bf16)\n"
+                   "  --valid dense|N[,N...] --layout contiguous|layered|unaligned\n"
+                   "Tail extraction:\n"
+                   "  --capacity R[,R...] --batch B --base-positions F0[,F0...]\n"
+                   "  --valid dense|N[,N...] --accepted dense|mixed|N[,N...]\n"
+                   "  --layout contiguous|layered|unaligned --inplace\n"
+                   "A single F0/count broadcasts to all B rows. B=1..8.\n";
             measurement::help();
             std::exit(0);
         }
@@ -178,15 +183,17 @@ inline Options parse_options(int argc, char** argv) {
         } else if (flag == "--projection") {
             if (value == "all")
                 o.projections = {Projection::QueryGate, Projection::KeyValueIndex,
-                                 Projection::Joint};
+                                 Projection::Joint, Projection::KeyValueIndexKey};
             else if (value == "qg")
                 o.projections = {Projection::QueryGate};
             else if (value == "kv-index")
                 o.projections = {Projection::KeyValueIndex};
-            else if (value == "qkgv-index")
+            else if (value == "joint")
                 o.projections = {Projection::Joint};
+            else if (value == "kv-index-key")
+                o.projections = {Projection::KeyValueIndexKey};
             else
-                throw std::invalid_argument("projection: qg|kv-index|qkgv-index|all");
+                throw std::invalid_argument("projection: qg|kv-index|joint|kv-index-key|all");
         } else if (flag == "--tokens" || flag == "--sweep") {
             if (token_options) throw std::invalid_argument("specify one token list or sweep");
             token_options = true;
@@ -197,22 +204,27 @@ inline Options parse_options(int argc, char** argv) {
         else if (!measurement::parse(o.timing, flag, value))
             throw std::invalid_argument("unknown option: " + std::string(flag));
     }
-    if (o.op != "input-proj" && o.op != "tail-extract" && o.op != "prepare" && o.op != "indexer" &&
-        o.op != "sparse-gqa")
-        throw std::invalid_argument("op: input-proj|tail-extract|prepare|indexer|sparse-gqa");
-    if ((o.op != "input-proj" && o.op != "prepare" && o.op != "sparse-gqa" && head_options) ||
+    if (o.op != "input-proj" && o.op != "tail-extract" && o.op != "prepare" &&
+        o.op != "prepare-kv" && o.op != "indexer" && o.op != "sparse-gqa")
+        throw std::invalid_argument(
+            "op: input-proj|tail-extract|prepare|prepare-kv|indexer|sparse-gqa");
+    if ((o.op != "input-proj" && o.op != "prepare" && o.op != "prepare-kv" &&
+         o.op != "sparse-gqa" && head_options) ||
         (o.op != "indexer" && score_option) ||
-        (o.op != "prepare" && o.op != "sparse-gqa" && cache_option) ||
+        (o.op != "prepare" && o.op != "prepare-kv" && o.op != "sparse-gqa" && cache_option) ||
         (o.op != "sparse-gqa" && sparse_only) ||
         (o.op == "sparse-gqa" &&
          (tail_only || projection_only || prepare_only || base_options || o.inplace)) ||
         (o.op == "input-proj" && (state_options || tail_only || prepare_only || indexer_only)) ||
         (o.op == "tail-extract" &&
          (token_options || projection_only || prepare_only || indexer_only)) ||
-        (o.op == "prepare" && (tail_only || projection_only || indexer_only)) ||
+        ((o.op == "prepare" || o.op == "prepare-kv") &&
+         (tail_only || projection_only || indexer_only)) ||
         (o.op == "indexer" &&
          (tail_only || projection_only || prepare_only || base_options || o.inplace)))
         throw std::invalid_argument("options must belong to the selected QSA Op");
+    if (o.op == "prepare-kv" && o.inplace)
+        throw std::invalid_argument("prepare-kv has no query output to alias");
     if (!o.prefixes.empty() && o.explicit_contexts)
         throw std::invalid_argument("prefix-tokens and contexts are alternatives");
     if (o.score_pattern != "random" && o.score_pattern != "ties")

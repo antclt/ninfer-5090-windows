@@ -5,11 +5,15 @@ from __future__ import annotations
 import torch
 
 from tools.artifact.codecs.nvfp4 import decode_nvfp4_words, encode_nvfp4
+from tools.artifact.schema import TensorSpec
+from tools.convert.methods import MethodInput, PrepareRequest
 from tools.convert.quantization.nvfp4 import (
     FULL_RANGE,
     e2m1_rne_codes,
     encode_block,
+    nvfp4_maxabs,
 )
+from tools.convert.sources.logical import array_source
 
 # Written from the format definition, not from the encoder, so the decode below is an
 # independent oracle: E2M1 magnitudes are 0, .5, 1, 1.5, 2, 3, 4, 6 and their negatives.
@@ -84,3 +88,18 @@ def test_words_survive_the_registered_layout_round_trip() -> None:
     assert torch.equal(got_codes, codes)
     assert torch.equal(got_scales, scales)
     assert bytes(got_divisor.numpy().tobytes()) == divisor_word
+
+
+def test_nvfp4_maxabs_accepts_default_rows_per_chunk() -> None:
+    """PrepareRequest defaults rows_per_chunk to None; nvfp4_maxabs must size chunks via chunk_rows."""
+    values = torch.ones(128, 64, dtype=torch.bfloat16)
+    spec = TensorSpec(id="w", shape=(128, 64), format="nvfp4", layout="block_scale_k16_m128x4")
+    request = PrepareRequest(
+        target=spec,
+        inputs=(MethodInput("w", array_source(values, "w"), (("w", "x"),)),),
+        policies={("w", "x"): "A16Only"},
+        parameters={},
+        device="cpu",
+    )
+    prepared = nvfp4_maxabs(request)
+    assert callable(prepared.produce)

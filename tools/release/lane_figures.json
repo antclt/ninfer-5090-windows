@@ -2,9 +2,9 @@
   "what": "The shipped lanes' measured figures, each with the identity of what it was measured on.",
   "engine": {
     "file": "C:\\AI\\ninfer-v3-windows\\build\\apps\\ninfer-serve.exe",
-    "sha256": "49f5fc95c26c8250bae59f70ec4922bf637382c1e70f7825ef06e10bb1be6362",
-    "bytes": 7432192,
-    "built_utc": "2026-10-20T23:00:16Z"
+    "sha256": "e5b5b1e480651de1fa2761c0131e3264380cdfe25c2a51c40c3b753647e16f31",
+    "bytes": 7449600,
+    "built_utc": "2026-10-22T00:29:00Z"
   },
   "measured_utc": "2026-10-16T01:34:23Z",
   "lanes": {

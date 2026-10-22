@@ -39,22 +39,27 @@ else:
 BINARY = getattr(os, "O_BINARY", 0)
 
 if sys.platform == "win32":
+    import threading
+
+    _IO_LOCK = threading.Lock()
 
     def pread(fd: int, count: int, offset: int) -> bytes:
-        saved = os.lseek(fd, 0, os.SEEK_CUR)
-        try:
-            os.lseek(fd, offset, os.SEEK_SET)
-            return os.read(fd, count)
-        finally:
-            os.lseek(fd, saved, os.SEEK_SET)
+        with _IO_LOCK:
+            saved = os.lseek(fd, 0, os.SEEK_CUR)
+            try:
+                os.lseek(fd, offset, os.SEEK_SET)
+                return os.read(fd, count)
+            finally:
+                os.lseek(fd, saved, os.SEEK_SET)
 
     def pwrite(fd: int, data, offset: int) -> int:
-        saved = os.lseek(fd, 0, os.SEEK_CUR)
-        try:
-            os.lseek(fd, offset, os.SEEK_SET)
-            return os.write(fd, data)
-        finally:
-            os.lseek(fd, saved, os.SEEK_SET)
+        with _IO_LOCK:
+            saved = os.lseek(fd, 0, os.SEEK_CUR)
+            try:
+                os.lseek(fd, offset, os.SEEK_SET)
+                return os.write(fd, data)
+            finally:
+                os.lseek(fd, saved, os.SEEK_SET)
 
 else:
     pread = os.pread

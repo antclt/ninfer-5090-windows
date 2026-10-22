@@ -213,12 +213,6 @@
       "review": "product",
       "reason": "An anchor fix for the port's own gate: check_doc_links.py resolves every link target including its fragment, and these two maintainer documents are written in Chinese upstream, so the anchors are the full heading text rather than the English stubs the links used."
     },
-    "docs/maintainer/qwen4_exp-execution.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "documentation",
-      "reason": "Fixed broken link to src/models/qwen4_exp/parallel/expert_priority.cpp to satisfy check_doc_links gate."
-    },
     "docs/performance.md": {
       "status": "M",
       "disposition": "unknown",
@@ -1101,6 +1095,12 @@
       "review": "a port-carried kernel family, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the sparse-GQA and causal tests",
       "reason": "Port change: passes visible_capacity to the grouped kernel, which uses it for the position guard its quantized siblings already had. The launch had validated that the block table covers visible_capacity since before this change, so the guard adds no new precondition."
     },
+    "src/ops/softmax_attention/qsa/indexer/select.cuh": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Windows/MSVC C++ conformance necessity: adds the C++ template disambiguator on jobs.template build<1, Partition>(a) because jobs has dependent type IndexerJobs<MaxQueries> in indexer_partition_kernel, and nvcc + MSVC otherwise parses '<' as operator< (error: no operator \">\" matches these operands)."
+    },
     "src/product/CMakeLists.txt": {
       "status": "M",
       "disposition": "unknown",
@@ -1172,12 +1172,6 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Windows necessity: MSVC has no __int128, so core/uint128.h provides the type -- a real 128-bit builtin under GCC and a two-word struct with the needed operators under MSVC. Here it replaces upstream's cast in a comparison whose product overflows 64 bits. Pinned by the port-delta baseline and protected by src/core/uint128.h's own tests. Second (2026-10-12): release_unreferenced returned by throwing when Native refused to release an unreferenced checkpoint, and its callers are noexcept engine paths, so a pinned checkpoint released through one terminated the process -- no report, no stack, and the catch-all cleanup that errors out the other in-flight requests never ran. It now returns instead. Deferring the release the way reclaim does was rejected: prune does not retry release_unreferenced, so a deferred release would never be completed and the checkpoint would leak. Found by the c-review detect pass."
-    },
-    "src/runtime/engine/kv_capacity.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "A deduplication: the two execution cores held identical copies of this, and the header's own comment says why it lives in one place now -- the resolution is published into the summary both cores report, so two copies could disagree. The same class as ops/common/validation.h and the route catalog."
     },
     "src/runtime/engine/startup.inl": {
       "status": "M",
@@ -1707,12 +1701,6 @@
       "review": "",
       "reason": ""
     },
-    "tests/test_openai_schema.cpp": {
-      "status": "M",
-      "disposition": "product",
-      "review": "product",
-      "reason": "Test coverage for the OpenAI prompt-cache write policy: the protocol defines its own, so it never uses the Engine's structural shared boundaries -- allow_engine_automatic_shared_prefixes is cleared and the automatic boundary is placed at the end of the last message instead."
-    },
     "tests/test_pretty_logging.cpp": {
       "status": "M",
       "disposition": "windows",
@@ -1783,7 +1771,7 @@
       "status": "M",
       "disposition": "windows",
       "review": "windows",
-      "reason": "The Python side of the Win32 I/O work: sys.platform == 'win32' branches, because sysconf, posix_fadvise and fdatasync are POSIX page-cache and durability controls with no Windows equivalent. src/artifact/file_io.cpp carries the C++ half."
+      "reason": "The Python side of the Win32 I/O work: sys.platform == 'win32' branches, because sysconf, posix_fadvise and fdatasync are POSIX page-cache and durability controls with no Windows equivalent, and pread/pwrite emulate positional I/O under a threading.Lock() around lseek+read/write+lseek so background prefetch reads (ninfer-convert-read) are thread-safe on Windows file descriptors. src/artifact/file_io.cpp carries the C++ half."
     },
     "tools/artifact/reader.py": {
       "status": "M",
@@ -1869,6 +1857,12 @@
       "review": "product",
       "reason": "A fix on top of the annotations. pipeline.py's own comment states it: entry 0 is the artifact itself and lives at `path`, every later entry is a part beside it, and a part without a name is a writer bug rather than a path of None. resources.py guards vision_config before reading it."
     },
+    "tools/convert/proposal.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "product",
+      "reason": "Narrows rows alongside ids (`if ids is not None and rows is not None:`) in add_proposal so the port's mypy gate sees rows as int rather than int | None when constructing Parameter('proposal/token_ids', (rows,), ...)."
+    },
     "tools/convert/qwen3_5.py": {
       "status": "M",
       "disposition": "unknown",
@@ -1909,7 +1903,7 @@
       "status": "M",
       "disposition": "unknown",
       "review": "product",
-      "reason": "A security fix for untrusted input: a community artifact supplies index.json, so the file names in it are not trustworthy -- an anchored path, or ../.., would replace the root when joined. The root is resolved and the names are checked against it."
+      "reason": "A security fix for untrusted input: a community artifact supplies index.json, so the file names in it are not trustworthy -- an anchored path, or ../.., would replace the root when joined. The root is resolved and the names are checked against it. Also replaces POSIX-only os.preadv with bytearray(file_io.pread(fd, count, offset)) so read_flat works on Windows while still handing a writable buffer to torch.frombuffer."
     },
     "tools/ninfer_serve/openai_chat.py": {
       "status": "M",

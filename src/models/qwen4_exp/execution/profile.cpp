@@ -37,6 +37,13 @@ public:
 
     std::int32_t rows(WeightId id) const { return dimension(input(id).weight.shape[0]); }
 
+    MtpHistoryProfile history(const BlockWeights& w) const {
+        const auto& q = std::get<QsaWeights>(w.mixer);
+        return {final_hc(w.attention_hc),
+                linear({q.key, q.value, q.index_key}),
+                {rows(q.key), rows(q.value), rows(q.index_key)}};
+    }
+
     BlockProfile block(const BlockWeights& w, bool mtp) const {
         BlockProfile out;
         out.attention_hc = hc(w.attention_hc);
@@ -51,11 +58,11 @@ public:
         } else {
             const auto& q = std::get<QsaWeights>(w.mixer);
             QsaProfile profile;
-            profile.output_rows = {rows(q.query), rows(q.key),         rows(q.gate),
-                                   rows(q.value), rows(q.index_query), rows(q.index_key)};
+            profile.output_rows = {rows(q.key),   rows(q.value), rows(q.index_key),
+                                   rows(q.query), rows(q.gate),  rows(q.index_query)};
             if (mtp)
                 profile.input =
-                    linear({q.query, q.key, q.gate, q.value, q.index_query, q.index_key});
+                    linear({q.key, q.value, q.index_key, q.query, q.gate, q.index_query});
             else
                 profile.input = MainQsaProjectionProfile{
                     linear({q.query, q.gate}),
@@ -114,7 +121,7 @@ std::shared_ptr<const ModelProfile> describe(const ModelDefinition& source,
     if (w.mtp) {
         const auto& m = *w.mtp;
         out->mtp      = {d.linear({m.fc_embedding}), d.linear({m.fc_hidden}), d.linear({m.head}),
-                         d.block(m.layer, true), d.final_hc(m.final_hc)};
+                         d.block(m.layer, true),     d.final_hc(m.final_hc),  d.history(m.layer)};
     }
     if (w.vision)
         out->vision = qwen::describe_vision(*w.vision,

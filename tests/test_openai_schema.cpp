@@ -196,6 +196,8 @@ int test_prompt_cache_boundaries() {
         body["messages"].push_back(Json{{"role", role}, {"content", "complete message"}});
         const auto prepared = prompt(parse(body).generation);
         const auto& markers = prepared.context_cache.markers;
+        failures += check(prepared.context_cache.allow_engine_automatic_shared_prefixes,
+                          "default OpenAI policy suppressed structural prefix candidates");
         failures += check(
             markers.size() == 1 && markers[0].location == Location::MessagePartBoundary &&
                 markers[0].after_message_count == 2 && markers[0].after_message_part_count == 1 &&
@@ -208,6 +210,8 @@ int test_prompt_cache_boundaries() {
         {Json{{"type", "text"}, {"text", "first"}}, Json{{"type", "text"}, {"text", "second"}}});
     multipart["prompt_cache_options"] = Json{{"mode", "implicit"}};
     const auto requested              = prompt(parse(multipart).generation);
+    failures += check(requested.context_cache.allow_engine_automatic_shared_prefixes,
+                      "implicit policy suppressed structural prefix candidates");
     failures +=
         check(requested.context_cache.markers.size() == 1 &&
                   requested.context_cache.markers[0].location == Location::MessagePartBoundary &&
@@ -973,57 +977,13 @@ int test_common_objects() {
     return failures;
 }
 
-// The OpenAI protocol defines its own prompt-cache write policy, so it never uses the Engine's
-// structural shared boundaries: `allow_engine_automatic_shared_prefixes` is cleared and the
-// automatic boundary is placed at the end of the last message instead. That boundary is the whole
-// prompt, so an undeclared request only offers a shared prefix to a request whose prompt matches it
-// there. A caller that wants a shared prefix served declares the boundary, which is what gives it
-// the evidence that lets shared publication commit without surplus capacity.
-int test_openai_prompt_cache_write_policy() {
-    int failures = 0;
-
-    const OpenAIChatRequest automatic = parse(base_request());
-    const GenerationRequest& plain    = automatic.generation;
-    failures += check(!plain.allow_engine_automatic_shared_prefixes,
-                      "an OpenAI request disables the Engine's structural shared boundaries");
-    const std::optional<CacheBoundary>& boundary =
-        plain.messages.back().content.back().cache_boundary_after;
-    failures +=
-        check(boundary.has_value() &&
-                  boundary->kind == ninfer::PromptCacheMarkerKind::SharedStablePrefix &&
-                  boundary->evidence == ninfer::SharedCandidateEvidence::DefaultAutomatic,
-              "an undeclared request places its automatic boundary at the end of the last message");
-
-    Json declared = base_request();
-    declared["messages"] =
-        Json::array({Json{{"role", "system"},
-                          {"content", Json::array({Json{{"type", "text"},
-                                                        {"text", "be brief"},
-                                                        {"prompt_cache_breakpoint",
-                                                         Json{{"mode", "explicit"}}}}})}},
-                     Json{{"role", "user"}, {"content", "hello"}}});
-    const OpenAIChatRequest explicit_request = parse(declared);
-    const GenerationRequest& explicit_plain  = explicit_request.generation;
-    failures += check(!explicit_plain.allow_engine_automatic_shared_prefixes,
-                      "a declared breakpoint still disables the Engine's structural boundaries");
-    const std::optional<CacheBoundary>& declared_boundary =
-        explicit_plain.messages.front().content.back().cache_boundary_after;
-    failures +=
-        check(declared_boundary.has_value() &&
-                  declared_boundary->kind == ninfer::PromptCacheMarkerKind::SharedStablePrefix &&
-                  declared_boundary->evidence == ninfer::SharedCandidateEvidence::ExplicitBoundary,
-              "a declared breakpoint places a shared boundary with explicit evidence");
-
-    return failures;
-}
-
 } // namespace
 
 int main() {
     int failures = 0;
     failures += test_request_envelope_and_sampling();
     failures += test_standard_field_policy();
-    failures += test_openai_prompt_cache_write_policy();
+    failures += test_prompt_cache_boundaries();
     failures += test_constrained_decoding_extensions();
     failures += test_tools();
     failures += test_messages_and_media();

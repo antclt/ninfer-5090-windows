@@ -175,6 +175,7 @@ def compressed_matrix_source(
         encoded,
         (global_divisor if format == "nvfp4" and encoding.global_scale_key else None),
         (input_divisor if format == "nvfp4" and encoding.input_scale_key else None),
+        encoded_format=format,
     )
 
 
@@ -271,4 +272,5 @@ def matrix_source(
         encoded,
         lambda: divisor("weight_divisor"),
         lambda: divisor("input_divisor"),
+        encoded_format=lambda: resolve().encoding(),
     )

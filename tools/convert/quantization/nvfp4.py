@@ -25,7 +25,12 @@ import struct
 
 import torch
 
-from tools.convert.methods import AuxiliaryValue
+from tools.convert.methods import (
+    AuxiliaryKey,
+    AuxiliaryValue,
+    PreparedMethod,
+    PrepareRequest,
+)
 
 FULL_RANGE = 2688.0  # 6 * 448
 
@@ -58,7 +63,7 @@ def encode_block(values: torch.Tensor, divisor: float) -> tuple[torch.Tensor, to
     return codes[..., 0] | (codes[..., 1] << 4), scales.view(torch.uint8)
 
 
-def nvfp4_maxabs(request):
+def nvfp4_maxabs(request: PrepareRequest) -> PreparedMethod:
     """Encode a logical NVFP4 parent from floating-point values.
 
     The parent must be complete: NVFP4's block-scale layout is a 128-row by 16-column
@@ -71,10 +76,12 @@ def nvfp4_maxabs(request):
     n, k = request.target.shape
     if n % 128 or k % 16 or request.source_offsets[-1] != n * k:
         raise ValueError("NVFP4 parent requires complete 128-row and 16-column tiles")
-    if request.rows_per_chunk <= 0:
+    if request.rows_per_chunk is not None and (
+        type(request.rows_per_chunk) is not int or request.rows_per_chunk <= 0
+    ):
         raise ValueError("rows_per_chunk must be positive")
-    chunk = max(128, request.rows_per_chunk // 128 * 128)
-    auxiliaries = {}
+    chunk = request.chunk_rows(k * 4, alignment=128)
+    auxiliaries: dict[AuxiliaryKey, AuxiliaryValue] = {}
     for item in request.inputs:
         for use in item.uses:
             key = (*use, "activation_input_divisor")
