@@ -54,6 +54,9 @@ formats, layouts, aliases and source transforms, with a section per line in Sect
 
 ## Designs
 
+- [Unified Context storage pool](designs/unified-context-pool.md) — shared KV/State capacity,
+  startup guarantees, execution reservations, cache reclamation and recovery, Op views, and
+  deployment feasibility on RTX 5090 and single/dual Spark; selected design pending implementation.
 - [Distributed execution](distributed-execution-design.md) — selected architecture for centralized
   scheduling, local/distributed executors, rank ownership, parallel plans and communication;
   local execution and distributed execution foundations are implemented; multi-rank model
@@ -65,6 +68,10 @@ formats, layouts, aliases and source transforms, with a section per line in Sect
 - [GLM5Next design and implementation](designs/glm5next/README.md) — selected dual-Spark
   placement, KDA ReplaySSM, Kpool Sparse MLA, mHC and the existing Op checklist; separates
   decisions, implementation status and retirement of designs after code takes ownership.
+- [Attention DP placement and context management](designs/attention-dp-placement.md) — selected
+  boundaries for whole-model DP replicas and instance-local ADP, token-load and cache-affinity
+  policy, joint reservations, cross-owner restoration and pressure handling; first consumer is
+  GLM5Next, implementation pending.
 
 ## Maintainer references
 

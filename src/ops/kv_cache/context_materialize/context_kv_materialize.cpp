@@ -110,18 +110,24 @@ std::size_t key_scratch_capacity(std::int32_t columns) {
     return layout.peak_bytes(1);
 }
 
-void validate_cache(const CyclicKVCacheLayerView& cache, std::int32_t padded,
-                    std::int32_t slot_count, Device device) {
+void validate_cache(const CyclicKVCacheLayerView& cache, std::int32_t padded, std::int32_t batch,
+                    Device device) {
     if (cache.capacity != kCapacity ||
         cache.padded_capacity != static_cast<std::uint32_t>(padded) ||
-        cache.num_kv_heads != kKVHeads || cache.head_dim != kHeadDim ||
-        cache.slot_count != slot_count || padded < kCapacity || slot_count <= 0) {
+        cache.num_kv_heads != kKVHeads || cache.head_dim != kHeadDim || padded < kCapacity) {
         throw std::invalid_argument("context_kv_materialize: invalid cyclic cache geometry");
     }
-    common::operand::slotted_tensor(cache.k, DType::BF16, {kHeadDim, padded, kKVHeads, slot_count},
-                                    3, 16, kOp, "cache K", device);
-    common::operand::slotted_tensor(cache.v, DType::FP16, {kHeadDim, padded, kKVHeads, slot_count},
-                                    3, 16, kOp, "cache V", device);
+    common::operand::state_field(cache.k, DType::BF16, {kHeadDim, padded, kKVHeads}, 16, kOp,
+                                 "cache K", device);
+    common::operand::state_field(cache.v, DType::FP16, {kHeadDim, padded, kKVHeads}, 16, kOp,
+                                 "cache V", device);
+    if (cache.k.records.byte_offsets.ne[0] != batch ||
+        cache.v.records.byte_offsets.ne[0] != batch || cache.k.field.layers != 1 ||
+        cache.v.field.layers != 1 ||
+        cache.v.records.byte_offsets.data != cache.k.records.byte_offsets.data ||
+        cache.v.records.storage.data != cache.k.records.storage.data) {
+        throw std::invalid_argument("context_kv_materialize: inconsistent state records");
+    }
 }
 
 } // namespace
@@ -142,7 +148,7 @@ std::size_t context_kv_materialize_workspace_capacity_bytes(std::int32_t batch_s
 }
 
 void context_kv_materialize(
-    const Tensor& context, const Tensor& positions, const Tensor& counts, const Tensor& state_slots,
+    const Tensor& context, const Tensor& positions, const Tensor& counts,
     const std::array<ContextKVMaterializeLayerView, kContextKVMaterializeLayers>& layers,
     ContextKVMaterializeExecutionEnvelope envelope, MemoryArena& workspace,
     CudaExecutionView execution) {
@@ -159,8 +165,6 @@ void context_kv_materialize(
                    execution.device());
     require_tensor(counts, DType::I32, batch, 1, 1, 1, alignof(std::int32_t), "counts",
                    execution.device());
-    require_tensor(state_slots, DType::I32, batch, 1, 1, 1, alignof(std::int32_t), "state slots",
-                   execution.device());
     if (envelope.min_count > envelope.max_count ||
         envelope.max_count > static_cast<std::uint32_t>(width) ||
         envelope.max_count > static_cast<std::uint32_t>(kCapacity)) {
@@ -171,8 +175,8 @@ void context_kv_materialize(
         static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
         throw std::overflow_error("context_kv_materialize: padded capacity exceeds int32");
     }
-    const std::int32_t padded     = static_cast<std::int32_t>(layers.front().cache.padded_capacity);
-    const std::int32_t slot_count = layers.front().cache.slot_count;
+    const std::int32_t padded = static_cast<std::int32_t>(layers.front().cache.padded_capacity);
+    const auto& records       = layers.front().cache.k.records;
     // The decoder below is chosen from layer 0, so a mixed set would decode every layer with layer 0's
     // format -- and require_weight validates each layer against its own geometry, so it would pass.
     // The candidate-selector path carries this same guard for the same class, added after a measured
@@ -188,7 +192,11 @@ void context_kv_materialize(
         require_weight(layer.value_weight, "value weight", execution.device());
         require_tensor(layer.key_norm_weight, DType::BF16, kHeadDim, 1, 1, 1, 4, "key norm weight",
                        execution.device());
-        validate_cache(layer.cache, padded, slot_count, execution.device());
+        validate_cache(layer.cache, padded, batch, execution.device());
+        if (layer.cache.k.records.storage.data != records.storage.data ||
+            layer.cache.k.records.byte_offsets.data != records.byte_offsets.data) {
+            throw std::invalid_argument("context_kv_materialize: layer records must match");
+        }
     }
 
     if (envelope.max_count == 0) return;
@@ -201,7 +209,7 @@ void context_kv_materialize(
     auto scope          = workspace.scope();
     Tensor key_scratch;
     if (selected.key_scratch) key_scratch = allocate_key_scratch(workspace, columns);
-    selected.launch(context, positions, counts, state_slots, layers, envelope, key_scratch, stream);
+    selected.launch(context, positions, counts, layers, envelope, key_scratch, stream);
 }
 
 } // namespace ninfer::ops

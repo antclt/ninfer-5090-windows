@@ -28,10 +28,42 @@ void rejects(F function) {
     throw std::runtime_error("invalid protocol input was accepted");
 }
 
+void topology_identity() {
+    DeploymentOptions deployment;
+    deployment.control_host = "127.0.0.1";
+    deployment.parallel     = {.tp = 2, .ep = 2, .adp = 2};
+    deployment.nodes        = {{.id = 0, .worker = "/worker", .artifact = "/model"}};
+    deployment.ranks        = {{0, 0, 0}, {1, 0, 1}};
+    dist::ExecutionTopology topology;
+    topology.plan   = 7;
+    topology.ranks  = {{0, 0, 0, 0, {0, 2}, {0, 2}, {}, {}, {0, 2}},
+                       {1, 0, 1, 1, {1, 2}, {1, 2}, {}, {}, {1, 2}}};
+    topology.groups = {{0, {0, 1}}};
+    topology.roles  = {{"tensor", 0}, {"expert", 0}};
+    topology.validate(deployment);
+
+    wire::Encoder out;
+    wire::encode(out, topology);
+    const auto bytes = std::move(out).take();
+    wire::Decoder in(bytes);
+    auto decoded = wire::decode_topology(in);
+    in.finish();
+    decoded.validate(deployment);
+    const auto& rank = decoded.rank(1);
+    require(rank.adp.rank == 1 && rank.adp.size == 2 && rank.dp.rank == 0 && rank.dp.size == 1 &&
+                dist::process_name(rank).find(":adp1") != std::string::npos &&
+                dist::rank_description(rank).find("ADP=1/2") != std::string::npos,
+            "topology lost independent attention ownership");
+    decoded.ranks[1].adp.rank = 2;
+    rejects([&] { decoded.validate(deployment); });
+    decoded.ranks[1].adp = {0, 1};
+    rejects([&] { decoded.validate(deployment); });
+}
+
 q::WorkRow row() {
     q::WorkRow r;
     r.member            = {{41, 7}, {{1}, 9}};
-    r.slots             = {2, 3};
+    r.states            = {{0, {2048, 4096}}, {1, {8192, 16384}}};
     r.main_table        = {0, 2, 4};
     r.mtp_table         = {1, 2, 5};
     r.main_frontier     = 21;
@@ -57,12 +89,21 @@ void native_work() {
         {128, 2, 32, 3, KvCacheStorage::BFloat16, EnginePurpose::Generation}, 256, 250, true, true};
     const auto original = row();
     q::Work work{{}, q::MtpWork{{original}, {3}}};
-    work.actions.operations = {ctx::StateClear{4}, ctx::StateCopy{2, 3, 128, 256},
-                               ctx::PageCopy{{0, 4, 1}, {0, 5, 2}},
-                               ctx::MappingUpdate{{0, 2, 4}, 9, {{0, 5, 2}}}};
+    work.actions[0].operations = {ctx::RecordClear{{ctx::ContextMemory::Device, 16384, 1024}},
+                                  ctx::RecordCopy{{ctx::ContextMemory::Device, 2176, 256},
+                                                  {ctx::ContextMemory::Device, 4224, 256},
+                                                  {},
+                                                  1,
+                                                  0},
+                                  ctx::RecordCopy{{ctx::ContextMemory::Device, 32768, 1024},
+                                                  {ctx::ContextMemory::Device, 65536, 1024},
+                                                  {runtime::KvPoolId{0}},
+                                                  0,
+                                                  1},
+                                  ctx::MappingUpdate{0, 2, 9, {65536}}};
     contract.validate(work, runtime::FrameKind::Compute);
     wire::Encoder encoded;
-    q::encode_work(encoded, work, bindings);
+    q::encode_work(encoded, work, bindings, 0);
     const auto bytes = std::move(encoded).take();
     wire::Decoder input(bytes);
     const auto decoded = q::decode_work(input, bindings);
@@ -72,27 +113,39 @@ void native_work() {
     const auto& r   = mtp.rows.at(0);
     require(mtp.draft_extents == std::vector<std::uint32_t>{3} &&
                 r.member.sequence == original.member.sequence &&
-                r.member.residency == original.member.residency && r.slots.destination == 3 &&
-                r.main_table.generation == 4 && r.mtp_table.pool_id == 1 && r.mtp_frontier == 20 &&
-                r.main_frontier == 21 && r.ple_raw_tail == original.ple_raw_tail &&
-                r.ids == original.ids && r.rope_delta == -3 &&
-                r.rope_positions == original.rope_positions &&
+                r.member.residency == original.member.residency && r.states.size() == 1 &&
+                r.states.at(0).destination == 4096 && r.main_table.generation == 4 &&
+                r.mtp_table.pool_id == 1 && r.mtp_frontier == 20 && r.main_frontier == 21 &&
+                r.ple_raw_tail == original.ple_raw_tail && r.ids == original.ids &&
+                r.rope_delta == -3 && r.rope_positions == original.rope_positions &&
                 r.previous_rope == original.previous_rope &&
                 r.count_tokens == original.count_tokens && r.sampling.temperature == 0.7F &&
                 r.sampling.seed == UINT64_MAX && r.sampling_position == 4 && r.constrained,
             "native work values changed in transit");
-    const auto& actions = decoded.actions.operations;
-    require(actions.size() == 4 && std::get<ctx::StateClear>(actions[0]).slot == 4 &&
-                std::get<ctx::StateCopy>(actions[1]).offset == 128 &&
-                std::get<ctx::PageCopy>(actions[2]).destination.index == 5 &&
+    const auto& actions = decoded.actions.at(0).operations;
+    require(actions.size() == 4 &&
+                std::get<ctx::RecordClear>(actions[0]).destination.offset == 16384 &&
+                std::get<ctx::RecordCopy>(actions[1]).source.offset == 2176 &&
+                std::get<ctx::RecordCopy>(actions[2]).destination.offset == 65536 &&
                 std::get<ctx::MappingUpdate>(actions[3]).logical_begin == 9,
             "context action values changed in transit");
+    wire::Encoder rank_one_out;
+    q::encode_work(rank_one_out, work, bindings, 1);
+    const auto rank_one_bytes = std::move(rank_one_out).take();
+    wire::Decoder rank_one_in(rank_one_bytes);
+    const auto rank_one_work = q::decode_work(rank_one_in, bindings);
+    rank_one_in.finish();
+    const auto& rank_one_row = std::get<q::MtpWork>(rank_one_work.operation).rows.at(0);
+    require(rank_one_row.states.size() == 1 && rank_one_row.states.at(1).source == 8192 &&
+                rank_one_row.states.at(1).destination == 16384 &&
+                rank_one_work.actions.at(1).empty(),
+            "rank encoding reused another rank's physical bindings");
     wire::Decoder truncated{std::span(bytes).first(bytes.size() - 1)};
     rejects([&] { (void)q::decode_work(truncated, bindings); });
 
     q::Work bind{{}, q::ContextWork{{{original.member, original.sampling, {4, 5}, vision}}, {}}};
     wire::Encoder encoded_binding;
-    q::encode_work(encoded_binding, bind, bindings);
+    q::encode_work(encoded_binding, bind, bindings, 0);
     const auto binding_bytes = std::move(encoded_binding).take();
     wire::Decoder binding_input(binding_bytes);
     const auto bound = q::decode_work(binding_input, bindings);
@@ -116,7 +169,7 @@ void native_work() {
                                    {prefill_row},
                                    q::PlePrefetch{original.member, 23, {23, 24}, {31, 32}}}};
     wire::Encoder forward_out;
-    q::encode_work(forward_out, forward, bindings);
+    q::encode_work(forward_out, forward, bindings, 0);
     const auto forward_bytes = std::move(forward_out).take();
     wire::Decoder forward_in(forward_bytes);
     const auto forward_copy = q::decode_work(forward_in, bindings);
@@ -131,7 +184,7 @@ void native_work() {
     prefill_row.constrained        = false;
     q::Work score{{}, q::ScoreWork{prefill_row, {24}, 1}};
     wire::Encoder score_out;
-    q::encode_work(score_out, score, bindings);
+    q::encode_work(score_out, score, bindings, 0);
     const auto score_bytes = std::move(score_out).take();
     wire::Decoder score_in(score_bytes);
     const auto score_copy = q::decode_work(score_in, bindings);
@@ -146,19 +199,20 @@ void native_work() {
     masks.rows[0].words.pop_back();
     rejects([&] { contract.validate(work, request, masks); });
     q::ComputeResult result{{{1, 3, 1, {5, 6}, {23, 5}, 0}}};
-    q::Commit commit{{{original.member, {2, 6}, 2, false, false, false}}, {}};
+    q::Commit commit{
+        {{original.member, {{0, {2048, 6144}}, {1, {8192, 24576}}}, 2, false, false, false}}, {}};
     contract.validate(work, q::Result{result}, commit);
     commit.rows[0].accepted = 1;
     rejects([&] { contract.validate(work, q::Result{result}, commit); });
     commit.rows[0].terminal = true;
     contract.validate(work, q::Result{result}, commit);
     wire::Encoder encoded_commit;
-    q::encode_commit(encoded_commit, commit);
+    q::encode_commit(encoded_commit, commit, 0);
     const auto commit_bytes = std::move(encoded_commit).take();
     wire::Decoder commit_input(commit_bytes);
     const auto received_commit = q::decode_commit(commit_input);
     require(received_commit.rows[0].accepted == 1 && received_commit.rows[0].terminal &&
-                received_commit.rows[0].slots.destination == 6,
+                received_commit.rows[0].states.at(0).destination == 6144,
             "commit changed in transit");
     q::ComputeResult prefill;
     prefill.rows.resize(1);
@@ -180,6 +234,36 @@ void native_work() {
     require(received_result.rows[0].tokens == result.rows[0].tokens &&
                 received_result.rows[0].input_tokens == result.rows[0].input_tokens,
             "result changed in transit");
+}
+
+void context_observations() {
+    q::ContextResult result;
+    result.transfers = {{.direction   = runtime::ContextTransferDirection::PeerDeviceToDevice,
+                         .image_count = 1,
+                         .work        = {4096, 2},
+                         .elapsed_ns  = 7000,
+                         .rank        = 1,
+                         .peer        = runtime::ContextPeerTransfer{0, 1}},
+                        {.resource    = {.pool = runtime::KvPoolId{2}},
+                         .direction   = runtime::ContextTransferDirection::DeviceToDevice,
+                         .page_groups = 3,
+                         .work        = {512, 1},
+                         .elapsed_ns  = 2000,
+                         .rank        = 1}};
+    wire::Encoder out;
+    q::encode_result(out, result);
+    const auto bytes = std::move(out).take();
+    wire::Decoder in(bytes);
+    const auto decoded = std::get<q::ContextResult>(q::decode_result(in));
+    in.finish();
+    require(decoded.transfers.size() == 2 &&
+                decoded.transfers[0].direction ==
+                    runtime::ContextTransferDirection::PeerDeviceToDevice &&
+                decoded.transfers[0].peer == runtime::ContextPeerTransfer{0, 1} &&
+                decoded.transfers[0].rank == 1 && decoded.transfers[0].elapsed_ns == 7000 &&
+                decoded.transfers[0].work.payload_bytes == 4096 && !decoded.transfers[1].peer &&
+                decoded.transfers[1].direction == runtime::ContextTransferDirection::DeviceToDevice,
+            "context observations lost peer endpoints or conflated local and remote copies");
 }
 
 void queues() {
@@ -292,7 +376,9 @@ void inputs() {
 
 int main() {
     try {
+        topology_identity();
         native_work();
+        context_observations();
         queues();
         inputs();
         RankSnapshot memory;

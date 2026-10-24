@@ -85,7 +85,7 @@ SCENARIO_FIXTURES = {
 
 WARMUP_FIXTURE = "text_smoke_zh"
 RUN_ARTIFACT_TYPE = "ninfer_serve_corpus_result"
-RUN_SCHEMA_VERSION = 8
+RUN_SCHEMA_VERSION = 9
 SERVER_LOG_ARTIFACT_TYPE = "ninfer_serve_request_log"
 SERVER_LOG_SCHEMA_VERSION = 31
 STARTUP_TIMEOUT_SECONDS = 1800.0
@@ -480,7 +480,7 @@ def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> 
     actual = {
         "device": engine.get("device"),
         "max_context": engine.get("max_context"),
-        "kv_capacity": engine.get("kv_capacity"),
+        "context_capacity_mode": engine.get("context_capacity_mode"),
         "prefill_chunk": engine.get("prefill_chunk"),
         "kv_cache": engine.get("kv_cache"),
         "cuda_graph": engine.get("cuda_graph"),
@@ -492,7 +492,7 @@ def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> 
     expected = {
         "device": device,
         "max_context": 262144,
-        "kv_capacity": 262144,
+        "context_capacity_mode": "auto",
         "prefill_chunk": 1024,
         "kv_cache": KV_CACHE_NAMES[spec.kv_dtype],
         "cuda_graph": True,
@@ -504,10 +504,7 @@ def validate_server_start(event: dict[str, Any], spec: RunSpec, device: int) -> 
     if actual != expected:
         raise CampaignError(f"server_start Engine configuration mismatch: {actual!r}")
     context_cache = engine.get("context_cache", {})
-    if (
-        context_cache.get("extra_state_slots") != 0
-        or context_cache.get("host_capacity_bytes") != 0
-    ):
+    if context_cache.get("host_capacity_bytes") != 0:
         raise CampaignError("server_start context cache capacity differs from the campaign")
     if (event.get("sampling_defaults", {}).get("server_overrides", {}).get("temperature") == 0) != (
         spec.sampling_mode == "greedy"
@@ -569,7 +566,9 @@ def build_result_record(
         prompt_tokens = int(result["prompt_tokens"])
         completion_tokens = int(result["completion_tokens"])
         prepare_seconds = float(timings["prepare"])
-        vision_seconds = float(timings["vision"])
+        ttft_seconds = float(timings["ttft"])
+        vision_seconds = float(timings["vision_stream"])
+        vision_samples = server_event["execution"]["max_rank_gpu_intervals"]["vision_stream"]["count"]
         prefill_seconds = float(timings["prefill"])
         decode_seconds = float(timings["decode"])
         total_seconds = float(timings["total"])
@@ -582,6 +581,7 @@ def build_result_record(
         engine_boundary_exposed_seconds = float(host_exposed["engine_boundary"])
         session_call_exposed_seconds = float(host_exposed["session_call"])
         executor_poll_exposed_seconds = float(host_exposed["executor_poll"])
+        executor_flush_exposed_seconds = float(host_exposed["executor_flush"])
         engine_commit_output_exposed_seconds = float(host_exposed["engine_commit_output"])
         engine_maintenance_exposed_seconds = float(host_exposed["engine_maintenance"])
         engine_host_exposed_seconds = float(host_exposed["total"])
@@ -594,10 +594,14 @@ def build_result_record(
     except (KeyError, TypeError, ValueError) as exc:
         raise CampaignError(f"request_done is missing required metrics: {exc}") from exc
 
+    if type(vision_samples) is not int or vision_samples < 0:
+        raise CampaignError("request_done has an invalid Vision timing sample count")
+
     host_phase_sum = (
         engine_boundary_exposed_seconds
         + session_call_exposed_seconds
         + executor_poll_exposed_seconds
+        + executor_flush_exposed_seconds
         + engine_commit_output_exposed_seconds
         + engine_maintenance_exposed_seconds
     )
@@ -626,12 +630,13 @@ def build_result_record(
         "decode_tokens": decode_tokens,
         "finish_reason": result.get("finish_reason"),
         "prepare_seconds": prepare_seconds,
-        "vision_seconds": vision_seconds,
+        "vision_stream_seconds": vision_seconds if vision_samples else None,
+        "vision_stream_samples": vision_samples,
         "prefill_seconds": prefill_seconds,
         "decode_seconds": decode_seconds,
         "total_seconds": total_seconds,
         "prefill_tok_s": safe_ratio(float(prompt_tokens), prefill_seconds),
-        "server_ttft_ms": 1000.0 * (prepare_seconds + vision_seconds + prefill_seconds),
+        "server_ttft_ms": 1000.0 * ttft_seconds,
         "decode_tok_s": safe_ratio(float(decode_tokens), decode_seconds),
         "speculative_rounds": speculative_rounds,
         "drafted_tokens": drafted_tokens,
@@ -647,6 +652,7 @@ def build_result_record(
         "engine_boundary_exposed_seconds": engine_boundary_exposed_seconds,
         "session_call_exposed_seconds": session_call_exposed_seconds,
         "executor_poll_exposed_seconds": executor_poll_exposed_seconds,
+        "executor_flush_exposed_seconds": executor_flush_exposed_seconds,
         "engine_commit_output_exposed_seconds": engine_commit_output_exposed_seconds,
         "engine_maintenance_exposed_seconds": engine_maintenance_exposed_seconds,
         "engine_host_exposed_seconds": engine_host_exposed_seconds,
@@ -762,8 +768,8 @@ def server_command(
         spec.model_id,
         "--max-context",
         "262144",
-        "--kv-capacity",
-        "262144",
+        "--context-capacity",
+        "auto",
         "--prefill-chunk",
         "1024",
         "--stats-interval",
@@ -775,8 +781,6 @@ def server_command(
         "--kv-dtype",
         spec.kv_dtype,
         "--no-prefix-reuse",
-        "--extra-state-slots",
-        "0",
         "--host-cache-capacity",
         "0",
     ]

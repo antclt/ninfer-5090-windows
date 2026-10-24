@@ -35,6 +35,16 @@ target_include_directories(ninfer::json INTERFACE
   ${PROJECT_SOURCE_DIR}/third_party)
 
 if(NINFER_BUILD_ENGINE)
+  if(MSVC)
+    # Windows: libjpeg-turbo dev binaries are staged into jpeg/ (see build_windows.bat). Expose the
+    # same JPEG::JPEG target name upstream consumers link, so nothing else changes.
+    add_library(JPEG::JPEG INTERFACE IMPORTED GLOBAL)
+    target_include_directories(JPEG::JPEG INTERFACE "${PROJECT_SOURCE_DIR}/jpeg/include")
+    target_link_directories(JPEG::JPEG INTERFACE "${PROJECT_SOURCE_DIR}/jpeg/lib")
+    target_link_libraries(JPEG::JPEG INTERFACE jpeg)
+  else()
+    find_package(JPEG REQUIRED)
+  endif()
   if(NOT MSVC)
     # On Windows the staged-binaries PkgConfig::FFMPEG above is the whole story: there is no
     # pkg-config here, so the pkg_check_modules call upstream keeps cannot run. Consumers link

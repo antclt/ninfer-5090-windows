@@ -150,10 +150,17 @@ struct ModelFixture {
             if (i < 8) { added.push_back(token); }
             decoder[std::to_string(256 + i)] = token;
         }
-        resource("tokenizer.json",
-                 Json{{"model", {{"type", "BPE"}, {"vocab", vocab}, {"merges", Json::array()}}},
-                      {"added_tokens", added}}
-                     .dump());
+        resource(
+            "tokenizer.json",
+            Json{
+                {"normalizer", {{"type", "NFC"}}},
+                {"pre_tokenizer",
+                 Json::parse(
+                     R"json({"type":"Sequence","pretokenizers":[{"type":"Split","pattern":{"Regex":"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"},"behavior":"Isolated","invert":false},{"type":"ByteLevel","add_prefix_space":false,"use_regex":false}]})json")},
+                {"decoder", {{"type", "ByteLevel"}}},
+                {"model", {{"type", "BPE"}, {"vocab", vocab}, {"merges", Json::array()}}},
+                {"added_tokens", added}}
+                .dump());
         resource("tokenizer_config.json", Json{{"added_tokens_decoder", decoder}}.dump());
         resource("generation_config.json", Json{{"eos_token_id", {256, 258}}}.dump());
         resource("chat_template.jinja", "a user-provided template, preserved as data");
@@ -179,8 +186,8 @@ void logical_data_and_instances() {
     require(plan->config().text.architecture == Architecture::Qwen3_5 &&
                 plan->config().text.hidden_size == 128,
             "binding chose a checkpoint-specific geometry");
-    require(plan->resources().public_token_count == 265 &&
-                plan->resources().tokenizer->encode("<|video_pad|>") == std::vector<int>{264},
+    require(plan->resources().text.public_token_count == 265 &&
+                plan->resources().text.tokenizer->encode("<|video_pad|>") == std::vector<int>{264},
             "tokenizer_config added tokens were not included in the public domain");
     const auto& attention = std::get<q35::AttentionWeights>(plan->weights().text.layers[0].mixer);
     const auto& query     = plan->parameter(attention.query);

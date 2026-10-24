@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-20",
+  "recorded": "2026-10-24",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -206,12 +206,6 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "The perturbation-coverage section of the Op development contract: a passing test is not evidence that the test can fail, and an Op whose wrong answer is well formed -- a selection returning the wrong k entries, a tie broken the wrong way, a sort that orders ascending -- needs a deliberate perturbation to be distinguishable from a correct one. That is what the NINFER_OP_TEST_MUTATIONS seam in src/ops/CMakeLists.txt exists for."
-    },
-    "docs/maintainer/paged-kv-cache.md": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "An anchor fix for the port's own gate: check_doc_links.py resolves every link target including its fragment, and these two maintainer documents are written in Chinese upstream, so the anchors are the full heading text rather than the English stubs the links used."
     },
     "docs/performance.md": {
       "status": "M",
@@ -563,9 +557,15 @@
     },
     "src/models/common/context/physical_reclaim.h": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "",
       "reason": ""
+    },
+    "src/models/common/frontend/prompt.h": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Re-homed the port's per-phase timing fields (render_seconds, convert_seconds, contract_seconds, positions_seconds, context_cache_seconds) from the deleted qwen/frontend/prepared_prompt.h onto the shared models::frontend::PrepareStats; upstream moved the struct to the common layer."
     },
     "src/models/common/moe/offload/resources.h": {
       "status": "M",
@@ -585,29 +585,11 @@
       "review": "product",
       "reason": "Prompt preparation's host phases, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of 1cd70d17. The merge took upstream's frontend.cpp and dropped the five Clock brackets -- contract, convert, render, positions and cache prep -- while prepared_prompt.h kept their fields, so at HEAD nothing wrote or read them. The split is what makes a preparation that is not the render attributable: the render is ~80 ms of a 3.4 s remainder on a real agent session."
     },
-    "src/models/common/qwen/frontend/prepared_prompt.h": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "The per-phase timings the request log and the serve phase report read: render_seconds, convert_seconds, contract_seconds and context_cache_seconds. Their definitions are recorded in AGENTS.md -- prepare_seconds spans the whole frontend, so reading one of these as 'the render' was a measured error once."
-    },
     "src/models/common/qwen/frontend/processor.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "product",
       "reason": "The frontier ledger, restored 2026-10-06 after item 16 found the b9114396 merge had taken the port's version of it. encode_rendered_chat built a bare byte_boundaries vector and read it back with a running boundary_index, so the push order and the read order were two independent traversals of the same fields agreeing only by convention; the port replaced that with a FrontierEntry ledger (kind + ordinal + offset) written and read by label. Upstream's own b9114396 change added a SIXTH field to both traversals (rewrite_checkpoint->recovery_offset), which is the pattern the ledger exists to make safe -- a change reaching one side and missing the other mislabels every later frontier silently, and the count check saw only the totals differing. The restoration carries RewriteRecovery as its own BoundaryKind. Verified by ninfer_qwen3_5_frontend_test, ninfer_qwen3_5_prefix_real_test and the full suite."
-    },
-    "src/models/common/qwen/frontend/tokenizer.cpp": {
-      "status": "M",
-      "disposition": "product",
-      "review": "product",
-      "reason": "ADR-0010 incremental prompt encoding. Restored 2026-10-05 after upstream b9114396's rewrite of this file dropped the port's half: the declarations survived in the port's tokenizer.h, so the tree compiled and linked with the cache dead, encode_cache_splices() stayed 0 and nothing failed. The port's layer is wrapped in NINFER-PORT-BEGIN/END and is byte-identical to c42406ab; encode_with_boundaries_uncached is upstream's own body, renamed, so the port owns no tokenization arithmetic here. Protected by ninfer_qwen3_5_frontend_test. Remove this entry only if the feature is withdrawn and ADR-0010 is superseded."
-    },
-    "src/models/common/qwen/frontend/tokenizer.h": {
-      "status": "M",
-      "disposition": "product",
-      "review": "product",
-      "reason": "Cited in the diff -- ADR: 0010. Open it before changing this path."
     },
     "src/models/qwen3_5/config.cpp": {
       "status": "M",
@@ -1095,9 +1077,27 @@
       "review": "a port-carried kernel family, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- the sparse-GQA and causal tests",
       "reason": "Port change: passes visible_capacity to the grouped kernel, which uses it for the position guard its quantized siblings already had. The launch had validated that the block table covers visible_capacity since before this change, so the guard adds no new precondition."
     },
+    "src/ops/softmax_attention/qsa/indexer/dgx_spark/score.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "MSVC port: dependent member-template call needs the `template` disambiguator (`jobs.template build<...>`)."
+    },
+    "src/ops/softmax_attention/qsa/indexer/dgx_spark/simt.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "MSVC port: dependent member-template call needs the `template` disambiguator."
+    },
+    "src/ops/softmax_attention/qsa/indexer/score.cuh": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "MSVC port: dependent member-template call needs the `template` disambiguator."
+    },
     "src/ops/softmax_attention/qsa/indexer/select.cuh": {
       "status": "M",
-      "disposition": "windows",
+      "disposition": "unknown",
       "review": "windows",
       "reason": "Windows/MSVC C++ conformance necessity: adds the C++ template disambiguator on jobs.template build<1, Partition>(a) because jobs has dependent type IndexerJobs<MaxQueries> in indexer_partition_kernel, and nvcc + MSVC otherwise parses '<' as operator< (error: no operator \">\" matches these operands)."
     },
@@ -1166,6 +1166,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Cited in the diff -- win32: _WIN32. Open it before changing this path."
+    },
+    "src/runtime/engine/context_cache/placement_policy.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "MSVC port: upstream's `unsigned __int128` becomes ninfer::Uint128 (no __int128 on MSVC)."
     },
     "src/runtime/engine/context_cache/resource_manager.h": {
       "status": "M",
@@ -1257,6 +1263,18 @@
       "review": "product",
       "reason": "Port change: Schema::check recursed once per nesting level with a measured 1808-byte frame and a schema's nesting is the request's to choose, so a ~21 KB body at depth 570 killed the serving process with STATUS_STACK_OVERFLOW -- measured on this tree's own Release objects, with a flat 155 KB schema and depth 3000 through the protocol route both passing, which is what attributes the failing frame to this walk rather than to nlohmann. Bounded at 64 levels using the JSON pointer the walker already carries, whose separator count is exactly the depth because child() escapes '/' as '~1'. Found and measured by the c-review detect pass."
     },
+    "src/text/tokenizer.cpp": {
+      "status": "M",
+      "disposition": "product",
+      "review": "product",
+      "reason": "ADR-0010 incremental prompt encoding re-homed from the deleted src/models/common/qwen/frontend/tokenizer.cpp onto ninfer::text::Tokenizer (upstream consolidated tokenization into the shared class)."
+    },
+    "src/text/tokenizer.h": {
+      "status": "M",
+      "disposition": "product",
+      "review": "product",
+      "reason": "ADR-0010 cache state (EncodeCacheEntry, splice/remember, counters) re-homed onto ninfer::text::Tokenizer."
+    },
     "tests/README.md": {
       "status": "M",
       "disposition": "windows",
@@ -1269,11 +1287,11 @@
       "review": "windows",
       "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
     },
-    "tests/artifact/materialization_cuda_errors.cpp": {
+    "tests/artifact/materialization_io.cpp": {
       "status": "M",
       "disposition": "windows",
       "review": "windows",
-      "reason": "Cited in the diff -- msvc: MSVC. Open it before changing this path."
+      "reason": "MSVC port: GNU-ld --wrap injection unavailable on MSVC, so the injected-failure cases are reported as skipped (see the _MSC_VER guard); the file is upstream's, port diverges only in that guard."
     },
     "tests/artifact/test_container.py": {
       "status": "M",
@@ -1316,6 +1334,12 @@
       "disposition": "unknown",
       "review": "product",
       "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
+    },
+    "tests/convert/glm5next_fixture.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Type annotation for `tensors` so mypy passes under the port's strict gate."
     },
     "tests/convert/test_cli.py": {
       "status": "M",
@@ -1364,6 +1388,18 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Subprocess call states encoding='utf-8'. Upstream's new tool-schema oracle uses text=True with no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and the payload is deliberately non-ASCII (ensure_ascii=False), so the first case raised UnicodeEncodeError before the probe ran. The same defect and the same fix as tests/text/test_json_schema.py, which upstream wrote the same way; upstream has no CI, so neither had been run anywhere but the maintainer's machine. No assertion changed."
+    },
+    "tests/models/glm5next/test_loading.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Explicit check=False on subprocess.run (ruff PLW1510)."
+    },
+    "tests/models/glm5next/test_tool_schema.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Explicit encoding on subprocess.run (subprocess-encoding gate)."
     },
     "tests/models/qwen3_5/test_engine_dflash2_real.cpp": {
       "status": "M",
@@ -1619,7 +1655,7 @@
     },
     "tests/ops/softmax_attention/qsa/sparse_gqa_fixture.h": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "Windows portability, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain. Verified by the three CPU tests where it touches the executor, and by the ASan subset where it touches host lifetime",
       "reason": "Windows necessity: the same replacement, and half()/unhalf() renamed to half_bits()/half_value() because <cuda_fp16.h> brings a global `half` type and the helper name became ambiguous."
     },
@@ -1719,6 +1755,18 @@
       "review": "product",
       "reason": "Test coverage for a port feature or fix. The port's rule is that advertised surface lands with its evidence, and these are the binaries that would catch a merge silently taking upstream's version of the code they cover."
     },
+    "tests/text/fixtures/glm5next-tokenizer.json": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Escaped the C1 control codepoints so the port's text-encoding gate passes; JSON parses identically."
+    },
+    "tests/text/fixtures/qwen-tokenizer.json": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Escaped the C1 control codepoints so the port's text-encoding gate passes; JSON parses identically."
+    },
     "tests/text/test_chat_templates.py": {
       "status": "M",
       "disposition": "product",
@@ -1736,6 +1784,12 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "Subprocess call states encoding='utf-8'. Upstream's new file spawns its probe with text=True and no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and this payload is not ASCII by construction. Windows necessity, found by check_subprocess_encoding.py, the gate that exists because upstream wrote the same defect twice before. No assertion changed."
+    },
+    "tests/text/tokenizer_oracle.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Explicit encoding on subprocess.run (subprocess-encoding gate)."
     },
     "third_party/llama-jinja/jinja/json.cpp": {
       "status": "M",
@@ -1875,17 +1929,17 @@
       "review": "a converter recipe, not independently reviewed; evidence is the build in both trees, the affected tests and the gate chain -- pytest tests/convert",
       "reason": "upstream's own dead import, removed for the port's ruff gate: `SafetensorsSource` is imported at line 13 and appears nowhere else in the file -- in upstream's copy either, checked with git show upstream/dev:tools/convert/qwen4_exp.py rather than assumed, because an unused import in a merged file is also the fingerprint of a dropped hunk (that is exactly how a test this merge lost from tests/convert/test_sources.py was found). `ruff check tools tests` lints this tree's tools and upstream does not run it. No behaviour changes: the import was unused."
     },
+    "tools/convert/qwen_resources.py": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Type annotation for `roles` so mypy passes under the port's strict gate."
+    },
     "tools/convert/recipe.py": {
       "status": "M",
       "disposition": "unknown",
       "review": "product",
       "reason": "annotations where the port's mypy.ini requires them and upstream's code supplied none: the attributes and containers mypy reports as `var-annotated` on an empty literal (provenance, explicit_parents, placements, auxiliary_tensors, auxiliary_references), plus two sites the annotations then exposed. `covered` and `referenced` are annotated to the shapes their own use establishes -- `referenced` accepts both binding forms because its consumer does (tools/artifact/schema.py:371 only requires an object per role), and mypy had inferred the narrower one from whichever assignment it saw first. The last rename does change two lines: the name `chosen` was reused for two differently-typed loop variables, an explicit parent's shape and an explicit group's order, and the second is now `group_order`. Verified: `mypy tools/release tools/convert tests` reports 0 errors in 107 files, and the converter and artifact tests pass."
-    },
-    "tools/convert/resources.py": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "product",
-      "reason": "A fix on top of the annotations. pipeline.py's own comment states it: entry 0 is the artifact itself and lives at `path`, every later entry is a part beside it, and a part without a name is a writer bug rather than a path of None. resources.py guards vision_config before reading it."
     },
     "tools/convert/sources/compressed_tensors.py": {
       "status": "M",

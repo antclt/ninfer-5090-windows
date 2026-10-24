@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from .model import Model, Parameter
-from .resources import load_resources
+from .qwen_resources import load_qwen_resources
 from .sources.logical import LogicalSource, select_rows, transpose_source
 from .sources.safetensors import tensor_source
 
@@ -564,7 +564,7 @@ def build_model(
         / "qwen3_8_flash_next.jinja",
         **(resource_overrides or {}),
     }
-    refs, res, count, special = load_resources(
+    refs, res, count, special = load_qwen_resources(
         base.root,
         vocab_size=cfg["vocab_size"],
         vision_config=records.get("vision", {}).get("config"),
@@ -572,7 +572,13 @@ def build_model(
     )
     for c, values in refs.items():
         records[c]["resources"] = values
-    model = Model(records, resources=res, token_count=count, special_token_ids=special)
+    model = Model(
+        records,
+        resources=res,
+        token_count=count,
+        special_token_ids=special,
+        proposal_domain="full",
+    )
     b = Builder(model, base, cfg)
     h = cfg["hidden_size"]
     b.add(

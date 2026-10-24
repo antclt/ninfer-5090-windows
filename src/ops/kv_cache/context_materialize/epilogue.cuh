@@ -2,6 +2,7 @@
 
 #include "ninfer/ops/context_kv_materialize.h"
 #include "ops/common/cuda/reduce.cuh"
+#include "ops/common/host/operands.h"
 #include "ops/kv_cache/kernels/layout.cuh"
 #include "ops/rope/kernels/phase.cuh"
 
@@ -57,21 +58,21 @@ inline DeviceLayers make_device_layers(
             static_cast<const std::uint8_t*>(source.value_weight.qdata),
             static_cast<const std::uint8_t*>(source.value_weight.scales),
             static_cast<const __nv_bfloat16*>(source.key_norm_weight.data),
-            static_cast<__nv_bfloat16*>(source.cache.k.data),
-            static_cast<__half*>(source.cache.v.data),
+            common::operand::state_field_base<__nv_bfloat16>(source.cache.k),
+            common::operand::state_field_base<__half>(source.cache.v),
             static_cast<std::int32_t>(source.cache.padded_capacity),
             inverse_divisor(source.key_weight),
             inverse_divisor(source.value_weight),
-            source.cache.k.nb[3] / 2,
-            source.cache.v.nb[3] / 2,
+            source.cache.k.field.byte_strides[3] / 2,
+            source.cache.v.field.byte_strides[3] / 2,
         };
     }
     return result;
 }
 
 __device__ __forceinline__ void store_key_head(const float* input, DeviceLayerView layer,
-                                               const int* positions, const int* slots, int column,
-                                               int width, int head) {
+                                               const int* positions, const std::int64_t* offsets,
+                                               int column, int width, int head) {
     const int lane = threadIdx.x & 31;
     const int j    = lane * 2;
     float x0 = input[j], x1 = input[j + 1], y0 = input[j + 64], y1 = input[j + 65];
@@ -84,18 +85,19 @@ __device__ __forceinline__ void store_key_head(const float* input, DeviceLayerVi
     float sin0, cos0, sin1, cos1;
     rope_d128_theta1e7_sincos(positions, column, j, &sin0, &cos0);
     rope_d128_theta1e7_sincos(positions, column, j + 1, &sin1, &cos1);
-    const auto dst = layer.key_slot_stride * slots[column / width] +
+    const auto dst = offsets[column / width] / sizeof(__nv_bfloat16) +
                      kv::cyclic_offset<128, 2048>(positions[column], head, layer.padded_capacity);
     auto* out      = reinterpret_cast<__nv_bfloat162*>(layer.cache_k + dst);
     out[lane]      = __floats2bfloat162_rn(x0 * cos0 - y0 * sin0, x1 * cos1 - y1 * sin1);
     out[lane + 32] = __floats2bfloat162_rn(y0 * cos0 + x0 * sin0, y1 * cos1 + x1 * sin1);
 }
 
-__device__ __forceinline__ void store_value(int row, int column, int slot, const int* positions,
-                                            DeviceLayerView layer, float result) {
-    const auto dst = layer.value_slot_stride * slot +
-                     kv::cyclic_offset<128, 2048>(positions[column], row / 128,
-                                                  layer.padded_capacity, row % 128);
+__device__ __forceinline__ void store_value(int row, int column, std::int64_t offset,
+                                            const int* positions, DeviceLayerView layer,
+                                            float result) {
+    const auto dst =
+        offset / sizeof(__half) + kv::cyclic_offset<128, 2048>(positions[column], row / 128,
+                                                               layer.padded_capacity, row % 128);
     layer.cache_v[dst] = __float2half_rn(__bfloat162float(__float2bfloat16_rn(result)));
 }
 
@@ -103,7 +105,7 @@ struct MaterializeProjectionEpilogue {
     DeviceLayerView layer;
     const int* positions;
     const int* counts;
-    const int* slots;
+    const std::int64_t* offsets;
     float* scratch;
     int layer_index, width, batch, min_count, max_count;
     bool value;
@@ -115,7 +117,7 @@ struct MaterializeProjectionEpilogue {
         if (count < min_count || count > max_count || column % width >= count) return;
         if (!value)
             scratch[row + 1024LL * (packed_column + max_count * batch * layer_index)] = result;
-        else { store_value(row, column, slots[request], positions, layer, result); }
+        else { store_value(row, column, offsets[request], positions, layer, result); }
     }
 
     template <class Output>
@@ -145,7 +147,7 @@ struct ContextPrefixColumns {
 // linkage in a header is a duplicate device symbol at nvlink time.
 static __global__ __launch_bounds__(256) void context_kv_key_post_kernel(
     const float* __restrict__ key_scratch, const std::int32_t* __restrict__ positions,
-    const std::int32_t* __restrict__ counts, const std::int32_t* __restrict__ state_slots,
+    const std::int32_t* __restrict__ counts, const std::int64_t* __restrict__ state_offsets,
     DeviceLayers layers, std::int32_t batch_size, std::int32_t width, std::int32_t min_count,
     std::int32_t max_count) {
     const int packed_column   = static_cast<int>(blockIdx.x);
@@ -160,7 +162,7 @@ static __global__ __launch_bounds__(256) void context_kv_key_post_kernel(
     const float* input = key_scratch +
                          kRows * (packed_column + max_count * batch_size * layer_index) +
                          head * kHeadDim;
-    store_key_head(input, layer, positions, state_slots, physical_column, width, head);
+    store_key_head(input, layer, positions, state_offsets, physical_column, width, head);
 }
 
 } // namespace ninfer::ops::detail::context_kv

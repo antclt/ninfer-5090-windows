@@ -6,23 +6,34 @@
 
 namespace ninfer::models::qwen4_exp::detail {
 
-std::optional<CheckpointHandle> SessionImpl::detach(Sequence& s, runtime::CheckpointRole role) {
+PreparedCheckpoint SessionImpl::prepare_checkpoint(Sequence& s) {
+    const auto frontier = s.continuation.metadata.main_frontier;
+    if (!s.request->can_checkpoint(frontier)) return {};
+    auto record = checkpoints.reserve_owned();
+    if (!record.valid()) return {};
+    ContextDemand demand;
+    for (std::uint32_t pool = 0; pool < pool_count(); ++pool)
+        demand.add_growth(directory.pool(pool).histories(), s.histories[pool].handle(), 0);
+    if (!directory.reserve(demand)) return {};
+    return {std::move(record), capture_identity(s)};
+}
+
+std::optional<CheckpointHandle> SessionImpl::detach(Sequence& s, runtime::CheckpointRole role,
+                                                    PreparedCheckpoint prepared) {
     const auto f = s.continuation.metadata.main_frontier;
-    if (!s.request->can_checkpoint(f)) return {};
-    auto identity = capture_identity(s);
+    if (!prepared.record.valid()) prepared = prepare_checkpoint(s);
+    if (!prepared.record.valid()) return {};
     std::vector<context::HistoryPrefix> prefixes;
     for (std::uint32_t pool = 0; pool < directory.pool_count(); ++pool)
         prefixes.push_back(directory.pool(pool).histories().retain_prefix(
             s.histories[pool].handle(),
             pool == 0 ? f : s.continuation.metadata.mtp_frontier.value()));
-    const auto record = checkpoints.reserve();
-    if (!record) return {};
     auto& states     = directory.states();
     const auto image = s.continuation.image;
     if (states.role(image) == context::StateRole::ActiveMutable) states.freeze(image);
-    checkpoints.publish(
-        *record,
-        {Snapshot(states, s.continuation, std::move(prefixes), std::move(identity)), role});
+    const auto record = prepared.record.publish(
+        {Snapshot(states, s.continuation, std::move(prefixes), std::move(prepared.identity)),
+         role});
     if (s.write_destination.valid()) {
         states.abort_write(image, s.write_destination);
         if (!states.release(s.write_destination))
@@ -38,9 +49,11 @@ std::optional<CheckpointHandle> SessionImpl::detach(Sequence& s, runtime::Checkp
 
 namespace ninfer::models::qwen4_exp {
 
-std::optional<CapturePreparation> Session::prepare_capture(SequenceHandle h) {
+std::optional<CapturePreparation>
+Session::prepare_capture(SequenceHandle h, std::span<const CheckpointHandle> host_victims) {
     auto& p = *impl_;
     auto& s = p.sequence(h);
+    if (p.directory.maintenance_pending()) return {};
     if (!s.permit || !s.request->summary.publish_continuation) return {};
     if (s.recovery_peak) {
         s.capture.reset();
@@ -83,20 +96,50 @@ std::optional<CapturePreparation> Session::prepare_capture(SequenceHandle h) {
     ticket->records.reserve(point.roles.size());
     for (const auto role : point.roles) {
         const auto record = p.checkpoints.reserve();
-        if (!record) return CapturePreparation{.frontier = point.frontier, .origin = point.origin};
+        if (!record) return {};
         ticket->records.emplace_back(*record, role);
     }
-    auto destination = context::reserve_capture_destination(
-        *ticket->states, p.directory.host_allocation(), ticket->host);
-    if (!destination)
-        return CapturePreparation{point.frontier,
-                                  false,
-                                  {.state_slots = 1},
-                                  p.directory.states().image_bytes(),
-                                  point.origin};
+    std::vector<CheckpointHandle> retired;
+    std::optional<context::StateId> destination;
+    if (host_victims.empty()) {
+        destination = context::reserve_capture_destination(p.directory, ticket->host);
+    } else {
+        for (const auto victim : host_victims)
+            if (!p.checkpoints.erasable(victim)) return {};
+        const auto released = p.footprint(host_victims, true);
+        ContextDemand demand;
+        const auto targets    = demand.add_host({.state_images = 1});
+        const auto assessment = p.directory.assess(demand, released);
+        if (!assessment.ready())
+            return CapturePreparation{.frontier   = point.frontier,
+                                      .assessment = assessment,
+                                      .host       = {.state_images = 1},
+                                      .origin     = point.origin};
+        destination = p.directory.states().reserve_logical_destination();
+        if (!destination) return {};
+        ticket->destination = *destination;
+        for (const auto victim : host_victims) {
+            if (!p.checkpoints.erase(victim))
+                throw std::logic_error("capture Host release changed after its assessment");
+            retired.push_back(victim);
+        }
+        auto reserved = p.directory.reserve(assessment.demand);
+        if (!reserved || !reserved.reservation->ready())
+            throw std::logic_error("capture Host placement changed after its assessment");
+        ticket->host.emplace(reserved.reservation->take(targets.state));
+    }
+    if (!destination) {
+        ContextDemand demand;
+        demand.add_state({.count = 1});
+        return CapturePreparation{
+            point.frontier, false, p.directory.assess(demand), {.state_images = 1}, point.origin};
+    }
     ticket->destination = *destination;
     s.capture           = std::move(ticket);
-    return CapturePreparation{.frontier = point.frontier, .reserved = true, .origin = point.origin};
+    return CapturePreparation{.frontier       = point.frontier,
+                              .reserved       = true,
+                              .origin         = point.origin,
+                              .retired_points = std::move(retired)};
 }
 
 std::vector<std::uint32_t> Session::capture_frontiers(SequenceHandle h) const {
@@ -130,15 +173,12 @@ void Session::skip_capture(SequenceHandle h, runtime::CaptureSkip reason) {
     if (s.next_capture < s.captures.size()) ++s.next_capture;
 }
 
-bool Session::reclaim_capture_reservation(ContextResources shortage) {
-    for (auto& s : impl_->sequences) {
-        if (!s || !s->capture || s->capture_pending) continue;
-        if ((shortage.state_slots &&
-             impl_->directory.states().device_resident(s->capture->destination)) ||
-            (shortage.host_bytes && s->capture->host)) {
-            s->capture.reset();
-            return true;
-        }
+bool Session::reclaim_capture_reservation(const ContextAssessment& assessment) {
+    if (assessment.ready()) return false;
+    for (auto& sequence : impl_->sequences) {
+        if (!sequence || !sequence->capture || sequence->capture_pending) continue;
+        sequence->capture.reset();
+        return true;
     }
     return false;
 }
@@ -146,8 +186,8 @@ bool Session::reclaim_capture_reservation(ContextResources shortage) {
 bool Session::start_capture(SequenceHandle h) {
     auto& p = *impl_;
     auto& s = p.sequence(h);
-    if (p.operation || execution_pending(h) || !s.capture_pending || !s.capture ||
-        s.write_destination.valid())
+    if (p.directory.maintenance_pending() || p.operation || execution_pending(h) ||
+        !s.capture_pending || !s.capture || s.write_destination.valid())
         return false;
     auto execution = p.executor->try_reserve(runtime::FrameKind::Context);
     if (!execution) return false;
@@ -177,69 +217,184 @@ bool Session::start_capture(SequenceHandle h) {
     return true;
 }
 
-std::optional<std::size_t> Session::pause_host_bytes(SequenceHandle h) const {
+std::vector<PauseOption> Session::pause_options(SequenceHandle h) const {
     const auto& p = *impl_;
     const auto& s = p.sequence(h);
-    if (!s.request->can_checkpoint(s.continuation.metadata.main_frontier) ||
-        !p.directory.host_allocation().capacity_bytes())
+    if (p.operation || execution_pending(h) ||
+        (s.phase != detail::Phase::Prefill && s.phase != detail::Phase::Replay &&
+         s.phase != detail::Phase::Active))
         return {};
-    std::size_t bytes = p.directory.states().host_resident(s.continuation.image)
-                            ? 0
-                            : p.directory.states().image_bytes();
-    for (std::uint32_t pool = 0; pool < p.directory.pool_count(); ++pool) {
-        const auto& storage = p.directory.pool(pool);
-        const auto frontier = pool == 0 ? s.continuation.metadata.main_frontier
-                                        : s.continuation.metadata.mtp_frontier.value();
-        for (std::uint32_t i = 0; i < (frontier + 63) / 64; ++i) {
-            const auto page = storage.histories().logical_page(s.histories[pool].handle(), i);
-            if (storage.pages().active_history_references(page) <= 1 &&
-                !storage.pages().host_replica_current(page))
-                bytes += p.pools[pool].host_page_stride;
+
+    const auto& states = p.directory.states();
+    const auto image   = s.continuation.image;
+    const bool abort_writer =
+        s.write_destination.valid() && states.can_abort_write(image, s.write_destination);
+    ContextReleaseSet preparation_release;
+    if (abort_writer) preparation_release.merge(p.directory.state_release(s.write_destination));
+    if (s.capture && states.can_release(s.capture->destination))
+        preparation_release.merge(p.directory.state_release(s.capture->destination));
+
+    std::vector<PauseOption> result;
+    if (s.request->can_checkpoint(s.continuation.metadata.main_frontier)) {
+        ContextDemand checkpoint_demand;
+        for (std::uint32_t pool = 0; pool < p.pool_count(); ++pool)
+            checkpoint_demand.add_growth(p.directory.pool(pool).histories(),
+                                         s.histories[pool].handle(), 0);
+        result.push_back({.action   = {runtime::PauseKind::KeepDevice, {}},
+                          .demand   = checkpoint_demand,
+                          .released = preparation_release});
+
+        const bool has_host = std::any_of(p.plan.context.ranks.begin(), p.plan.context.ranks.end(),
+                                          [](const auto& rank) { return rank.host_bytes != 0; });
+        if (has_host) {
+            HostRequirement write;
+            write.state_images  = states.host_resident(image) ? 0 : 1;
+            write.state_variant = states.variant(image);
+            write.kv_pages.resize(p.pool_count());
+            ContextReleaseSet released = preparation_release;
+            if (states.source_pins(image) == static_cast<std::uint32_t>(abort_writer))
+                released.merge(
+                    p.directory.state_release(image).replicas(context::ContextMemory::Device));
+            for (std::uint32_t pool = 0; pool < p.pool_count(); ++pool) {
+                const auto& storage = p.directory.pool(pool);
+                const auto frontier = pool == 0 ? s.continuation.metadata.main_frontier
+                                                : s.continuation.metadata.mtp_frontier.value();
+                for (std::uint32_t i = 0; i < context::kv_pages_for_frontier(frontier); ++i) {
+                    const auto page =
+                        storage.histories().logical_page(s.histories[pool].handle(), i);
+                    if (storage.pages().active_history_references(page) > 1) continue;
+                    if (!storage.pages().host_replica_current(page)) ++write.kv_pages[pool];
+                    if (!storage.pages().source_pins(page) && storage.pages().can_pin_source(page))
+                        released.merge(p.directory.page_release(page).replicas(
+                            context::ContextMemory::Device));
+                }
+            }
+            checkpoint_demand.add_host(write);
+            result.push_back({.action     = {runtime::PauseKind::HostSnapshot, {}},
+                              .demand     = std::move(checkpoint_demand),
+                              .released   = std::move(released),
+                              .host_write = std::move(write)});
         }
     }
-    return bytes;
+
+    ContextReleaseSet released = std::move(preparation_release);
+    if (states.can_release(image) ||
+        (abort_writer && !states.checkpoint_references(image) && states.source_pins(image) == 1))
+        released.merge(p.directory.state_release(image));
+    for (std::uint32_t pool = 0; pool < p.pool_count(); ++pool) {
+        const auto& histories = p.directory.pool(pool).histories();
+        const auto history    = s.histories[pool].handle();
+        for (const auto page : histories.released_pages(history))
+            released.merge(p.directory.page_release(page));
+        const auto retired = histories.released_histories(history);
+        released.histories.insert(released.histories.end(), retired.begin(), retired.end());
+    }
+    released.normalize();
+    result.push_back(
+        {.action = {runtime::PauseKind::ReleaseAndReplay, {}}, .released = std::move(released)});
+    return result;
 }
 
-bool Session::start_pause(SequenceHandle h, bool save) {
+bool Session::pause_contributes(SequenceHandle h, const PauseOption& option,
+                                const ContextAssessment& assessment) const {
+    const auto& p = *impl_;
+    const auto& s = p.sequence(h);
+    if (assessment.metadata_contribution(option.released) ||
+        p.directory.useful_release_bytes(option.released, assessment))
+        return true;
+    if (s.capture && s.capture->host &&
+        s.capture->host->contributes_to(assessment.placement, assessment.metadata_shortage))
+        return true;
+    for (std::uint32_t pool = 0; pool < p.pool_count(); ++pool)
+        if (p.directory.pool(pool).histories().growth_contributes(
+                s.histories[pool].handle(), assessment.placement, assessment.metadata_shortage))
+            return true;
+    return false;
+}
+
+bool Session::prepare_pause(SequenceHandle h, runtime::PauseAction action,
+                            std::span<const CheckpointHandle> host_victims) {
     auto& p = *impl_;
     if (p.operation || execution_pending(h)) return false;
-    auto& s = p.sequence(h);
-    if (s.phase != detail::Phase::Prefill && s.phase != detail::Phase::Replay &&
-        s.phase != detail::Phase::Active)
-        throw std::logic_error("pause requires a committed boundary");
-    if (save) {
-        const auto bytes = pause_host_bytes(h);
-        if (!bytes || *bytes > p.directory.host_allocation().free_bytes()) return false;
+    if (p.pause_reservation) throw std::logic_error("pause preparation is already owned");
+    const auto options  = pause_options(h);
+    const auto selected = std::find_if(options.begin(), options.end(),
+                                       [&](const auto& option) { return option.action == action; });
+    if (selected == options.end()) return false;
+    if (!selected->host_write && !host_victims.empty())
+        throw std::invalid_argument("pause action does not require Host victims");
+    ContextReleaseSet released;
+    if (!host_victims.empty()) {
+        for (const auto victim : host_victims)
+            if (!p.checkpoints.erasable(victim)) return false;
+        released = p.footprint(host_victims, true);
     }
+    auto& sequence = p.sequence(h);
+    sequence.capture.reset();
+    sequence.capture_pending = false;
+    ContextDemand demand;
+    if (action.kind != runtime::PauseKind::ReleaseAndReplay) {
+        for (std::uint32_t pool = 0; pool < p.pool_count(); ++pool)
+            demand.add_growth(p.directory.pool(pool).histories(), sequence.histories[pool].handle(),
+                              0);
+    }
+    context::HostDemandIds targets;
+    if (selected->host_write) targets = demand.add_host(*selected->host_write);
+    const auto assessment = p.directory.assess(demand, released);
+    if (!assessment.feasible()) return false;
+    if (assessment.requires_maintenance() && (p.compute || p.executor->has_pending_work()))
+        return false;
     auto execution = p.executor->try_reserve(runtime::FrameKind::Context);
     if (!execution) return false;
+    detail::PreparedCheckpoint checkpoint;
+    if (action.kind != runtime::PauseKind::ReleaseAndReplay) {
+        checkpoint = p.prepare_checkpoint(p.sequence(h));
+        if (!checkpoint.record.valid()) return false;
+    }
+    p.pause_reservation.emplace(
+        detail::SessionImpl::PauseReservation{.sequence   = h,
+                                              .action     = action,
+                                              .demand     = std::move(demand),
+                                              .targets    = std::move(targets),
+                                              .execution  = std::move(*execution),
+                                              .checkpoint = std::move(checkpoint)});
+    return true;
+}
+
+bool Session::start_pause(SequenceHandle h, runtime::PauseAction action) {
+    auto& p = *impl_;
+    if (p.operation || execution_pending(h)) return false;
+    if (!p.pause_reservation && !prepare_pause(h, action)) return false;
+    if (p.pause_reservation->sequence != h || p.pause_reservation->action != action)
+        throw std::logic_error("pause does not match its preparation");
+    auto targets = p.directory.reserve(p.pause_reservation->demand);
+    if (!targets) throw std::logic_error("prepared pause placement changed before reservation");
+    auto execution  = std::move(p.pause_reservation->execution);
+    auto checkpoint = std::move(p.pause_reservation->checkpoint);
+    auto target_ids = std::move(p.pause_reservation->targets);
+    p.pause_reservation.reset();
+    auto& s       = p.sequence(h);
     auto paused   = std::make_unique<detail::Suspended>();
     paused->owner = &p;
     paused->frontier =
         s.phase == detail::Phase::Replay ? s.replay_target : s.continuation.metadata.main_frontier;
     p.operation = std::make_unique<detail::ContextOperation>(
-        p.directory, detail::PauseOperation{s.lane, std::move(paused)}, std::move(*execution));
-    auto& tx        = std::get<detail::PauseOperation>(p.operation->action);
-    auto& migration = p.operation->migration;
+        p.directory,
+        detail::PauseOperation{s.lane, std::move(paused), action, std::move(checkpoint),
+                               std::move(target_ids)},
+        std::move(execution));
     try {
-        s.capture.reset();
-        s.capture_pending = false;
-        s.recovery_peak   = 0;
-        p.settle(s);
-        if (s.phase == detail::Phase::Replay) s.phase = s.resume_phase;
-        if (save) tx.paused->snapshot = p.detach(s, runtime::CheckpointRole::Continuation);
-        if (!tx.paused->snapshot) p.clear(s);
-        tx.paused->sequence = std::move(p.sequences[s.lane]);
-        if (tx.paused->snapshot) {
-            const auto demotion =
-                p.demotion({&*tx.paused->snapshot, 1},
-                           {.state_slots = 1, .kv_page_groups = {UINT32_MAX, UINT32_MAX}});
-            if (demotion && !p.prepare_demotion(migration, *demotion)) {
-                migration.reset_plan();
-                if (!p.checkpoints.erase(*tx.paused->snapshot))
-                    throw std::logic_error("failed pause backup still has readers");
-                tx.paused->snapshot.reset();
-            }
+        if (!targets.reservation->ready()) {
+            p.operation->migration.discard();
+            auto maintenance = p.directory.prepare_maintenance(std::move(*targets.reservation),
+                                                               targets.assessment);
+            auto previous    = std::move(p.operation);
+            p.operation      = std::make_unique<detail::ContextOperation>(
+                std::move(maintenance), std::move(previous->action),
+                std::move(previous->reservation));
+            p.operation->preparing_resources = true;
+        } else {
+            p.prepare_pause_resources(*targets.reservation);
         }
         p.submit_context();
         return true;
@@ -257,9 +412,5 @@ bool Session::revoke_snapshot(ResumeState& state) noexcept {
     return true;
 }
 
-ContextResources Session::snapshot_resources(const ResumeState& s) const {
-    return s.has_snapshot() ? impl_->footprint({&*s.state_->snapshot, 1}, true)
-                            : ContextResources{};
-}
 
 } // namespace ninfer::models::qwen4_exp

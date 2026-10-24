@@ -8,6 +8,7 @@
 
 #include <array>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 
 namespace {
@@ -38,8 +39,9 @@ auto contract(const Json& schema, bool strict, ninfer::ToolChoice choice = {}) {
 }
 
 bool accepts(ninfer::text::GrammarCompiler& compiler,
-             const frontend::ToolCallOutputContract& contract, std::string_view value) {
-    auto matcher = frontend::compile_tool_grammar(compiler, contract, {}, {});
+             const frontend::ToolCallOutputContract& contract, std::string_view value,
+             const std::optional<ninfer::OutputConstraint>& body = std::nullopt) {
+    auto matcher = frontend::compile_tool_grammar(compiler, contract, {}, {}, body);
     std::vector<std::uint32_t> words(matcher->mask_words());
     for (unsigned char c : value) {
         if (matcher->masks({}, words) || !(words[c / 32] & (1u << (c % 32)))) return false;
@@ -81,6 +83,16 @@ void basic_contracts(ninfer::text::GrammarCompiler& compiled) {
     require(arguments == Json{{"b", 1}, {"a", "007"}, {"extra-key.键", true}},
             "non-strict value normalization changed");
     require(accepts(compiled, *basic, "An ordinary answer."), "default auto forced a call");
+    for (const Json& property : {Json{{"$ref", "#/$defs/text"}}, Json{{"enum", {"123", "456"}}}}) {
+        auto source             = schema(property);
+        source["$defs"]["text"] = {{"type", "string"}};
+        const auto bound        = contract(source, false);
+        require(accepts(compiled, *bound, call("123")), "basic type hint rejected raw string");
+        frontend::ToolCallOutputDecoder decoder(bound, 64);
+        (void)feed(decoder, call("123"));
+        require(Json::parse(finish(decoder).tool_calls.at(0).arguments_json)["x"] == "123",
+                "basic reference or enum lost its string encoding");
+    }
     require(
         !accepts(compiled, *basic, "<tool_call>\n<function=missing>\n</function>\n</tool_call>"),
         "default auto admitted an undeclared function");
@@ -195,6 +207,27 @@ void selected_contracts(ninfer::text::GrammarCompiler& compiled) {
         } catch (const ninfer::RequestError&) { rejected = true; }
         require(rejected, "required selection accepted an empty or unknown function set");
     }
+}
+
+void json_body_contracts(ninfer::text::GrammarCompiler& compiled) {
+    const auto parameters    = schema({{"type", "integer"}, {"minimum", 2}, {"maximum", 3}});
+    const auto automatic     = contract(parameters, true);
+    const auto body          = ninfer::OutputConstraint::json_schema(R"({"type":"object",
+        "properties":{"status":{"const":"ok"}},"required":["status"],
+        "additionalProperties":false})");
+    const std::string answer = " \n{ \"status\" : \"ok\" }\t";
+    require(accepts(compiled, *automatic, answer, body) &&
+                !accepts(compiled, *automatic, "{\"status\":\"bad\"}", body),
+            "tool composition changed formatted JSON body constraints");
+    require(accepts(compiled, *automatic, call("2"), body) &&
+                !accepts(compiled, *automatic, call("4"), body),
+            "JSON body whitespace changed strict tool parameters");
+    ninfer::ToolChoice choice;
+    choice.mode         = ninfer::ToolChoiceMode::Required;
+    const auto required = contract(parameters, true, choice);
+    require(!accepts(compiled, *required, answer, body) &&
+                accepts(compiled, *required, call("2"), body),
+            "JSON body whitespace bypassed required tool choice");
 }
 
 void name_transactions() {
@@ -322,6 +355,7 @@ void run() {
     auto compiled = compiler();
     basic_contracts(compiled);
     selected_contracts(compiled);
+    json_body_contracts(compiled);
     ninfer::ToolChoice required;
     required.mode = ninfer::ToolChoiceMode::Required;
     auto fixed =

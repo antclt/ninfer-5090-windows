@@ -1,5 +1,5 @@
 #include "models/qwen4_exp/startup.h"
-#include "models/common/qwen/frontend/digest.h"
+#include "models/common/frontend/digest.h"
 
 #include <nlohmann/json.hpp>
 
@@ -15,24 +15,25 @@ Startup::Startup(const artifact::Reader& definition_source, const artifact::Read
     profile       = execution::describe_model(*definition_);
     auto resident = resolve_load(reader_, definition_, device);
     table_        = resident.ple_table_owner();
-    placements_.push_back(
-        {WeightPlacement::Resident, resident.materialization().device_capacity_bytes});
+    placements_.push_back({WeightPlacement::Resident,
+                           resident.materialization().device_capacity_bytes,
+                           resident.materialization().host_capacity_bytes});
     offload_ = describe_moe_plan(*profile, options.moe);
     if (offload_) {
         const auto host = resolve_load(reader_, definition_, device, Device::cpu(), table_);
-        placements_.push_back(
-            {WeightPlacement::HostExperts, host.materialization().device_capacity_bytes});
+        placements_.push_back({WeightPlacement::HostExperts,
+                               host.materialization().device_capacity_bytes,
+                               host.materialization().host_capacity_bytes});
     }
 }
 
-std::optional<Startup::ExecutionPlan> Startup::plan(DeviceContext& device,
-                                                    const EngineOptions& options,
-                                                    WeightPlacement placement,
-                                                    std::size_t available) const {
+std::optional<Startup::ExecutionPlan>
+Startup::plan(DeviceContext& device, const EngineOptions& options, WeightPlacement placement,
+              std::size_t available, std::size_t available_host_bytes) const {
     const bool host = placement == WeightPlacement::HostExperts;
     if (host && !offload_) return {};
     auto planned = plan_execution(profile, table_->geometry(), options, device, available,
-                                  host ? offload_ : nullptr);
+                                  host ? offload_ : nullptr, true, available_host_bytes);
     if (!planned) return {};
     const auto capacity = planned->capacity;
     const auto chunk    = planned->shape.prefill_chunk;
@@ -53,7 +54,8 @@ qwen::Frontend Startup::frontend(const EngineOptions& o) const {
 }
 
 qwen::Frontend create_frontend(const ModelDefinition& definition, const EngineOptions& o) {
-    const auto generation = nlohmann::json::parse(definition.resources().generation_config_json);
+    const auto generation =
+        nlohmann::json::parse(definition.resources().text.generation_config_json);
     SamplingPreset preset;
     preset.temperature = generation.value("temperature", 1.0F);
     preset.top_k       = generation.value("top_k", 20);
@@ -130,7 +132,7 @@ std::string prefill_signature(const ModelDefinition& model, const moe::Plan* moe
     if (moe)
         facts["moe"] = {moe->description().cache_bytes, moe->description().fixed_bytes,
                         moe->description().window_count, moe->description().cpu_workers};
-    return qwen::frontend::sha256_hex(qwen::frontend::sha256(facts.dump()));
+    return models::frontend::sha256_hex(models::frontend::sha256(facts.dump()));
 }
 
 std::string Startup::prefill_signature(const ExecutionPreparation& preparation,

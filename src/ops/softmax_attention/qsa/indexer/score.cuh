@@ -20,7 +20,7 @@ __global__ __launch_bounds__((QueryTile > 16 ? QueryTile * 8 : 128)) void indexe
     extern __shared__ __align__(16) __nv_bfloat16 shared[];
     auto* qs = shared;
     auto* ks = qs + QueryTile * 4 * 128;
-    if (!jobs.build<QueryTile, kIndexerKeyTile>(a)) return;
+    if (!jobs.template build<QueryTile, kIndexerKeyTile>(a)) return;
     const int tid = threadIdx.x, lane = tid % 32, warp = tid / 32;
     const int per_row  = (a.width + QueryTile - 1) / QueryTile;
     int previous_group = -1;

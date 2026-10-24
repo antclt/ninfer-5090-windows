@@ -37,21 +37,21 @@ enum class EnginePurpose : std::uint8_t {
 };
 
 
-inline constexpr std::size_t kDefaultKvCapacityHeadroomBytes = 1024ULL * 1024ULL * 1024ULL;
+inline constexpr std::size_t kDefaultContextHeadroomBytes = 1024ULL * 1024ULL * 1024ULL;
 
-struct KvCapacityPolicy {
-    KvCapacityMode mode                  = KvCapacityMode::Explicit;
-    std::uint32_t explicit_tokens        = 2048;
-    std::size_t automatic_headroom_bytes = 0;
+struct ContextCapacityPolicy {
+    ContextCapacityMode mode             = ContextCapacityMode::Automatic;
+    std::size_t explicit_bytes           = 0;
+    std::size_t automatic_headroom_bytes = kDefaultContextHeadroomBytes;
 
-    [[nodiscard]] static constexpr KvCapacityPolicy
-    explicit_capacity(std::uint32_t tokens) noexcept {
-        return KvCapacityPolicy{KvCapacityMode::Explicit, tokens, 0};
+    [[nodiscard]] static constexpr ContextCapacityPolicy
+    explicit_capacity(std::size_t bytes) noexcept {
+        return ContextCapacityPolicy{ContextCapacityMode::Explicit, bytes, 0};
     }
 
-    [[nodiscard]] static constexpr KvCapacityPolicy
-    automatic(std::size_t headroom_bytes = kDefaultKvCapacityHeadroomBytes) noexcept {
-        return KvCapacityPolicy{KvCapacityMode::Automatic, 0, headroom_bytes};
+    [[nodiscard]] static constexpr ContextCapacityPolicy
+    automatic(std::size_t headroom_bytes = kDefaultContextHeadroomBytes) noexcept {
+        return ContextCapacityPolicy{ContextCapacityMode::Automatic, 0, headroom_bytes};
     }
 };
 
@@ -114,12 +114,10 @@ struct ContextCacheOptions {
     // Controls cross-request history reads and writes. Request pause/replay resources remain
     // available when history is disabled.
     bool enabled = true;
-    // Extra Device StateImage slots beyond active execution. nullopt selects joint KV/state sizing.
-    std::optional<std::uint32_t> extra_state_slots;
     // Shared Host quota for StateImages, KV, pause snapshots and in-flight destinations.
     // RTX 5090 defaults to 8 GiB plus eight model StateImages; DGX Spark resolves this to zero.
     // This does not bound total process RAM.
-    // Engine::options() returns both resolved capacities after construction.
+    // Engine::options() returns the resolved Host capacity after construction.
     std::optional<std::size_t> host_capacity_bytes;
     // Target spacing for optional intermediate prefill checkpoints.
     std::uint32_t checkpoint_interval = 8192;
@@ -150,11 +148,11 @@ struct EngineOptions {
     std::optional<DeploymentOptions> deployment;
     std::filesystem::path artifact_path;
     std::filesystem::path chat_template_path;
-    std::size_t grammar_cache_bytes    = 256ULL * 1024 * 1024;
-    EnginePurpose purpose              = EnginePurpose::Generation;
-    int device                         = 0;
-    std::uint32_t max_context          = 8192; // Logical ceiling of one request or score window.
-    KvCapacityPolicy kv_capacity       = KvCapacityPolicy::explicit_capacity(8192);
+    std::size_t grammar_cache_bytes = 256ULL * 1024 * 1024;
+    EnginePurpose purpose           = EnginePurpose::Generation;
+    int device                      = 0;
+    std::uint32_t max_context       = 8192; // Logical ceiling of one request or score window.
+    ContextCapacityPolicy context_capacity;
     std::uint32_t max_concurrency      = 1;
     std::uint32_t max_pending_requests = 16;
     std::uint32_t pending_timeout_ms   = 30000;
@@ -174,11 +172,6 @@ struct EngineOptions {
     StartupObserver startup_observer;
 };
 
-enum class SamplingMode : std::uint8_t {
-    Thinking,
-    NonThinking,
-};
-
 // Immutable model-owned values used when a request does not override a sampling field. Seed is
 // deliberately excluded: it is an execution choice rather than a model recommendation.
 struct SamplingPreset {
@@ -193,10 +186,6 @@ struct SamplingPreset {
 struct ModelSamplingDefaults {
     SamplingPreset thinking;
     SamplingPreset non_thinking;
-
-    [[nodiscard]] constexpr const SamplingPreset& for_mode(SamplingMode mode) const noexcept {
-        return mode == SamplingMode::Thinking ? thinking : non_thinking;
-    }
 };
 
 // Public request-side overrides. std::nullopt means "use the registered model/mode default";
@@ -241,7 +230,7 @@ struct StopPolicy {
 };
 
 struct ThinkingControlOptions {
-    // Positive maximum accepted model-origin tokens while the Qwen thinking phase remains open.
+    // Positive maximum accepted model-origin tokens while the model thinking phase remains open.
     // Omitted means unlimited. Injected target-control tokens consume the total output budget but
     // not this model-origin budget.
     std::optional<std::uint32_t> budget;
@@ -257,7 +246,7 @@ struct ExecutionOptions {
 struct OutputOptions {
     bool raw                     = false;
     bool preserve_special_tokens = false;
-    // Presentation constraint supplied by the protocol adapter. It bounds only Qwen's emitted
+    // Presentation constraint supplied by the protocol adapter. It bounds the model's emitted
     // function-name grammar; it does not require the name to match a currently declared tool.
     std::uint32_t tool_name_max_length = 128;
 };
@@ -412,6 +401,7 @@ struct ChatMessage {
     std::string reasoning_content;
     std::vector<ToolCall> tool_calls;
     std::string tool_call_id;
+    bool tool_result_is_error = false;
 };
 
 enum class ReasoningEffort : std::uint8_t {
@@ -449,6 +439,11 @@ enum class PromptContinuationMode : std::uint8_t {
     ContinueFinalAssistant,
 };
 
+struct PromptDefaults {
+    std::optional<bool> enable_thinking;
+    std::optional<bool> preserve_thinking;
+};
+
 struct PromptOptions {
     PromptContinuationMode continuation = PromptContinuationMode::NewAssistantTurn;
     std::optional<bool> enable_thinking;
@@ -458,6 +453,7 @@ struct PromptOptions {
     std::string chat_template_kwargs_json;
     bool add_vision_id = false;
     std::vector<std::string> tool_jsons;
+    PromptDefaults defaults;
 };
 
 enum class PromptCacheMarkerKind : std::uint8_t {
@@ -493,6 +489,7 @@ constexpr SharedCandidateEvidence& operator|=(SharedCandidateEvidence& left,
 enum class PromptCacheMarkerLocation : std::uint8_t {
     MessageBoundary,
     MessagePartBoundary,
+    MessageContentBoundary,
     LeadingInstructionBoundary,
     ToolBoundary,
 };
@@ -508,6 +505,9 @@ struct PromptCacheMarker {
     // For MessagePartBoundary, after_message_count identifies the containing message using a
     // one-based count and this value identifies the number of serialized parts within it.
     std::uint32_t after_message_part_count = 0;
+    // MessageContentBoundary addresses the complete semantic prefix of an assistant message.
+    std::uint32_t after_tool_call_count = 0;
+    std::uint32_t reasoning_bytes       = 0;
 
     [[nodiscard]] friend constexpr bool operator==(PromptCacheMarker,
                                                    PromptCacheMarker) noexcept = default;
@@ -531,6 +531,9 @@ struct PromptInput {
 };
 
 enum class RequestErrorKind : std::uint8_t {
+    ConflictingPromptOptions,
+    UnsupportedPromptContinuation,
+    UnsupportedOutputCombination,
     InvalidToolConstraint,
     InvalidToolOutput,
     InvalidGrammar,

@@ -75,6 +75,7 @@ profiles/
 
 # Local Windows build assets
 ffmpeg/
+jpeg/
 *.dll
 test_image.png
 

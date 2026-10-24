@@ -1,3 +1,4 @@
+#include "ops/moe/kernels/cuda/block_scaled/grouping.cuh"
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/nvfp4/launch.h"
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/fp8/launch.h"
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/output.cuh"
@@ -28,28 +29,38 @@ __global__ void count_assignments(const int* ids, ExpertSubsetKind kind, const i
     }
 }
 
-// Publish the maximum jobs per expert once, before either contraction consumes groups.
-__device__ void publish_density(Groups g, int jobs, int* maxima) {
+// Publish FP8 population facts once, before either contraction consumes groups.
+__device__ void publish_density(Groups g, int count, int columns, int* maxima, int* actives) {
     const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
-    int maximum = jobs;
+    int maximum = count;
 #pragma unroll
     for (int delta = 16; delta; delta /= 2)
         maximum = max(maximum, __shfl_down_sync(0xffffffff, maximum, delta));
-    if (!lane) maxima[warp] = maximum;
+    const int active = __popc(__ballot_sync(0xffffffff, count > 0));
+    if (!lane) {
+        maxima[warp]  = maximum;
+        actives[warp] = active;
+    }
     __syncthreads();
     if (threadIdx.x == 0) {
-        int result = 0;
+        int result = 0, active_total = 0;
 #pragma unroll
-        for (int w = 0; w < (kExperts + 31) / 32; ++w) result = max(result, maxima[w]);
-        g.jobs[1] = result;
+        for (int w = 0; w < (kExperts + 31) / 32; ++w) {
+            result = max(result, maxima[w]);
+            active_total += actives[w];
+        }
+        g.jobs[1] = (result + columns - 1) / columns;
+        g.jobs[2] = active_total;
+        g.jobs[3] = result;
     }
 }
 
 __global__ void scan_assignments(Groups g, int columns, bool density) {
-    __shared__ int scan[kExperts], maxima[(kExperts + 31) / 32];
+    __shared__ int scan[kExperts], maxima[(kExperts + 31) / 32], actives[(kExperts + 31) / 32];
     const int e     = threadIdx.x;
     const int count = g.counts[e];
-    scan[e]         = count;
+    publish_load_range<kExperts>(g.load_range, count);
+    scan[e] = count;
     __syncthreads();
 #pragma unroll
     for (int delta = 1; delta < kExperts; delta *= 2) {
@@ -63,7 +74,7 @@ __global__ void scan_assignments(Groups g, int columns, bool density) {
     if (e == kExperts - 1) { g.offsets[kExperts] = scan[e]; }
     __syncthreads();
     const int jobs = (count + columns - 1) / columns;
-    if (density) publish_density(g, jobs, maxima);
+    if (density) publish_density(g, count, columns, maxima, actives);
     scan[e] = jobs;
     __syncthreads();
 #pragma unroll
@@ -81,8 +92,20 @@ __global__ void scan_assignments(Groups g, int columns, bool density) {
     if (e == kExperts - 1) { *g.jobs = scan[e]; }
 }
 
+__device__ bool fully_covered_groups(Groups g, int assignments, bool density, bool ordered) {
+    if (!ordered) return false;
+    if (!density) {
+        // Distinct route IDs give at most one assignment per expert and token.
+        // Equal nonempty counts at T therefore cover every token in each group.
+        const int tokens = assignments / kTopK;
+        return g.load_range && g.load_range[0] == tokens && g.load_range[1] == tokens;
+    }
+    // Distinct IDs give at most one hit per token for one selected expert.
+    return g.jobs[2] == 1 && g.offsets[kExperts] == assignments / kTopK;
+}
+
 __global__ void index_assignments(const int* ids, ExpertSubsetKind kind, const int* mask, Groups g,
-                                  int assignments) {
+                                  int assignments, bool density, bool ordered) {
     const int a = blockIdx.x * blockDim.x + threadIdx.x;
     if (a >= assignments) { return; }
     const int expert = ids[a];
@@ -90,15 +113,17 @@ __global__ void index_assignments(const int* ids, ExpertSubsetKind kind, const i
         if (g.inverse) { g.inverse[a] = -1; }
         return;
     }
-    const int packed      = atomicAdd(g.cursors + expert, 1);
+    const int packed      = fully_covered_groups(g, assignments, density, ordered)
+                                ? g.offsets[expert] + a / kTopK
+                                : atomicAdd(g.cursors + expert, 1);
     g.assignments[packed] = a;
     if (g.inverse) { g.inverse[a] = packed; }
 }
 
 __global__ void group_small(const int* ids, ExpertSubsetKind kind, const int* mask, Groups g,
-                            int assignments, int columns, bool density) {
+                            int assignments, int columns, bool density, bool ordered) {
     __shared__ int counts[kExperts], ranks[kTopK * 64], scan[kExperts],
-        maxima[(kExperts + 31) / 32];
+        maxima[(kExperts + 31) / 32], actives[(kExperts + 31) / 32];
     const int tid = threadIdx.x;
     counts[tid]   = 0;
     __syncthreads();
@@ -108,7 +133,8 @@ __global__ void group_small(const int* ids, ExpertSubsetKind kind, const int* ma
     }
     __syncthreads();
     const int count = counts[tid];
-    scan[tid]       = count;
+    publish_load_range<kExperts>(g.load_range, count);
+    scan[tid] = count;
     __syncthreads();
 #pragma unroll
     for (int delta = 1; delta < kExperts; delta *= 2) {
@@ -121,7 +147,7 @@ __global__ void group_small(const int* ids, ExpertSubsetKind kind, const int* ma
     g.offsets[tid]  = begin;
     if (tid == kExperts - 1) { g.offsets[kExperts] = scan[tid]; }
     const int jobs = (count + columns - 1) / columns;
-    if (density) publish_density(g, jobs, maxima);
+    if (density) publish_density(g, count, columns, maxima, actives);
     __syncthreads();
     scan[tid] = jobs;
     __syncthreads();
@@ -138,8 +164,10 @@ __global__ void group_small(const int* ids, ExpertSubsetKind kind, const int* ma
         g.job_columns[first + j] = j * columns;
     }
     if (tid == kExperts - 1) { *g.jobs = scan[tid]; }
+    const bool ordered_groups = fully_covered_groups(g, assignments, density, ordered);
     for (int a = tid; a < assignments; a += kExperts) {
-        const int packed = ranks[a] >= 0 ? g.offsets[ids[a]] + ranks[a] : -1;
+        const int packed =
+            ranks[a] >= 0 ? g.offsets[ids[a]] + (ordered_groups ? a / kTopK : ranks[a]) : -1;
         if (g.inverse) { g.inverse[a] = packed; }
         if (packed >= 0) { g.assignments[packed] = a; }
     }
@@ -149,6 +177,7 @@ template <class Output>
 __global__ void reduce(Storage storage, const float* coefficients, Output output, int elements) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < elements) {
+        if (storage.partial_output && !storage.active_tokens[i / kHidden]) return;
         output.store(i, output.initial(i) +
                             routed_value(i / kHidden, i % kHidden, storage, coefficients));
     }
@@ -235,7 +264,10 @@ void launch_column_jobs(Groups groups, int tokens, int columns, bool preserve_ba
 
 void launch(const Tensor& x, const CudaSwiGLUExperts& experts, const ExpertRoutes& routes,
             ExpertSubset subset, MoeEpilogue mode, Tensor& destination, const Plan& plan,
-            const Storage& s, CudaExecutionView execution) {
+            const Storage& storage, CudaExecutionView execution) {
+    auto s = storage;
+    if (s.partial_output && plan.atomic_output)
+        s.routed_sum = static_cast<float*>(destination.data);
     const auto stream = execution.stream();
     if (plan.vector) {
         if (plan.format == QType::NVFP4)
@@ -252,23 +284,27 @@ void launch(const Tensor& x, const CudaSwiGLUExperts& experts, const ExpertRoute
     else
         fp8::launch_input(x, experts, routes, subset, s, execution, true);
     if (plan.single_block_grouping) {
-        group_small<<<1, kExperts, 0, stream>>>(ids, subset.kind, mask, s.groups, assignments,
-                                                plan.job_columns(),
-                                                plan.format == QType::FP8_E4M3FN_BLOCK128X128_BF16);
+        group_small<<<1, kExperts, 0, stream>>>(
+            ids, subset.kind, mask, s.groups, assignments, plan.job_columns(),
+            plan.format == QType::FP8_E4M3FN_BLOCK128X128_BF16, plan.token_ordered_groups);
         CUDA_CHECK(cudaGetLastError());
     } else {
         count_assignments<<<(assignments + 255) / 256, 256, 0, stream>>>(
             ids, subset.kind, mask, s.groups.counts, assignments);
         scan_assignments<<<1, kExperts, 0, stream>>>(
             s.groups, plan.job_columns(), plan.format == QType::FP8_E4M3FN_BLOCK128X128_BF16);
-        index_assignments<<<(assignments + 255) / 256, 256, 0, stream>>>(ids, subset.kind, mask,
-                                                                         s.groups, assignments);
+        index_assignments<<<(assignments + 255) / 256, 256, 0, stream>>>(
+            ids, subset.kind, mask, s.groups, assignments,
+            plan.format == QType::FP8_E4M3FN_BLOCK128X128_BF16, plan.token_ordered_groups);
         CUDA_CHECK(cudaGetLastError());
     }
     if (plan.format == QType::NVFP4)
         nvfp4::launch_experts(x, experts, routes, plan, s, execution);
     else
         fp8::launch_experts(x, experts, routes, plan, s, execution);
+    // Atomic down already wrote each live FP32 column into the borrowed output.
+    // Inactive columns remain unreadable under the private contribution view.
+    if (s.partial_output && plan.atomic_output) return;
     with_output(destination, mode, [&](auto output) {
         const int elements = x.ne[1] * kHidden;
         reduce<<<(elements + 255) / 256, 256, 0, stream>>>(

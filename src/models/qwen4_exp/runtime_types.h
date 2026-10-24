@@ -13,15 +13,17 @@ struct RuntimeTypes {
     using Profile           = execution::ModelProfile;
     using Frontend          = qwen::Frontend;
     using PreparedPrompt    = qwen::PreparedPrompt;
-    using OutputSession     = qwen::OutputSession;
-    using PublishedOutput   = qwen::PublishedOutput;
+    using OutputSession     = models::frontend::OutputSession;
+    using PublishedOutput   = models::frontend::PublishedOutput;
     using SequencePlan      = ExecutionPlan;
     using SessionPlan       = qwen4_exp::SessionPlan;
     using ExecutionTypes    = qwen4_exp::ExecutionTypes;
     using RankProgram       = qwen4_exp::RankProgram;
     using Session           = qwen4_exp::Session;
     using PreparedSession   = qwen4_exp::PreparedSession;
-    using ContextResources  = qwen4_exp::ContextResources;
+    using ContextDemand     = qwen4_exp::ContextDemand;
+    using ContextAssessment = qwen4_exp::ContextAssessment;
+    using ContextReleaseSet = qwen4_exp::ContextReleaseSet;
     using RequestBasePlan   = qwen4_exp::RequestBasePlan;
     using SequenceHandle    = qwen4_exp::SequenceHandle;
     using CheckpointHandle  = qwen4_exp::CheckpointHandle;
@@ -41,7 +43,7 @@ struct RuntimeTypes {
     using DiscardResult     = qwen4_exp::DiscardResult;
     using FinishResult      = qwen4_exp::FinishResult;
     using AbortResult       = qwen4_exp::AbortResult;
-    using CacheSessionKey   = qwen::PreparedSessionKey;
+    using CacheSessionKey   = models::frontend::PreparedSessionKey;
 };
 
 } // namespace ninfer::models::qwen4_exp

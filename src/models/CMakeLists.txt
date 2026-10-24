@@ -1,8 +1,12 @@
 # Definitions and immutable weights are independent of execution ownership.
 add_library(ninfer_model_loading STATIC
   registry.cpp
+  common/frontend/resources.cpp
+  glm5next/frontend/resources.cpp
+  glm5next/frontend/processor_config.cpp
   common/bindings.cpp
   common/parallel.cpp
+  common/parallel_weights.cpp
   common/weights.cpp
   common/moe/weights.cpp
   qwen4_exp/ple/parameters.cpp
@@ -12,12 +16,28 @@ target_link_libraries(ninfer_model_loading PUBLIC ninfer_artifact ninfer_text ni
 
 # Coordinator-owned sessions, context directories and frontend policy.
 add_library(ninfer_model_control STATIC
+  common/frontend/chat_template.cpp
+  common/frontend/prompt.cpp
+  glm5next/frontend/chat_template.cpp
+  glm5next/frontend/prompt_layout.cpp
+  glm5next/frontend/frontend.cpp
+  glm5next/frontend/output.cpp
+  glm5next/frontend/tool_contract.cpp
+  glm5next/frontend/tool_decoder.cpp
+  glm5next/frontend/tool_grammar.cpp
+  glm5next/prefix_identity.cpp
+  common/frontend/output_resources.cpp
+  common/frontend/output_session.cpp
+  common/frontend/tools.cpp
+  common/frontend/image_transform.cpp
+  glm5next/frontend/processor.cpp
+  common/frontend/media_cache.cpp
+  common/frontend/digest.cpp
   common/context/directory.cpp
-  common/context/directory/allocation.cpp
+  common/context/directory/records.cpp
   common/context/directory/state.cpp
   common/context/directory/pages.cpp
   common/context/directory/history.cpp
-  common/context/directory/host.cpp
   common/context/work.cpp)
 ninfer_internal_includes(ninfer_model_control)
 target_link_libraries(ninfer_model_control
@@ -27,6 +47,11 @@ target_include_directories(ninfer_model_control PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/xgrammar/cpp)
 target_include_directories(ninfer_model_control SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/xgrammar/3rdparty/picojson)
+
+if(NINFER_ENABLE_DISTRIBUTED)
+  target_sources(ninfer_model_control PRIVATE common/context/wire.cpp)
+  target_link_libraries(ninfer_model_control PRIVATE ninfer_distributed_wire)
+endif()
 
 # Rank-owned storage, mathematical execution and graph preparation.
 add_library(ninfer_model_execution STATIC
@@ -54,6 +79,7 @@ endif()
 
 include(qwen3_5/loading_sources.cmake)
 include(qwen4_exp/loading_sources.cmake)
+include(glm5next/loading_sources.cmake)
 include(common/qwen/sources.cmake)
 include(qwen3_5/execution_sources.cmake)
 include(qwen4_exp/execution_sources.cmake)

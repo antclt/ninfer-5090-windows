@@ -1,5 +1,7 @@
 #include "models/qwen4_exp/wire.h"
 
+#include "models/common/context/wire.h"
+
 #include <stdexcept>
 #include <type_traits>
 
@@ -48,11 +50,11 @@ void member(Encoder& out, const runtime::ExecutionMember& m) {
 runtime::ExecutionMember member(Decoder& in) { return {{in.u64(), in.u64()}, residency(in)}; }
 
 void selectors(Encoder& out, context::StateSelectors s) {
-    out.i32(s.source);
-    out.i32(s.destination);
+    out.i64(s.source);
+    out.i64(s.destination);
 }
 
-context::StateSelectors selectors(Decoder& in) { return {in.i32(), in.i32()}; }
+context::StateSelectors selectors(Decoder& in) { return {in.i64(), in.i64()}; }
 
 template <class T>
 void slot(Encoder& out, T s) {
@@ -65,14 +67,6 @@ template <class T>
 T slot(Decoder& in) {
     return {in.u32(), in.u32(), in.u32()};
 }
-
-void host(Encoder& out, context::HostExtent h) {
-    out.u32(h.pool_id);
-    out.u64(h.offset);
-    out.u64(h.bytes);
-}
-
-context::HostExtent host(Decoder& in) { return {in.u32(), in.u64(), in.u64()}; }
 
 void sampling(Encoder& out, const ResolvedSamplingParameters& p) {
     out.f32(p.temperature);
@@ -88,107 +82,9 @@ ResolvedSamplingParameters sampling(Decoder& in) {
     return {in.f32(), in.i32(), in.f32(), in.f32(), in.f32(), in.f32(), in.u64()};
 }
 
-void actions(Encoder& out, const context::ContextActions& a) {
-    out.u64(a.operations.size());
-    for (const auto& action : a.operations)
-        std::visit(
-            [&](const auto& v) {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, context::StateClear>) {
-                    out.u8(1);
-                    out.i32(v.slot);
-                } else if constexpr (std::is_same_v<T, context::StateCopy>) {
-                    out.u8(2);
-                    out.i32(v.source);
-                    out.i32(v.destination);
-                    out.u64(v.offset);
-                    out.u64(v.bytes);
-                } else if constexpr (std::is_same_v<T, context::StateTransferDescription>) {
-                    out.u8(3);
-                    out.u8(static_cast<std::uint8_t>(v.direction));
-                    out.u32(v.source.index);
-                    out.u32(v.source.generation);
-                    out.u32(v.destination.index);
-                    out.u32(v.destination.generation);
-                    selectors(out, v.slots);
-                    host(out, v.host);
-                    out.u64(v.bytes);
-                    out.u64(v.epoch);
-                } else if constexpr (std::is_same_v<T, context::PageCopy>) {
-                    out.u8(4);
-                    slot(out, v.source);
-                    slot(out, v.destination);
-                } else if constexpr (std::is_same_v<T, context::PageTransfer>) {
-                    out.u8(5);
-                    out.u8(static_cast<std::uint8_t>(v.direction));
-                    host(out, v.host);
-                    out.u64(v.pages.size());
-                    for (auto page : v.pages) slot(out, page);
-                } else {
-                    out.u8(6);
-                    slot(out, v.row);
-                    out.u32(v.logical_begin);
-                    out.u64(v.pages.size());
-                    for (auto page : v.pages) slot(out, page);
-                }
-            },
-            action);
-}
-
-context::ContextActions actions(Decoder& in) {
-    context::ContextActions out;
-    const auto n = in.count(5);
-    out.operations.reserve(n);
-    for (std::size_t i = 0; i < n; ++i) switch (in.u8()) {
-        case 1:
-            out.operations.emplace_back(context::StateClear{in.i32()});
-            break;
-        case 2:
-            out.operations.emplace_back(context::StateCopy{in.i32(), in.i32(), in.u64(), in.u64()});
-            break;
-        case 3: {
-            context::StateTransferDescription v;
-            v.direction   = static_cast<context::StateCopyDirection>(in.u8());
-            v.source      = {in.u32(), in.u32()};
-            v.destination = {in.u32(), in.u32()};
-            v.slots       = selectors(in);
-            v.host        = host(in);
-            v.bytes       = in.u64();
-            v.epoch       = in.u64();
-            out.operations.emplace_back(v);
-            break;
-        }
-        case 4:
-            out.operations.emplace_back(
-                context::PageCopy{slot<context::PageSlot>(in), slot<context::PageSlot>(in)});
-            break;
-        case 5: {
-            context::PageTransfer v;
-            v.direction = static_cast<context::StateCopyDirection>(in.u8());
-            v.host      = host(in);
-            v.pages.resize(in.count(12));
-            for (auto& page : v.pages) page = slot<context::PageSlot>(in);
-            out.operations.emplace_back(std::move(v));
-            break;
-        }
-        case 6: {
-            context::MappingUpdate v;
-            v.row           = slot<context::TableRow>(in);
-            v.logical_begin = in.u32();
-            v.pages.resize(in.count(12));
-            for (auto& page : v.pages) page = slot<context::PageSlot>(in);
-            out.operations.emplace_back(std::move(v));
-            break;
-        }
-        default:
-            throw std::invalid_argument("unknown context action in Qwen4Exp message");
-        }
-    return out;
-}
-
-void row(Encoder& out, const WorkRow& r) {
+void row(Encoder& out, const WorkRow& r, std::uint32_t rank) {
     member(out, r.member);
-    selectors(out, r.slots);
+    selectors(out, r.states.at(rank));
     slot(out, r.main_table);
     slot(out, r.mtp_table);
     out.u32(r.main_frontier);
@@ -205,10 +101,10 @@ void row(Encoder& out, const WorkRow& r) {
     out.boolean(r.constrained);
 }
 
-WorkRow row(Decoder& in) {
+WorkRow row(Decoder& in, std::uint32_t rank) {
     WorkRow r;
-    r.member        = member(in);
-    r.slots         = selectors(in);
+    r.member = member(in);
+    r.states.emplace(rank, selectors(in));
     r.main_table    = slot<context::TableRow>(in);
     r.mtp_table     = slot<context::TableRow>(in);
     r.main_frontier = in.u32();
@@ -226,14 +122,14 @@ WorkRow row(Decoder& in) {
     return r;
 }
 
-void rows(Encoder& out, const std::vector<WorkRow>& values) {
+void rows(Encoder& out, const std::vector<WorkRow>& values, std::uint32_t rank) {
     out.u64(values.size());
-    for (const auto& v : values) row(out, v);
+    for (const auto& v : values) row(out, v, rank);
 }
 
-std::vector<WorkRow> rows(Decoder& in) {
+std::vector<WorkRow> rows(Decoder& in, std::uint32_t rank) {
     std::vector<WorkRow> result(in.count(149));
-    for (auto& value : result) value = row(in);
+    for (auto& value : result) value = row(in, rank);
     return result;
 }
 
@@ -264,8 +160,10 @@ std::shared_ptr<const qwen::VisionExecutionInput> VisionInputBindings::get(std::
     return found->second;
 }
 
-void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inputs) {
-    actions(out, work.actions);
+void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inputs,
+                 std::uint32_t rank) {
+    out.u32(rank);
+    context::encode_actions(out, local_actions(work.actions, rank));
     std::visit(
         [&](const auto& v) {
             using T = std::decay_t<decltype(v)>;
@@ -273,7 +171,7 @@ void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inpu
                 out.u8(1);
                 out.u8(static_cast<std::uint8_t>(v.kind));
                 out.u8(static_cast<std::uint8_t>(v.sample));
-                rows(out, v.rows);
+                rows(out, v.rows, rank);
                 out.boolean(v.prefetch.has_value());
                 if (v.prefetch) {
                     member(out, v.prefetch->member);
@@ -283,7 +181,7 @@ void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inpu
                 }
             } else if constexpr (std::is_same_v<T, MtpWork>) {
                 out.u8(2);
-                rows(out, v.rows);
+                rows(out, v.rows, rank);
                 integers(out, v.draft_extents);
             } else if constexpr (std::is_same_v<T, ContextWork>) {
                 out.u8(3);
@@ -298,7 +196,7 @@ void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inpu
                 for (auto id : v.releases) residency(out, id);
             } else {
                 out.u8(4);
-                row(out, v.row);
+                row(out, v.row, rank);
                 integers(out, v.targets);
                 out.u32(v.first_target_column);
             }
@@ -308,13 +206,14 @@ void encode_work(Encoder& out, const Work& work, const VisionInputBindings& inpu
 
 Work decode_work(Decoder& in, const VisionInputBindings& inputs) {
     Work work;
-    work.actions = actions(in);
+    const auto rank = in.u32();
+    work.actions.emplace(rank, context::decode_actions(in));
     switch (in.u8()) {
     case 1: {
         ForwardWork v;
         v.kind   = static_cast<ForwardKind>(in.u8());
         v.sample = static_cast<SampleKind>(in.u8());
-        v.rows   = rows(in);
+        v.rows   = rows(in, rank);
         if (in.boolean()) {
             v.prefetch.emplace();
             v.prefetch->member   = member(in);
@@ -326,7 +225,7 @@ Work decode_work(Decoder& in, const VisionInputBindings& inputs) {
         break;
     }
     case 2:
-        work.operation = MtpWork{rows(in), integers<std::uint32_t>(in)};
+        work.operation = MtpWork{rows(in, rank), integers<std::uint32_t>(in)};
         break;
     case 3: {
         ContextWork v;
@@ -344,7 +243,7 @@ Work decode_work(Decoder& in, const VisionInputBindings& inputs) {
     }
     case 4: {
         ScoreWork v;
-        v.row                 = row(in);
+        v.row                 = row(in, rank);
         v.targets             = integers<TokenId>(in);
         v.first_target_column = in.u32();
         work.operation        = std::move(v);
@@ -356,31 +255,33 @@ Work decode_work(Decoder& in, const VisionInputBindings& inputs) {
     return work;
 }
 
-void encode_commit(Encoder& out, const Commit& commit) {
+void encode_commit(Encoder& out, const Commit& commit, std::uint32_t rank) {
+    out.u32(rank);
     out.u64(commit.rows.size());
     for (const auto& r : commit.rows) {
         member(out, r.member);
-        selectors(out, r.slots);
+        selectors(out, r.states.at(rank));
         out.u32(r.accepted);
         out.boolean(r.terminal);
         out.boolean(r.cancelled);
         out.boolean(r.failed);
     }
-    actions(out, commit.actions);
+    context::encode_actions(out, local_actions(commit.actions, rank));
 }
 
 Commit decode_commit(Decoder& in) {
     Commit result;
+    const auto rank = in.u32();
     result.rows.resize(in.count(43));
     for (auto& r : result.rows) {
-        r.member    = member(in);
-        r.slots     = selectors(in);
+        r.member = member(in);
+        r.states.emplace(rank, selectors(in));
         r.accepted  = in.u32();
         r.terminal  = in.boolean();
         r.cancelled = in.boolean();
         r.failed    = in.boolean();
     }
-    result.actions = actions(in);
+    result.actions.emplace(rank, context::decode_actions(in));
     return result;
 }
 
@@ -412,6 +313,12 @@ void encode_result(Encoder& out, const Result& result) {
                     out.u64(t.work.payload_bytes);
                     out.u32(t.work.copy_operations);
                     out.u64(t.elapsed_ns);
+                    out.u32(t.rank);
+                    out.boolean(t.peer.has_value());
+                    if (t.peer) {
+                        out.u32(t.peer->source_rank);
+                        out.u32(t.peer->destination_rank);
+                    }
                 }
             } else {
                 out.u8(3);
@@ -441,7 +348,7 @@ Result decode_result(Decoder& in) {
     }
     case 2: {
         ContextResult v;
-        v.transfers.resize(in.count(30));
+        v.transfers.resize(in.count(35));
         for (auto& t : v.transfers) {
             if (in.boolean()) t.resource.pool = runtime::KvPoolId{in.u16()};
             t.direction   = static_cast<runtime::ContextTransferDirection>(in.u8());
@@ -449,6 +356,8 @@ Result decode_result(Decoder& in) {
             t.page_groups = in.u32();
             t.work        = {in.u64(), in.u32()};
             t.elapsed_ns  = in.u64();
+            t.rank        = in.u32();
+            if (in.boolean()) t.peer = runtime::ContextPeerTransfer{in.u32(), in.u32()};
         }
         return v;
     }

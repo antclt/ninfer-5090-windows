@@ -47,7 +47,7 @@ DLLS = ["avcodec-63.dll", "avformat-63.dll", "avutil-61.dll",
         "swscale-10.dll", "swresample-7.dll",
         # The engine's own shared libraries (ninfer_ops and ninfer_moe_cpu are SHARED since
         # 35aede69); every executable above imports ninfer_ops.dll and exits 0xC0000135 without it.
-        "ninfer_ops.dll", "ninfer_moe_cpu.dll"]
+        "ninfer_ops.dll", "ninfer_moe_cpu.dll", "jpeg62.dll"]
 ROOT_FILES = ["README.md", "RELEASE_NOTES.md", "LICENSE", "NOTICE"]
 # The four start_*.bat are generated from the table, so they are derived from it here rather
 # than restated; the other three are hand-written and ship as they are.

@@ -34,6 +34,7 @@ REQUIRED = [
     # The engine's shared libraries: without them every executable exits 0xC0000135 silently.
     "ninfer_ops.dll",
     "ninfer_moe_cpu.dll",
+    "jpeg62.dll",
     "launcher_env.bat",
     "download_model.bat",
     "download_model.py",

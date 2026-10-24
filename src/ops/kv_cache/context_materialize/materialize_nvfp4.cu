@@ -56,7 +56,8 @@ union alignas(16) MaterializeNvfp4Storage {
 
 template <int Rows, int Columns, int BlockK, int ColumnWarps>
 __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mma_nvfp4_kernel(
-    const __nv_bfloat16* hidden, const int* positions, const int* counts, const int* slots,
+    const __nv_bfloat16* hidden, const int* positions, const int* counts,
+    const std::int64_t* slots,
     DeviceLayers layers, float* key_scratch, int width, int batch, int min_count, int max_count) {
     constexpr int kBlockRows = Rows, kBlockK = BlockK;
     constexpr int kBlockColumns = Columns;
@@ -287,9 +288,10 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
 }
 
 template <int Rows, int Columns, int BlockK, int ColumnWarps>
-void launch_mma(const Tensor& x, const Tensor& positions, const Tensor& counts, const Tensor& slots,
-                DeviceLayers layers, ContextKVMaterializeExecutionEnvelope envelope,
-                const Tensor& scratch, cudaStream_t stream) {
+void launch_mma(const Tensor& x, const Tensor& positions, const Tensor& counts,
+                const Tensor& offsets, DeviceLayers layers,
+                ContextKVMaterializeExecutionEnvelope envelope, const Tensor& scratch,
+                cudaStream_t stream) {
     constexpr int bytes = sizeof(MaterializeNvfp4Storage<Rows, Columns, BlockK>);
     if constexpr (bytes > 48 * 1024)
         CUDA_CHECK(cudaFuncSetAttribute(
@@ -300,8 +302,8 @@ void launch_mma(const Tensor& x, const Tensor& positions, const Tensor& counts, 
                 2 * kContextKVMaterializeLayers),
            Rows / 16 * ColumnWarps * 32, bytes, stream>>>(
             static_cast<const __nv_bfloat16*>(x.data), static_cast<const int*>(positions.data),
-            static_cast<const int*>(counts.data), static_cast<const int*>(slots.data), layers,
-            static_cast<float*>(scratch.data), x.ne[1], x.ne[2], envelope.min_count,
+            static_cast<const int*>(counts.data), static_cast<const std::int64_t*>(offsets.data),
+            layers, static_cast<float*>(scratch.data), x.ne[1], x.ne[2], envelope.min_count,
             envelope.max_count);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -327,30 +329,31 @@ constexpr Route route_for(std::int32_t columns) {
 } // namespace
 
 void context_kv_materialize_nvfp4_launch(
-    const Tensor& context, const Tensor& positions, const Tensor& counts, const Tensor& state_slots,
+    const Tensor& context, const Tensor& positions, const Tensor& counts,
     const std::array<ContextKVMaterializeLayerView, kContextKVMaterializeLayers>& layers,
     ContextKVMaterializeExecutionEnvelope envelope, const Tensor& key_scratch,
     cudaStream_t stream) {
     const DeviceLayers device_layers = make_device_layers(layers);
+    const auto& offsets             = layers.front().cache.k.records.byte_offsets;
     // Every column count serves from the MMA family; the small-column grouped schedules of the
     // W8 table land on the 32-column MMA tile.
     switch (route_for(envelope.max_count * context.ne[2])) {
     case Route::KSplit16:
     case Route::KSplit24:
     case Route::Mma32:
-        launch_mma<64, 32, 128, 2>(context, positions, counts, state_slots, device_layers,
+        launch_mma<64, 32, 128, 2>(context, positions, counts, offsets, device_layers,
                                    envelope, key_scratch, stream);
         break;
     case Route::Mma80:
-        launch_mma<64, 80, 128, 5>(context, positions, counts, state_slots, device_layers,
+        launch_mma<64, 80, 128, 5>(context, positions, counts, offsets, device_layers,
                                    envelope, key_scratch, stream);
         break;
     case Route::Mma96:
-        launch_mma<64, 96, 128, 6>(context, positions, counts, state_slots, device_layers,
+        launch_mma<64, 96, 128, 6>(context, positions, counts, offsets, device_layers,
                                    envelope, key_scratch, stream);
         break;
     case Route::Fused64:
-        launch_mma<128, 64, 128, 2>(context, positions, counts, state_slots, device_layers,
+        launch_mma<128, 64, 128, 2>(context, positions, counts, offsets, device_layers,
                                     envelope, key_scratch, stream);
         return;
     case Route::Mma64:
@@ -359,14 +362,14 @@ void context_kv_materialize_nvfp4_launch(
         // not the one the kernel was written against -- see swizzle_stage_128 above. Changing this
         // shape to the 128-wide K tile "fixed" the oracle by routing around the wrong swizzle, which
         // would have left the same defect waiting at any shape that reached the differing bit.
-        launch_mma<64, 64, 64, 2>(context, positions, counts, state_slots, device_layers,
+        launch_mma<64, 64, 64, 2>(context, positions, counts, offsets, device_layers,
                                   envelope, key_scratch, stream);
         break;
     }
     context_kv_key_post_kernel<<<dim3(envelope.max_count * context.ne[2], kLayers), 256, 0,
                                  stream>>>(
         static_cast<const float*>(key_scratch.data), static_cast<const int*>(positions.data),
-        static_cast<const int*>(counts.data), static_cast<const int*>(state_slots.data),
+        static_cast<const int*>(counts.data), static_cast<const std::int64_t*>(offsets.data),
         device_layers, context.ne[2], context.ne[1], envelope.min_count, envelope.max_count);
     CUDA_CHECK(cudaGetLastError());
 }

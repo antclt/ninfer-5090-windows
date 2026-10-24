@@ -5,7 +5,6 @@
     "decode_ready_requests": "A sub-state of waiting_requests: a request ready to decode is still waiting for its round.",
     "decode_row_rounds": "A row round is a decode round, and decode_rounds is consulted.",
     "generated_tokens": "Accompanies committed_decode_tokens, which is consulted.",
-    "host_context_peak_occupied_bytes": "A peak grows through a state move, fork, restore or materialization, all of which are consulted.",
     "last_selected_frontier_tokens": "Set by a root or checkpoint selection, both of which are consulted.",
     "prefilling_requests": "A sub-state of running_requests: a request being prefilled is running.",
     "prompt_tokens": "Accompanies computed_prefill_tokens and committed_decode_tokens, both consulted.",

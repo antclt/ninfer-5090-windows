@@ -25,6 +25,26 @@ if not exist ffmpeg (
     echo [1/4] FFmpeg directory already exists. Skipping download.
 )
 
+REM libjpeg-turbo: a self-extracting MSVC installer (not a zip). Stage it the same way FFmpeg is
+REM staged -- header + import lib + DLL -- so the JPEG::JPEG target in Dependencies.cmake resolves.
+set "JPEG_URL=https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0-vc-x64.exe"
+if not exist jpeg (
+    echo Downloading libjpeg-turbo Windows dev binaries...
+    powershell -Command "Invoke-WebRequest -Uri '%JPEG_URL%' -OutFile 'libjpeg-turbo.exe'"
+    echo Extracting libjpeg-turbo...
+    libjpeg-turbo.exe /extract=jpeg_temp /nosplash /silent
+    echo Moving files into place...
+    mkdir jpeg\include 2>nul & mkdir jpeg\lib 2>nul & mkdir jpeg\bin 2>nul
+    xcopy /y /q "jpeg_temp\include" "jpeg\include\" >nul
+    copy /y "jpeg_temp\lib\jpeg*.lib" "jpeg\lib\" >nul
+    copy /y "jpeg_temp\bin\jpeg*.dll" "jpeg\bin\" >nul
+    echo Cleaning up...
+    rmdir /S /Q jpeg_temp
+    del libjpeg-turbo.exe
+) else (
+    echo libjpeg-turbo directory already exists. Skipping download.
+)
+
 echo.
 echo [3/4] Setting up MSVC environment...
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" 2>nul || call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" 2>nul || echo Please open x64 Native Tools Command Prompt manually!
@@ -51,6 +71,7 @@ if errorlevel 1 exit /b 1
 echo.
 echo Copying FFmpeg DLLs to the build folder so the executable can find them...
 for %%D in (avcodec avformat avutil swscale swresample) do xcopy /y /q "ffmpeg\bin\%%D-*.dll" "build\apps\" >nul
+copy /y "jpeg\bin\jpeg*.dll" "build\apps\" >nul
 
 echo.
 echo ========================================================

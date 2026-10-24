@@ -1,5 +1,6 @@
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/fp8/launch.h"
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/fp8/compute.cuh"
+#include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/fp8/dense_down.cuh"
 #include "ops/moe/kernels/cuda/block_scaled/h4096_i2048_e288_k8/fp8/vector_pair.cuh"
 #include "ops/common/host/launch.h"
 
@@ -40,25 +41,27 @@ __global__ void quantize_input(const __nv_bfloat16* input, std::uint8_t* codes, 
     }
 }
 
-template <bool Gate, int Columns, bool Atomic = false>
+template <bool Gate, int Columns, PopulationRoute Population>
 void launch_mma(const Tensor& x, const CudaSwiGLUExperts& experts, const ExpertRoutes& routes,
                 const Storage& s, const Plan& plan, CudaExecutionView execution) {
-    using S               = Schedule<Columns, Gate>;
-    constexpr int rows    = Gate ? kIntermediate : kHidden;
-    const int job_columns = plan.job_columns();
-    const int subtiles    = job_columns / Columns;
-    const int max_jobs    = (kTopK * x.ne[1] / job_columns + kExperts) * subtiles;
-    const int blocks      = std::min(max_jobs * (rows / 128),
-                                     execution.multiprocessor_count() * plan.queued_ctas_per_sm);
-    const int shared_bytes =
-        common::prepare_shared<sizeof(TileStorage<S>), grouped_mma<Columns, Gate, Atomic>, true>();
-    grouped_mma<Columns, Gate, Atomic><<<blocks, S::threads, shared_bytes, execution.stream()>>>(
-        Gate ? s.input_codes : s.product_codes,
-        static_cast<const float*>(Gate ? s.input_scales : s.product_scales),
-        Gate ? experts.bank.gate_up : experts.bank.down, s.groups, s.product_codes,
-        static_cast<float*>(s.product_scales), s.contributions,
-        static_cast<const float*>(routes.coefficients.data), s.routed_sum, subtiles,
-        plan.clamp_limit, std::min(blocks, execution.multiprocessor_count() * 2));
+    using S                = Schedule<Columns, Gate>;
+    constexpr int rows     = Gate ? kIntermediate : kHidden;
+    const int job_columns  = plan.job_columns();
+    const int subtiles     = job_columns / Columns;
+    const int max_jobs     = (kTopK * x.ne[1] / job_columns + kExperts) * subtiles;
+    const int blocks       = std::min(max_jobs * (rows / 128),
+                                      execution.multiprocessor_count() * plan.queued_ctas_per_sm);
+    const int shared_bytes = common::prepare_shared<sizeof(TileStorage<S>),
+                                                    grouped_mma<Columns, Gate, Population>, true>();
+    grouped_mma<Columns, Gate, Population>
+        <<<blocks, S::threads, shared_bytes, execution.stream()>>>(
+            Gate ? s.input_codes : s.product_codes,
+            static_cast<const float*>(Gate ? s.input_scales : s.product_scales),
+            Gate ? experts.bank.gate_up : experts.bank.down, s.groups, s.product_codes,
+            static_cast<float*>(s.product_scales),
+            static_cast<const float*>(routes.coefficients.data), s.routed_sum, subtiles,
+            plan.clamp_limit, std::min(blocks, execution.multiprocessor_count() * 2), plan.fp8,
+            2 * plan.gate_columns, x.ne[1]);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -103,20 +106,32 @@ void launch_input(const Tensor& x, const CudaSwiGLUExperts&, const ExpertRoutes&
 
 void launch_experts(const Tensor& x, const CudaSwiGLUExperts& experts, const ExpertRoutes& routes,
                     const Plan& plan, const Storage& s, CudaExecutionView execution) {
+    // Population facts are produced on Device and consumed on every replay.
+    // Both down families share the same packed assignments and GU product.
     with_columns<true>(plan.gate_columns, [&]<int C>() {
-        launch_mma<true, C>(x, experts, routes, s, plan, execution);
+        launch_mma<true, C, PopulationRoute::Gate>(x, experts, routes, s, plan, execution);
     });
-    if (plan.column_major_down) {
-        launch_column_jobs(s.groups, x.ne[1], plan.job_columns(), plan.preserve_balanced_down,
-                           execution);
-    }
     with_columns<false>(plan.down_columns, [&]<int C>() {
-        if (plan.atomic_output) {
-            launch_mma<false, C, true>(x, experts, routes, s, plan, execution);
-        } else {
-            launch_mma<false, C>(x, experts, routes, s, plan, execution);
-        }
+        launch_mma<false, C, PopulationRoute::Down>(x, experts, routes, s, plan, execution);
     });
+    if (plan.fp8.wide_down)
+        launch_mma<false, Fp8PopulationTuning::kWideDownColumns, PopulationRoute::WideDown>(
+            x, experts, routes, s, plan, execution);
+    if (plan.fp8.dense_down) {
+        constexpr int columns = 64;
+        const int tasks       = (kHidden / 128) * ((x.ne[1] + columns - 1) / columns);
+        const int blocks =
+            std::min(tasks, execution.multiprocessor_count() * plan.queued_ctas_per_sm);
+        const int bytes = common::prepare_shared<sizeof(DenseDownStorage<columns>),
+                                                 dense_eight_down<columns>, true>();
+        dense_eight_down<columns>
+            <<<blocks, Schedule<columns, false>::threads, bytes, execution.stream()>>>(
+                s.product_codes, static_cast<const float*>(s.product_scales), experts.bank.down,
+                s.groups, static_cast<const int*>(routes.ids.data),
+                static_cast<const float*>(routes.coefficients.data), s.routed_sum, x.ne[1],
+                plan.fp8.row_window);
+        CUDA_CHECK(cudaGetLastError());
+    }
 }
 
 void launch_vector(const Tensor& x, const CudaSwiGLUExperts& experts, const ExpertRoutes& routes,
@@ -127,7 +142,10 @@ void launch_vector(const Tensor& x, const CudaSwiGLUExperts& experts, const Expe
     const auto* mask         = static_cast<const int*>(subset.mask.data);
     const auto* coefficients = static_cast<const float*>(routes.coefficients.data);
     if (x.ne[1] == 2) {
-        pair_gate<<<dim3(kIntermediate / 4, 2 * kTopK), 128, 0, stream>>>(
+        const int blocks =
+            std::min((kIntermediate / kPairGateRowsPerCta) * 2 * kTopK,
+                     execution.multiprocessor_count() * plan.vector_gate_ctas_per_sm);
+        pair_gate<<<blocks, kPairGateRowsPerCta * 32, 0, stream>>>(
             static_cast<const __nv_bfloat16*>(x.data), experts.bank.gate_up, ids, subset.kind, mask,
             s.vector_activation, plan.clamp_limit);
     } else {
@@ -138,7 +156,7 @@ void launch_vector(const Tensor& x, const CudaSwiGLUExperts& experts, const Expe
     CUDA_CHECK(cudaGetLastError());
     const auto down = [&](auto output) {
         if (x.ne[1] == 2) {
-            pair_down<4><<<kHidden / 4, kTopK * 32, 0, stream>>>(
+            pair_down<<<kHidden / kPairDownRowsPerWarp, kTopK * 32, 0, stream>>>(
                 s.vector_activation, experts.bank.down, ids, coefficients, subset.kind, mask,
                 output);
         } else {
@@ -148,6 +166,9 @@ void launch_vector(const Tensor& x, const CudaSwiGLUExperts& experts, const Expe
         }
         CUDA_CHECK(cudaGetLastError());
     };
-    with_output(destination, mode, down);
+    if (s.partial_output)
+        down(DenseContributionWithValidity{static_cast<float*>(destination.data), s.active_tokens});
+    else
+        with_output(destination, mode, down);
 }
 } // namespace ninfer::ops::detail::moe_cuda::block_scaled::h4096_i2048_e288_k8::fp8

@@ -33,6 +33,7 @@
 
 #include "ninfer/engine.h"
 #include "ninfer/types.h"
+#include "context_budget.h"
 
 namespace {
 
@@ -65,7 +66,6 @@ ninfer::EngineOptions reporter_engine_options(const char* artifact) {
     ninfer::EngineOptions options;
     options.artifact_path    = artifact;
     options.max_context      = kContext;
-    options.kv_capacity      = ninfer::KvCapacityPolicy::explicit_capacity(kKvCapacity);
     options.prefill_chunk    = kPreChunk;
     // Their speculative backend: dflash2 with 7 draft tokens. Their table shows `--spec mtp` failing
     // differently, so the backend is not incidental to the trigger.
@@ -74,12 +74,17 @@ ninfer::EngineOptions reporter_engine_options(const char* artifact) {
     options.speculative.proposal_head            = ninfer::ProposalHead::Optimized;
     options.max_concurrency                      = kConcurrency;
     options.max_pending_requests                 = 32;
-    options.context_cache.extra_state_slots      = 2;
     // Upstream b9114396 collapsed host_state_slots, host_kv_capacity_bytes,
-    // max_private_continuations, max_shared_prefixes and
-    // max_long_anchors_per_continuation into one shared Host quota. This test's own 6 GiB
-    // bound carries across unchanged; the per-catalog counts are the Engine's defaults now.
+    // max_private_continuations, max_shared_prefixes, max_long_anchors_per_continuation and
+    // extra_state_slots into one shared Host quota. This test's own 6 GiB bound carries across
+    // unchanged; the per-catalog counts are the Engine's defaults now.
     options.context_cache.host_capacity_bytes = std::uint64_t{6144} << 20;
+    // The device quota is bytes now (`ContextCapacityPolicy`), not a `--kv-capacity` token count.
+    // Size it from the plan's own record packing for kKvCapacity tokens, which is what the old
+    // quota expressed, so the root keeps the share of the pool this case was built around.
+    const auto plan          = ninfer::test::qwen3_5::context_capacity_plan(options);
+    options.context_capacity = ninfer::ContextCapacityPolicy::explicit_capacity(
+        ninfer::test::qwen3_5::checkpoint_capacity_bytes(plan, 1, kKvCapacity));
     return options;
 }
 

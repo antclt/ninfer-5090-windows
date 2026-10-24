@@ -176,7 +176,9 @@ struct GenerationSchedulingStats {
 };
 
 struct GenerationTransferTiming {
-    std::uint64_t bytes                                     = 0;
+    std::uint64_t bytes = 0;
+    // Cumulative copy time across participating ranks, not an operation's wall latency.
+    // Peer payload and operation counts include only the sending endpoint.
     double seconds                                          = 0.0;
     std::uint64_t images                                    = 0;
     std::uint64_t page_groups                               = 0;
@@ -185,10 +187,13 @@ struct GenerationTransferTiming {
                            const GenerationTransferTiming&) = default;
 };
 
-// Directions are D2H, H2D and D2D. KV entries are indexed by the startup pool ID.
+// Directions are D2H, H2D, local D2D, H2H and peer D2D.
+using ContextTransferSeries = std::array<GenerationTransferTiming, 5>;
+
+// KV entries identify logical history kinds.
 struct ContextTransferStats {
-    std::array<GenerationTransferTiming, 3> state{};
-    std::vector<std::array<GenerationTransferTiming, 3>> kv;
+    ContextTransferSeries state{};
+    std::vector<ContextTransferSeries> kv;
     friend bool operator==(const ContextTransferStats&, const ContextTransferStats&) = default;
 };
 
@@ -196,7 +201,6 @@ struct ContextKvPoolUsage {
     std::uint16_t id = 0;
     std::string label;
     std::uint32_t occupied_page_groups                                           = 0;
-    std::uint32_t capacity_page_groups                                           = 0;
     friend bool operator==(const ContextKvPoolUsage&, const ContextKvPoolUsage&) = default;
 };
 

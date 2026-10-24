@@ -12,6 +12,7 @@
 #include "core/decode_graph.h"
 #include "ops/op_tester.h"
 #include "ops/quantized_weight.h"
+#include "../../tools/support/state_record_fixture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -338,14 +339,17 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
         positions[column] = 17 + static_cast<std::int32_t>(column) * 13;
     }
     const std::vector<std::int32_t> counts(batch, width);
-    const std::vector<std::int32_t> slots = {0, 1};
+    // The op takes byte offsets from the cache records now, not a slot index tensor, so the two
+    // cache lanes this case used as slots become record indices into a StateRecordFixture: the
+    // fixture places the images at its own offsets and the kernel adds one to the record base.
+    const std::vector<std::int32_t> state_records = {0, 1};
 
     DeviceBuffer context_device = to_device_bf16(context);
     DeviceBuffer positions_device = to_device_i32(positions);
     DeviceBuffer counts_device    = to_device_i32(counts);
-    DeviceBuffer slots_device     = to_device_i32(slots);
     std::vector<GuardedDeviceBuffer> cache_k;
     std::vector<GuardedDeviceBuffer> cache_v;
+    std::vector<Tensor> cache_fields;
     std::array<ops::ContextKVMaterializeLayerView, kLayers> views;
     for (int layer = 0; layer < kLayers; ++layer) {
         cache_k.emplace_back(cache_elements() * sizeof(std::uint16_t));
@@ -356,12 +360,24 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
             keys[layer].device_weight(key_device[layer].span()),
             values[layer].device_weight(value_device[layer].span()),
             Tensor(norm_device[layer].span(), DType::BF16, {128}),
-            CyclicKVCacheLayerView{
-                Tensor(cache_k[layer].span(), DType::BF16, {128, kCachePadded, 8, kCacheLanes}),
-                Tensor(cache_v[layer].span(), DType::FP16, {128, kCachePadded, 8, kCacheLanes}),
-                2048U, static_cast<std::uint32_t>(kCachePadded), 8U, 128U,
-                static_cast<std::uint32_t>(kCacheLanes)},
+            {},
         };
+        cache_fields.emplace_back(cache_k[layer].span(), DType::BF16,
+                                  std::initializer_list<std::int32_t>{128, kCachePadded, 8,
+                                                                      kCacheLanes});
+        cache_fields.emplace_back(cache_v[layer].span(), DType::FP16,
+                                  std::initializer_list<std::int32_t>{128, kCachePadded, 8,
+                                                                      kCacheLanes});
+    }
+    // Records are the cache lanes (axis 3), which is the production layout.
+    tool::StateRecordFixture records(cache_fields, 3);
+    const std::vector<std::int64_t> offsets = records.record_offsets(state_records);
+    DeviceBuffer offsets_device             = to_device(offsets);
+    const Tensor offsets_tensor(offsets_device.span(), DType::I64, {batch});
+    for (int layer = 0; layer < kLayers; ++layer) {
+        views[layer].cache = {records.field(2U * layer, offsets_tensor),
+                              records.field(2U * layer + 1U, offsets_tensor), 2048U,
+                              static_cast<std::uint32_t>(kCachePadded), 8, 128};
     }
     const std::size_t capacity = ops::context_kv_materialize_workspace_capacity_bytes(
         batch, width, width);
@@ -370,34 +386,36 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
     Tensor context_tensor(context_device.span(), DType::BF16, {kHidden, width, batch});
     Tensor positions_tensor(positions_device.span(), DType::I32, {width, batch});
     Tensor counts_tensor(counts_device.span(), DType::I32, {batch});
-    Tensor slots_tensor(slots_device.span(), DType::I32, {batch});
     if (!graph) {
-        ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor, slots_tensor,
-                                    views, {0U, static_cast<std::uint32_t>(width)}, workspace,
+        ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor, views,
+                                    {0U, static_cast<std::uint32_t>(width)}, workspace,
                                     ninfer::test::cuda_environment().default_execution);
         cuda_synchronize();
     } else {
         // Mirror the W8 test's replay contract: capture with the b%3 mixed-count pattern in the
         // device buffers, then replay through the recorded executable with full counts, fresh
-        // slots, and shifted positions.
-        std::vector<std::int32_t> capture_counts(batch), capture_slots(batch, -1);
+        // offsets, and shifted positions.
+        std::vector<std::int32_t> capture_counts(batch), capture_records(batch, -1);
         std::vector<std::int32_t> capture_positions(columns, -1);
         for (std::int32_t b = 0; b < batch; ++b) {
             capture_counts[b] = b == batch - 1 || b % 3 == 2
                                     ? width
                                     : b % 3 == 1 ? std::max(1, width / 2) : 0;
             if (capture_counts[b] != 0) {
-                capture_slots[b] = (b * 3 + 2) % 8;
+                capture_records[b] = (b * 3 + 2) % kCacheLanes;
                 for (std::int32_t i = 0; i < capture_counts[b]; ++i) {
                     capture_positions[static_cast<std::size_t>(b) * width + i] = 2046 + b * 4096 + i;
                 }
             }
         }
+        const std::vector<std::int64_t> capture_offsets = records.record_offsets(capture_records);
         counts_device.copy_from_host(capture_counts.data(), batch * 4);
-        slots_device.copy_from_host(capture_slots.data(), batch * 4);
+        offsets_device.copy_from_host(capture_offsets.data(),
+                                      capture_offsets.size() * sizeof(std::int64_t));
         positions_device.copy_from_host(capture_positions.data(), columns * 4);
         for (auto& buffer : cache_k) { buffer.fill(0x5a); }
         for (auto& buffer : cache_v) { buffer.fill(0x5a); }
+        records.upload();
         cudaStream_t stream = nullptr;
         cuda_check(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking),
                    "context graph stream");
@@ -405,22 +423,23 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
         DecodeGraphExecutable executable;
         cudaStream_t capture_stream = stream;
         definition.capture(capture_stream, [&] {
-            ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor,
-                                        slots_tensor, views,
+            ops::context_kv_materialize(context_tensor, positions_tensor, counts_tensor, views,
                                         {0U, static_cast<std::uint32_t>(width)}, workspace,
                                         ninfer::test::cuda_environment().context.execution_view(capture_stream));
         });
         executable.instantiate(definition);
         counts_device.copy_from_host(counts.data(), batch * 4);
-        slots_device.copy_from_host(slots.data(), batch * 4);
+        offsets_device.copy_from_host(offsets.data(), offsets.size() * sizeof(std::int64_t));
         positions_device.copy_from_host(positions.data(), columns * 4);
         for (auto& buffer : cache_k) { buffer.fill(0x5a); }
         for (auto& buffer : cache_v) { buffer.fill(0x5a); }
+        records.upload();
         cuda_synchronize();
         executable.launch(stream);
         cuda_synchronize(stream);
         cuda_check(cudaStreamDestroy(stream), "destroy context graph stream");
     }
+    records.copy_back();
 
     int failures = 0;
 
@@ -434,7 +453,7 @@ int verify_context_kv(std::int32_t width, std::int32_t batch, std::uint32_t seed
         // Full FP64 oracle for sampled (column, head, dim) cells.
         for (std::size_t column = 0; column < columns; column += std::max<std::size_t>(1, columns / 3)) {
             const std::int32_t position = positions[column];
-            const std::size_t slot      = static_cast<std::size_t>(slots[column / width]);
+            const std::size_t slot      = static_cast<std::size_t>(state_records[column / width]);
             for (const std::int32_t head : {0, 3, 7}) {
                 std::vector<double> key_raw(128), key_normed(128);
                 for (int dim = 0; dim < 128; ++dim) {

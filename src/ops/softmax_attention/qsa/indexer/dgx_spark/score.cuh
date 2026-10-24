@@ -62,7 +62,7 @@ __global__ __launch_bounds__(Tile > 16 ? Tile * 8 : 128) void indexer_score_pipe
     static_assert(Stages == 1 || Stages == 2);
     __shared__ ScoreWorkMap jobs;
     extern __shared__ __align__(16) __nv_bfloat16 pipe_keys[];
-    if (!jobs.build<Tile>(a)) return;
+    if (!jobs.template build<Tile>(a)) return;
     const int tid = threadIdx.x, lane = tid % 32, warp = tid / 32,
               per_row = (a.width + Tile - 1) / Tile;
     const auto stage  = [&](int job, int buffer) {

@@ -121,7 +121,9 @@
       "terminal_diagnostics_unavailable": "the tool's own case and comparison labels, which it writes and reads back",
       "wire_identity_not_found": "the tool's own case and comparison labels, which it writes and reads back",
       "invalid_context_pool_directory": "the tool's own status reason string, returned when a context-cache KV pool directory does not line up with the pool list. The directory field it reads was retired upstream in the 2026-10-17 merge; the label is the tool's output vocabulary, not a tree symbol.",
-      "changed_context_pool_directory": "the tool's own status reason string, returned when a pool directory changes between intervals. Same provenance as invalid_context_pool_directory."
+      "changed_context_pool_directory": "the tool's own status reason string, returned when a pool directory changes between intervals. Same provenance as invalid_context_pool_directory.",
+      "duplicate_context_domain": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "invalid_context_domain": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge)."
     },
     "tools/bench/ttft/execution.py": {
       "barrier_spread_ns": "the tool's own case and comparison labels, which it writes and reads back",
@@ -196,7 +198,10 @@
       "g16_fp64_exhaustive_e4m3fn_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
       "preserve_codes_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
       "qwen4_exp_v1": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
-      "preserve_e4m3fn_codes_bf16_block128x128_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol"
+      "preserve_e4m3fn_codes_bf16_block128x128_scales": "a provenance or metadata string the converter writes into the recipe and the artifact (a recipe revision name, a stored-scale algorithm id, an expert divisor key); the name's authority is the artifact convention, not a C++ symbol",
+      "head_channel_latent": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "latent_index_key_pool_gate_query_a_index_weight": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "tap_then_qkv_channels": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge)."
     },
     "tools/convert/qwen3_5.py": {
       "deepstack_visual_indexes": "a Hugging Face config key of the source checkpoint",
@@ -314,7 +319,26 @@
       "ninfer_stored_scale": "the label this codec writes into the artifact's provenance; it names a conversion output, not a symbol in this tree"
     },
     "tools/bench/chunked_context_soak.py": {
-      "device_kv_used_pages": "the tool's own watched counter, read from /metrics as the exact per-cycle Main KV page count that makes its leak check a slope rather than an RSS estimate. The 2026-10-17 merge retired the metric upstream. The tool falls back to '?' rather than failing, so the check degrades silently; recorded here so the loss stays visible."
+      "device_kv_used_pages": "the tool's own watched counter, read from /metrics as the exact per-cycle Main KV page count that makes its leak check a slope rather than an RSS estimate. The 2026-10-17 merge retired the metric upstream. The tool falls back to '?' rather than failing, so the check degrades silently; recorded here so the loss stays visible.",
+      "device_state_used_slots": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "host_context_capacity_bytes": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "host_context_peak_bytes": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "host_context_used_bytes": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge)."
+    },
+    "tools/bench/serve_log.py": {
+      "server_start_missing": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge)."
+    },
+    "tools/convert/glm5next.py": {
+      "f_a_proj": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "f_b_proj": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "g_a_proj": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "g_b_proj": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "image_end_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "image_start_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "image_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "video_end_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "video_start_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge).",
+      "video_token_id": "upstream's new tooling references a name the port's C++ tree retired; recorded so the loss stays visible (2026-10-24 merge)."
     }
   }
 }

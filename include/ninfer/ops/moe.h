@@ -74,7 +74,8 @@ struct SwiGLUWeights {
 // rounding boundary, residual, routes or coefficient tensor. Writes every destination cell.
 // Capacity covers the inclusive extent interval from a 256-byte-aligned arena cursor.
 // No hidden allocation/transfer/readback; enqueues on execution and supports Graph replay.
-// Supports registered BF16 and NVFP4 profiles with an explicit finite positive clamp limit.
+// Supports registered BF16, Q8-G32/FP16 and NVFP4 profiles with an explicit finite positive clamp
+// limit.
 [[nodiscard]] std::size_t swiglu_workspace_capacity_bytes(const SwiGLUProfile& profile,
                                                           std::int32_t min_tokens,
                                                           std::int32_t max_tokens);
@@ -176,7 +177,7 @@ struct SigmoidMoeWeights {
 
 // Complete local contribution: routed_swiglu(topk_sigmoid_route(x),subset,x)+shared(x).
 // Shared is unscaled, exactly once, including zero routed hits. Only final output is BF16.
-// Supports registered block-scaled routed and native BF16 shared profiles,
+// Supports registered block-scaled routed and native BF16 or Q8-G32/FP16 shared profiles,
 // both with explicit finite positive clamp limits.
 // Destination is contiguous BF16[H,T], Write; no residual, rank, communication or shared gate.
 // Router, native bank/subset and shared semantics follow the profiles above; all matrices and

@@ -34,23 +34,24 @@ void test_handoff_lifetime(ninfer::DeviceContext& device,
     const auto make_prompt = [&](std::uint32_t seed) {
         ninfer::models::qwen::PreparedPromptData prompt;
         prompt.token_ids.resize(5);
-        prompt.token_types = {0, static_cast<std::uint8_t>(ninfer::models::qwen::Modality::Image),
-                              0, static_cast<std::uint8_t>(ninfer::models::qwen::Modality::Image),
-                              0};
+        prompt.token_types = {
+            0, static_cast<std::uint8_t>(ninfer::models::frontend::Modality::Image), 0,
+            static_cast<std::uint8_t>(ninfer::models::frontend::Modality::Image), 0};
         prompt.prepare.media_items   = 2;
         prompt.prepare.raw_patches   = 2 * patches;
         prompt.prepare.vision_tokens = 2;
         for (std::size_t item = 0; item != 2; ++item) {
-            prompt.vision_items.push_back(ninfer::models::qwen::VisionItem{
-                .modality    = ninfer::models::qwen::Modality::Image,
+            prompt.vision_items.push_back(ninfer::models::frontend::VisionItem{
+                .modality    = ninfer::models::frontend::Modality::Image,
                 .grid        = {.temporal = 1, .height = merge, .width = merge},
                 .patch_begin = item * patches,
                 .patch_count = patches,
                 .token_spans = {{.begin = 2 * item + 1, .count = 1}},
             });
-            auto payload = std::make_shared<ninfer::models::qwen::PreparedMediaPayload>();
-            payload->patch_elements = patches * config.patch_width();
-            payload->patches        = std::make_unique<std::uint16_t[]>(payload->patch_elements);
+            auto payload = std::make_shared<ninfer::models::frontend::PreparedMediaPayload>();
+            payload->features_per_patch = config.patch_width();
+            payload->patch_elements     = patches * config.patch_width();
+            payload->patches = std::make_unique<std::uint16_t[]>(payload->patch_elements);
             for (auto& value : payload->mutable_span()) {
                 seed  = seed * 1664525U + 1013904223U;
                 value = static_cast<std::uint16_t>(0x3f00U | ((seed >> 24) & 0x7fU) |
@@ -160,21 +161,17 @@ int main() {
         const q35::execution::Parameters parameters(*model, profile);
         const auto capacity = [&](std::uint32_t max_context) {
             ninfer::EngineOptions options;
-            options.max_context         = max_context;
-            options.kv_capacity         = ninfer::KvCapacityPolicy::explicit_capacity(max_context);
-            options.prefill_chunk       = 1024;
-            options.kv_cache            = ninfer::KvCacheStorage::Fp8E4M3Row256;
-            options.speculative.backend = ninfer::SpeculativeBackend::Mtp;
-            options.speculative.draft_tokens        = 3;
-            options.speculative.proposal_head       = ninfer::ProposalHead::Optimized;
-            options.enable_vision                   = true;
-            options.use_cuda_graph                  = false;
-            options.context_cache.extra_state_slots = 1;
-            auto planner     = q35::make_sequence_planner(parameters, device, options);
-            const auto pages = planner.capacity_curve().minimum_primary_page_groups;
-            auto plan        = std::move(planner).finalize(
-                {pages,
-                        options.max_concurrency + options.context_cache.extra_state_slots.value_or(0)});
+            options.max_context               = max_context;
+            options.prefill_chunk             = 1024;
+            options.kv_cache                  = ninfer::KvCacheStorage::Fp8E4M3Row256;
+            options.speculative.backend       = ninfer::SpeculativeBackend::Mtp;
+            options.speculative.draft_tokens  = 3;
+            options.speculative.proposal_head = ninfer::ProposalHead::Optimized;
+            options.enable_vision             = true;
+            options.use_cuda_graph            = false;
+            auto planner       = q35::make_sequence_planner(parameters, device, options);
+            const auto minimum = planner.capacity_plan().minimum_capacity();
+            auto plan          = std::move(planner).finalize(minimum);
             const auto session = q35::plan_session(plan);
             require(session.vision_workspace.has_value(), "Vision session lost its workspace plan");
             const auto vision = *session.vision_workspace;

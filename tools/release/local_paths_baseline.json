@@ -175,6 +175,12 @@
     },
     "tools/scripts/precommit_pytest.cmd": {
       "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)"
+    },
+    "docs/designs/unified-context-pool.md": {
+      "/home/": "upstream documentation referencing the Spark calibration host layout; recorded, not a path a reader uses."
+    },
+    "docs/performance/qwen3.8-27b.md": {
+      "/home/": "upstream documentation referencing the Spark calibration host layout; recorded, not a path a reader uses."
     }
   }
 }

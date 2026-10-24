@@ -6,6 +6,7 @@
 #include "runtime/contract/resources.h"
 #include "runtime/engine/request_record.h"
 #include "runtime/engine/context_cache/resource_manager.h"
+#include "runtime/engine/context_cache/placement_policy.h"
 #include "runtime/engine/scheduler.h"
 #include "runtime/engine/generation_budget.h"
 #include "runtime/executor/contract.h"
@@ -42,7 +43,7 @@ public:
     static constexpr EnginePurpose purpose = EnginePurpose::Generation;
 
     using ModelContract      = typename Instance::ModelContract;
-    using ContextResources   = typename ModelContract::Session::ContextResources;
+    using ContextAssessment  = typename ModelContract::Session::ContextAssessment;
     using ExecutionUnit      = typename ModelContract::ExecutionUnit;
     using UnitKind           = typename ModelContract::ExecutionUnitKind;
     using Checkpoint         = typename ModelContract::CheckpointHandle;
@@ -71,8 +72,7 @@ public:
         }
         cumulative_stats_.context_transfers.kv.resize(instance_.session->kv_pools().size());
         for (const auto& pool : instance_.session->kv_pools()) {
-            cumulative_stats_.kv_pools.push_back(
-                {pool.id.index, std::string(pool.label), 0, pool.device_page_groups});
+            cumulative_stats_.kv_pools.push_back({pool.id.index, std::string(pool.label), 0});
         }
         stats_snapshot_             = cumulative_stats_;
         published_snapshot_.runtime = cumulative_stats_;
@@ -84,6 +84,7 @@ public:
         worker_                   = std::thread([this, startup = std::move(startup)]() mutable {
             try {
                 instance_.executor->bind_to_current_thread();
+                publish_runtime_stats();
                 startup.set_value();
             } catch (...) {
                 startup.set_exception(std::current_exception());
@@ -224,6 +225,7 @@ public:
                                                 std::move(options), consumer_mode,
                                                 std::move(observation), pending_deadline, ready);
             request->decode_by_batch.resize(max_concurrency_);
+            request->context_transfers.resize(instance_.session->kv_pools().size() + 1);
         } catch (...) {
             release_reserved_capacity();
             throw;
@@ -513,14 +515,20 @@ private:
     void resolve_context_progress(typename ModelContract::ContextProgress&& progress,
                                   HostPhaseMeasurement& boundary);
 
-    bool reclaim(ContextResources shortage, bool allow_pause,
-                 std::span<const Checkpoint> excluded               = {},
-                 typename ResourceManagement::ReclaimCursor* cursor = nullptr,
-                 std::optional<std::uint64_t> priority_ticket       = std::nullopt);
+    ReclaimProgress reclaim(const ContextAssessment& assessment, bool allow_pause,
+                            std::span<const Checkpoint> excluded               = {},
+                            typename ResourceManagement::ReclaimCursor* cursor = nullptr,
+                            std::optional<std::uint64_t> priority_ticket       = std::nullopt);
 
-    bool pause_reclaim_victim(std::optional<std::uint64_t> priority_ticket);
+    bool pause_reclaim_victim(std::optional<std::uint64_t> priority_ticket,
+                              const ContextAssessment&);
 
-    bool pause_resident(std::uint32_t lane);
+    enum class PauseGoal { YieldLane, ReleaseCapacity, RecoverCapacity, RelocateOnly };
+    bool pause_resident(std::uint32_t lane, PauseGoal goal = PauseGoal::YieldLane,
+                        const ContextAssessment* pressure = nullptr);
+
+    void order_binding_sources(const std::shared_ptr<Request>&, LaneId,
+                               std::vector<typename ResourceManagement::SourceChoice>&);
 
     void finish_source_wait(const std::shared_ptr<Request>& request,
                             Clock::time_point now) noexcept;
@@ -585,6 +593,7 @@ private:
     const std::size_t max_outstanding_;
     const std::chrono::milliseconds pending_timeout_;
     ResourceManagement resources_;
+    PlacementId next_placement_tie_;
 
     mutable std::mutex execution_mutex_;
     mutable std::mutex queue_mutex_;

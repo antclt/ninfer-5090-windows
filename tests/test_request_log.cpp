@@ -46,18 +46,19 @@ int main() {
                       "request log accepted the model artifact as its output path");
 
     ServeOptions options;
-    options.launch.engine.artifact_path       = "/models/qwen3_6_27b.ninfer";
-    options.host                              = "127.0.0.1";
-    options.port                              = 8123;
-    options.api_key                           = "must-not-appear";
-    options.model_id_override                 = "deployment-alias";
-    options.launch.logging.request_jsonl      = "requests.jsonl";
-    options.launch.engine.max_context         = 262144;
-    options.launch.engine.kv_capacity         = ninfer::KvCapacityPolicy::explicit_capacity(524288);
-    options.launch.engine.prefill_chunk       = 1024;
-    options.launch.logging.stats_interval_ms  = 2500;
-    options.launch.engine.kv_cache            = ninfer::KvCacheStorage::Fp8E4M3Row256;
-    options.launch.engine.speculative.backend = ninfer::SpeculativeBackend::Mtp;
+    options.launch.engine.artifact_path  = "/models/qwen3_6_27b.ninfer";
+    options.host                         = "127.0.0.1";
+    options.port                         = 8123;
+    options.api_key                      = "must-not-appear";
+    options.model_id_override            = "deployment-alias";
+    options.launch.logging.request_jsonl = "requests.jsonl";
+    options.launch.engine.max_context    = 262144;
+    options.launch.engine.context_capacity =
+        ninfer::ContextCapacityPolicy::explicit_capacity(8ULL << 30);
+    options.launch.engine.prefill_chunk             = 1024;
+    options.launch.logging.stats_interval_ms        = 2500;
+    options.launch.engine.kv_cache                  = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.launch.engine.speculative.backend       = ninfer::SpeculativeBackend::Mtp;
     options.launch.engine.speculative.draft_tokens  = 3;
     options.launch.engine.speculative.proposal_head = ninfer::ProposalHead::Optimized;
     options.launch.engine.enable_vision             = false;
@@ -89,7 +90,7 @@ int main() {
     engine_options.speculative                       = options.launch.engine.speculative;
     engine_options.enable_vision                     = options.launch.engine.enable_vision;
     engine_options.use_cuda_graph                    = options.launch.engine.use_cuda_graph;
-    engine_options.context_cache.extra_state_slots   = 2;
+    engine_options.context_capacity                  = options.launch.engine.context_capacity;
     engine_options.context_cache.host_capacity_bytes = 64ULL << 20;
 
     const ninfer::ModelSamplingDefaults sampling_defaults{
@@ -118,8 +119,9 @@ int main() {
 
     ninfer::EngineDescription description;
     description.ranks.push_back({});
-    description.device_state_capacity = 4;
-    description.kv_pools.push_back({0, "main", 0, 8192});
+    description.context_pools = {{0, ninfer::ContextMemoryDomain::Device, 8ULL << 30, 153954304},
+                                 {0, ninfer::ContextMemoryDomain::Host, 64ULL << 20, 153954304}};
+    description.kv_pools.push_back({0, "main", 0});
     ninfer::StartupReport startup_report;
     startup_report.load = load;
     startup_report.ranks.resize(1);
@@ -128,7 +130,6 @@ int main() {
     auto& memory                               = snapshot.ranks[0].memory;
     auto& budget                               = startup_report.ranks[0];
     description.max_context                    = 262144;
-    description.kv_capacity                    = 524288;
     description.kv_cache                       = ninfer::KvCacheStorage::Fp8E4M3Row256;
     memory.allocations.device_weights_bytes    = 100;
     memory.allocations.persistent_device_bytes = 200;
@@ -143,20 +144,19 @@ int main() {
                                      .handoff_active_bytes    = 0,
                                      .handoff_peak_bytes      = 150,
     };
-    budget.minimum_runtime_reservation_bytes     = 1300;
-    budget.bytes_per_page_group                  = 100;
-    budget.runtime_reservation_bytes             = 1600;
-    budget.available_after_weights_bytes         = 1700;
-    budget.available_after_startup_bytes         = 180;
-    budget.planned_slack_bytes                   = 100;
-    budget.graphs                                = ninfer::GraphMemorySummary{600, -30, 800, 200};
-    budget.retained_bytes                        = 1000;
-    memory.kv_payload_bytes                      = 400;
-    description.host_context_capacity_bytes      = 64ULL << 20;
-    snapshot.runtime.host_context_occupied_bytes = 12ULL << 20;
-    snapshot.runtime.host_context_reserved_bytes = 4ULL << 20;
-    snapshot.runtime.host_state_occupied_slots   = 1;
-    snapshot.runtime.host_kv_occupied_bytes      = 8ULL << 20;
+    budget.minimum_runtime_reservation_bytes = 1300;
+    budget.context_capacity_bytes            = 8ULL << 30;
+    budget.runtime_reservation_bytes         = 1600;
+    budget.available_after_weights_bytes     = 1700;
+    budget.available_after_startup_bytes     = 180;
+    budget.planned_slack_bytes               = 100;
+    budget.graphs                            = ninfer::GraphMemorySummary{600, -30, 800, 200};
+    budget.retained_bytes                    = 1000;
+    snapshot.runtime.context_pools           = {{.rank           = 0,
+                                                 .domain         = ninfer::ContextMemoryDomain::Host,
+                                                 .capacity_bytes = 64ULL << 20,
+                                                 .live_bytes     = 8ULL << 20,
+                                                 .reserved_bytes = 4ULL << 20}};
 
     ServerLogEnvironment environment;
     environment.device                    = 0;
@@ -186,10 +186,11 @@ int main() {
               "server weights id missing");
     failures += check(server.at("artifact").at("size_bytes") == 123456, "artifact size missing");
     failures += check(server.at("engine").at("max_context") == 262144, "max context missing");
-    failures += check(server.at("engine").at("kv_capacity") == 524288, "KV capacity missing");
-    failures += check(server.at("engine").at("kv_capacity_mode") == "explicit" &&
-                          server.at("engine").at("kv_capacity_page_groups") == 8192,
-                      "KV capacity resolution metadata missing");
+    failures += check(server.at("engine").at("context_capacity_mode") == "explicit" &&
+                          server.at("engine").at("context_pools").at(0).at("capacity_bytes") ==
+                              (8ULL << 30) &&
+                          server.at("engine").at("context_pools").at(1).at("domain") == "host",
+                      "rank-local Context capacity metadata missing");
     failures +=
         check(server.at("engine").at("log_stats_interval_ms") == 2500, "stats interval missing");
     failures += check(server.at("server").at("request_log_jsonl") == "requests.jsonl",
@@ -226,11 +227,9 @@ int main() {
             server.at("engine").at("context_cost").at("preset_path") == "local-costs.json",
         "resolved context-cost layers missing");
     failures += check(server.at("engine").at("prefix_reuse") == true, "prefix-reuse state missing");
-    failures += check(
-        server.at("engine").at("context_cache").at("extra_state_slots") == 2 &&
-            server.at("engine").at("context_cache").at("total_device_state_slots") == 4 &&
-            server.at("engine").at("context_cache").at("host_capacity_bytes") == (64ULL << 20),
-        "resolved context-cache configuration missing");
+    failures +=
+        check(server.at("engine").at("context_cache").at("host_capacity_bytes") == (64ULL << 20),
+              "resolved context-cache configuration missing");
     failures += check(server.at("server").at("default_preserve_thinking") == true,
                       "server preserve-thinking default missing");
     failures +=
@@ -588,6 +587,7 @@ int main() {
     first.context_transfers.state[0] = {.bytes = 9007199254740993ULL, .seconds = 0.010};
     first.context_transfers.kv[0][1] = {.bytes = 2113536, .seconds = 0.011};
     first.context_transfers.kv[1][2] = {.bytes = 16384, .seconds = 0.012};
+    first.context_transfers.state[4] = {.bytes = 32768, .seconds = 0.015};
     const Json observed_done =
         Json::parse(format_request_done_json("serve-test", 3001, context, observed));
     const auto& first_json = observed_done.at("first_output_timing");
@@ -694,6 +694,10 @@ int main() {
                      {"bytes", 0},
                      {"seconds", 0.0}},
         "first-output transfer resource, direction or integer precision changed");
+    failures += check(
+        first_json.at("context_transfers").at("state").at("peer_d2d").at("bytes") == 32768 &&
+            first_json.at("context_transfers").at("state").at("peer_d2d").at("seconds") == 0.015,
+        "peer context transfer statistics were lost in request logs");
 
     ThroughputReport window;
     window.interval_seconds                                                                 = 5;
@@ -814,11 +818,13 @@ int main() {
     throughput.current.context_transfers.state[1].images  = 1;
     throughput.current.context_transfers.state[1].bytes   = 132;
     throughput.current.context_transfers.state[1].seconds = 0.25;
-    throughput.current.device_state_occupied_slots        = 3;
-    throughput.current.host_state_occupied_slots          = 1;
-    throughput.current.host_context_occupied_bytes        = 16ULL << 20;
-    throughput.current.host_context_reserved_bytes        = 4ULL << 20;
-    throughput.current.host_context_peak_occupied_bytes   = 20ULL << 20;
+    throughput.current.state_objects                      = 3;
+    throughput.current.context_pools                      = {{.rank                = 0,
+                                                              .domain              = ninfer::ContextMemoryDomain::Host,
+                                                              .capacity_bytes      = 64ULL << 20,
+                                                              .live_bytes          = 12ULL << 20,
+                                                              .reserved_bytes      = 4ULL << 20,
+                                                              .peak_occupied_bytes = 20ULL << 20}};
     throughput.current.last_selected_frontier_tokens      = 64;
     throughput.current.pressure_spill_pages               = 4;
     throughput.current.host_work                          = {
@@ -872,11 +878,14 @@ int main() {
     tail.final_interval   = true;
     tail.interval_seconds = 0.125;
     const Json tail_json  = Json::parse(format_throughput_json("serve-test", 5125, tail));
-    failures += check(
-        tail_json.at("final_interval").get<bool>() && tail_json.at("interval_seconds") == 0.125 &&
-            tail_json.at("context_cache").at("occupancy").at("host_context_peak_occupied_bytes") ==
-                (20ULL << 20),
-        "shutdown interval or allocator high-water mark was lost");
+    failures += check(tail_json.at("final_interval").get<bool>() &&
+                          tail_json.at("interval_seconds") == 0.125 &&
+                          tail_json.at("context_cache")
+                                  .at("occupancy")
+                                  .at("pools")
+                                  .at(0)
+                                  .at("peak_occupied_bytes") == (20ULL << 20),
+                      "shutdown interval or allocator high-water mark was lost");
     failures += check(throughput_json.at("tokens").at("computed_prefill") == 100 &&
                           throughput_json.at("tokens").at("committed_decode") == 40,
                       "throughput token deltas mismatch");
@@ -894,10 +903,13 @@ int main() {
                                                                {"replayed_tokens", 768}},
                       "scheduling counters were not reported as interval deltas");
     failures += check(
-        throughput_json.at("context_cache").at("occupancy").at("host_context_occupied_bytes") ==
-                (16ULL << 20) &&
-            throughput_json.at("context_cache").at("occupancy").at("host_context_reserved_bytes") ==
-                (4ULL << 20),
+        throughput_json.at("context_cache").at("occupancy").at("pools").at(0).at("live_bytes") ==
+                (12ULL << 20) &&
+            throughput_json.at("context_cache")
+                    .at("occupancy")
+                    .at("pools")
+                    .at(0)
+                    .at("reserved_bytes") == (4ULL << 20),
         "unified Host occupied and reserved gauges missing");
     failures += check(
         std::abs(throughput_json.at("host_work").at("elapsed_seconds").at("total").get<double>() -
@@ -933,7 +945,7 @@ int main() {
     failures += check(
         throughput_json.at("context_cache").at("selections").at("root") == 1 &&
             throughput_json.at("context_cache").at("state_transfers").at("h2d").at("bytes") == 32 &&
-            throughput_json.at("context_cache").at("occupancy").at("device_state_slots") == 3 &&
+            throughput_json.at("context_cache").at("occupancy").at("state_objects") == 3 &&
             throughput_json.at("context_cache").at("pressure").at("spill_pages") == 4 &&
             throughput_json.at("context_cache").at("selections").at("checkpoint") == 2,
         "context-cache throughput statistics missing or not interval-scoped");

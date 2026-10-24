@@ -2,6 +2,7 @@
 #include "models/common/context/work.h"
 
 #include <algorithm>
+#include <stdexcept>
 
 namespace ninfer::models::qwen3_5::detail {
 
@@ -22,17 +23,34 @@ bool SessionImpl::checkpoint_matches(CheckpointHandle handle, const RequestBaseP
 std::optional<SourceCandidate>
 SessionImpl::inspect_source(const RequestBasePlan& base, std::optional<CheckpointHandle> handle,
                             bool consume_source, std::span<const CheckpointHandle> private_points,
-                            std::span<const CheckpointHandle> retired_points) const {
-    if (!base.impl_ || (handle && !checkpoint_matches(*handle, base))) { return std::nullopt; }
-    SourceCandidate candidate{.checkpoint    = handle,
+                            std::span<const CheckpointHandle> retired_points,
+                            runtime::PlacementId target, const ResumeState* resume) const {
+    if (target.value != 0)
+        throw std::invalid_argument("Qwen3_5 supports attention placement 0 only");
+    if (resume && (!resume->impl_ || resume->impl_->owner != this ||
+                   resume->impl_->control.base != base.impl_))
+        throw std::invalid_argument("resume state belongs to another request or Session");
+    const auto matches = [&](CheckpointHandle point) {
+        if (!resume) return checkpoint_matches(point, base);
+        if (!valid_checkpoint(point)) return false;
+        const auto& saved = *resume->impl_;
+        return qwen::recovery_prefix_matches(
+            checkpoint(point).recovery_identity(),
+            {saved.frontier, saved.control.base->prefix_identity_tag, saved.sequence.ledger,
+             saved.sequence.prefix_identity, saved.sequence.prefix_digests, nullptr});
+    };
+    if (!base.impl_ || (handle && !matches(*handle))) return std::nullopt;
+    SourceCandidate candidate{.placement     = target,
+                              .checkpoint    = handle,
                               .reused_tokens = handle ? checkpoint(*handle).frontier() : 0};
-    const auto& prompt       = *base.impl_->prompt;
-    candidate.remaining_work = runtime::make_prefill_work(
-        candidate.reused_tokens, base.summary().prompt_tokens - candidate.reused_tokens, 0, 0,
-        prefill_chunk);
+    const auto& prompt         = *base.impl_->prompt;
+    const auto target_frontier = resume ? resume->frontier() : base.summary().prompt_tokens;
+    candidate.remaining_work   = runtime::make_prefill_work(
+        candidate.reused_tokens, target_frontier - candidate.reused_tokens, 0, 0, prefill_chunk);
     for (const auto& item : prompt.vision_items) {
         if (std::any_of(item.token_spans.begin(), item.token_spans.end(), [&](const auto& span) {
-                return span.begin + span.count > candidate.reused_tokens;
+                return span.begin < target_frontier &&
+                       span.begin + span.count > candidate.reused_tokens;
             })) {
             ++candidate.remaining_work.vision_items;
             candidate.remaining_work.vision_patches += item.patch_count;
@@ -59,29 +77,10 @@ SessionImpl::inspect_source(const RequestBasePlan& base, std::optional<Checkpoin
             --state_references;
         }
     }
-    auto occupied_states = state_store->device_occupied();
-    for (std::size_t i = 0; i < candidate.retired_points.size(); ++i) {
-        const auto state = checkpoint(candidate.retired_points[i]).continuation().image;
-        if (std::any_of(
-                candidate.retired_points.begin(), candidate.retired_points.begin() + i,
-                [&](auto point) { return checkpoint(point).continuation().image == state; })) {
-            continue;
-        }
-        const auto references = static_cast<std::uint32_t>(std::count_if(
-            candidate.retired_points.begin(), candidate.retired_points.end(),
-            [&](auto point) { return checkpoint(point).continuation().image == state; }));
-        if (references == state_store->checkpoint_references(state) &&
-            state_store->device_resident(state) &&
-            state_store->can_release_after_checkpoint_references(state, references)) {
-            --occupied_states;
-        }
-    }
     const auto& rewrite = prompt.identity.rewrite_checkpoint;
     const auto desired  = rewrite ? rewrite->recovery_frontier : base.summary().prompt_tokens;
     for (const auto point : private_points) {
-        if (!valid_checkpoint(point) || retires(point) || !checkpoint_matches(point, base)) {
-            continue;
-        }
+        if (!valid_checkpoint(point) || retires(point) || !matches(point)) { continue; }
         const auto& kept = checkpoint(point);
         if (kept.frontier() > record.frontier()) { continue; }
         const bool input =
@@ -100,23 +99,9 @@ SessionImpl::inspect_source(const RequestBasePlan& base, std::optional<Checkpoin
     if (consume_source && !keep_source && checkpoints[handle->index].pins == 0 &&
         state_references == 1 && state_store->source_pins(image) == 0) {
         candidate.state_action = StateBindingAction::Move;
-    } else if (occupied_states == state_store->device_capacity() &&
-               state_store->device_resident(image) && state_store->source_pins(image) == 0) {
-        if (state_store->host_resident(image)) {
-            candidate.state_action = StateBindingAction::Split;
-        } else if (checkpoints[handle->index].pins == 0) {
-            if (host_context_arena &&
-                host_context_arena->can_allocate(state_store->image_bytes())) {
-                candidate.state_action = StateBindingAction::BackupSplit;
-                candidate.transfers.push_back(context::state_transfer_requirement(
-                    plan.state_transfer, runtime::ContextTransferDirection::DeviceToHost));
-            } else if (consume_source && state_references == 1) {
-                candidate.state_action = StateBindingAction::Move;
-            }
-        }
     }
     const auto backend_frontier = record.backend_frontier();
-    const auto first            = prefill_unit(base.summary().prompt_tokens, record.frontier());
+    const auto first            = prefill_unit(target_frontier, record.frontier());
     std::vector<const context::HistoryPrefix*> retired_main, retired_backend;
     const auto retire = [&](CheckpointHandle point) {
         retired_main.push_back(&checkpoint(point).text_prefix());
@@ -135,9 +120,37 @@ SessionImpl::inspect_source(const RequestBasePlan& base, std::optional<Checkpoin
                   record.backend_prefix(), backend_frontier,
                   std::max(backend_frontier, first.backend_frontier), retired_backend)
             : context::HistoryBindingDemand{};
+    ContextDemand demand;
+    demand.add_state(
+        {.count = static_cast<std::uint32_t>(candidate.state_action != StateBindingAction::Move ||
+                                             !state_store->device_resident(image)),
+         .logical_count =
+             static_cast<std::uint32_t>(candidate.state_action != StateBindingAction::Move)});
+    demand.add_history(kTextKvPool.index, main_binding);
+    if (backend_kv_histories) demand.add_history(kBackendKvPool.index, backend_binding);
+    const auto releases = checkpoint_release_set(candidate.retired_points);
+    if (!releases) return std::nullopt;
+    if (!directory.assess(demand, *releases).ready() &&
+        candidate.state_action == StateBindingAction::Fork &&
+        state_store->source_pins(image) == 0) {
+        if (state_store->host_resident(image)) {
+            candidate.state_action = StateBindingAction::Split;
+        } else if (checkpoints[handle->index].pins == 0) {
+            if (host_context_enabled &&
+                directory.plan_host(context::HostWriteRequirements{.state_images = 1}, *releases)
+                    .ready()) {
+                candidate.state_action = StateBindingAction::BackupSplit;
+                candidate.transfers.push_back(context::state_transfer_requirement(
+                    plan.state_transfer, runtime::ContextTransferDirection::DeviceToHost));
+            } else if (consume_source && state_references == 1) {
+                candidate.state_action = StateBindingAction::Move;
+            }
+        }
+    }
     candidate.move_history =
         main_binding.reuse_history && (!backend_kv_histories || backend_binding.reuse_history);
-    const auto restores = record.snapshot.restore_requirements(directory);
+    const auto restores    = record.snapshot.restore_requirements(directory);
+    candidate.local_device = restores.empty();
     candidate.transfers.insert(candidate.transfers.end(), restores.begin(), restores.end());
     if (state_store->device_resident(record.continuation().image) &&
         candidate.state_action == StateBindingAction::Fork &&
@@ -149,7 +162,8 @@ SessionImpl::inspect_source(const RequestBasePlan& base, std::optional<Checkpoin
         if (copies)
             candidate.transfers.push_back(context::kv_transfer_requirement(
                 {pool}, runtime::ContextTransferDirection::DeviceToDevice, copies,
-                pages.transfer_profile().device_copy_work(copies)));
+                TransferWork{std::uint64_t(pages.layout().parts.front().record.bytes) * copies,
+                             copies}));
     };
     tail(*text_kv_pages, kTextKvPool, main_binding.tail_copies);
     if (backend_kv_pages) tail(*backend_kv_pages, kBackendKvPool, backend_binding.tail_copies);
