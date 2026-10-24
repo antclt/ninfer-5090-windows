@@ -1,0 +1,180 @@
+{
+  "paths": {
+    "tools/release/check_local_paths.py": {
+      "/home/": "the checker's own docstring examples of the patterns it detects",
+      "/Users/": "the checker's own docstring examples of the patterns it detects"
+    },
+    ".audit/models-rebuild.tsv": {
+      "C:\\AI\\": "internal decision log (a session record, not product surface)",
+      "C:\\vllm-env\\": "internal decision log (a session record, not product surface)",
+      "/home/": "internal decision log (a session record, not product surface)"
+    },
+    ".github/workflows/gpu.yml": {
+      "C:\\AI\\": "CI: this machine's checkout + tooling paths for the GPU runner",
+      "C:\\vllm-env\\": "CI: this machine's checkout + tooling paths for the GPU runner"
+    },
+    "AGENTS.md": {
+      "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)"
+    },
+    "RELEASE_NOTES.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "bench/README.md": {
+      "/home/": "measurement-provenance note: the Spark calibration was recorded on 192.168.1.51; /home/neroued/... is where its source files live, recorded for provenance, not a path a reader uses"
+    },
+    "docs/designs/glm5next/op-checklist.md": {
+      "/home/": "documentation / release notes referencing the machine layout"
+    },
+    "docs/maintainer/glm5next-model.md": {
+      "/home/": "documentation / release notes referencing the machine layout"
+    },
+    "docs/maintainer/glm5next-quantization.md": {
+      "/home/": "documentation / release notes referencing the machine layout"
+    },
+    "docs/maintainer/qwen3.8-27b-artifact.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "docs/startup-configuration.md": {
+      "/home/": "documentation / release notes referencing the machine layout"
+    },
+    "docs/upstream-reports/README.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "docs/upstream-reports/codegraph-init-replaces-junction.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "docs/upstream-survey-2026-09-18.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "docs/weight-conversion.md": {
+      "C:\\vllm-env\\": "documentation / release notes referencing the machine layout"
+    },
+    "download_model.py": {
+      "C:\\AI\\": "tool default model path on the author's machine (C:\\AI)"
+    },
+    "eval/configs/qwen3_6_35b_needle_haystack.yaml": {
+      "/home/": "eval config default home-rooted path"
+    },
+    "eval/configs/qwen3_8_27b_needle_haystack.yaml": {
+      "/Users/": "eval config default home-rooted path"
+    },
+    "launcher_env.bat": {
+      "C:\\vllm-env\\": "shipped launcher tooling interpreter path (C:\\vllm-env)"
+    },
+    "model-cards/Qwen3.8-27B-nvfp4qat-NInfer/README.md": {
+      "C:\\AI\\": "documentation / release notes referencing the machine layout"
+    },
+    "ninfer.example.toml": {
+      "/home/": "example config showing a home-rooted path"
+    },
+    "start_ninfer_v3_dflash2_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_ninfer_v3_mtp4_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_nvidia_v3_dflash2_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_nvidia_v3_mtp4_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_quasar_v3_dflash2_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_quasar_v3_mtp4_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_swift_v3_dflash2_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "start_swift_v3_mtp4_vision.bat": {
+      "C:\\AI\\": "shipped launcher default model-artifact path (C:\\AI\\models); rendered from tools/release/profiles.py"
+    },
+    "tools/README.md": {
+      "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)"
+    },
+    "tools/bench/first_request_loop.cmd": {
+      "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)",
+      "C:\\AI\\": "documented tooling interpreter location (C:\\vllm-env)"
+    },
+    "tools/bench/lane_fingerprint.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_cancellation.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_concurrency_curve.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_cross_path_determinism.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_long_context_accuracy.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_over_refusal.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_prefill_floor.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/probe_session_drift.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/soak_lane.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/bench/ttft/build_fixtures.py": {
+      "/home/": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/freq_corpus/fixtures/ranking/accept.heldout.manifest.json": {
+      "/home/": "ranking fixture manifest home-rooted path"
+    },
+    "tools/freq_corpus/fixtures/ranking/ranking.heldout.manifest.json": {
+      "/home/": "ranking fixture manifest home-rooted path"
+    },
+    "tools/freq_corpus/fixtures/ranking/ranking.train.manifest.json": {
+      "/home/": "ranking fixture manifest home-rooted path"
+    },
+    "tools/release/bench_opencode_settings.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/check_cache_capacity.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/check_currency.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/check_host_kv.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/check_lane_figures.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/check_release_archive.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/make_launchers_v3.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/package_release.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/probe_reasoning_effort.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/v3_profile_matrix.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/verify_launchers_v3.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/release/verify_shipping_artifacts.py": {
+      "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
+    },
+    "tools/scripts/precommit_pytest.cmd": {
+      "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)"
+    }
+  }
+}

@@ -11,7 +11,8 @@
 # has not widened, no first-party type is
 # declared and never named again, no name a tool still treats as current has outlived the tree,
 # no copy-paste has been
-# added past the recorded baseline, no divergence from upstream inside an upstream-owned
+# added past the recorded baseline, no machine-specific absolute path leaks into a shipped file and no
+# file is tracked that .gitignore excludes, no divergence from upstream inside an upstream-owned
 # file has gone unrecorded, no subprocess is spawned without an explicit text encoding,
 # every shipped lane figure still describes the engine and artifact it was measured on,
 # and the converter tests
@@ -108,6 +109,7 @@ gate "dead types" "$PY" tools/release/check_dead_types.py
 gate "retired names" "$PY" tools/release/check_retired_names.py
 gate "activity predicate" "$PY" tools/release/check_activity_predicate.py
 gate "new duplication" "$PY" tools/release/check_duplication.py
+gate "local paths" "$PY" tools/release/check_local_paths.py
 # The upstream remote is a local-only ref: actions/checkout clones origin alone, so CI has no
 # upstream/dev and the gate would fail there on a machine that cannot fetch it. Skip loudly,
 # rather than failing every CI commit.
@@ -129,7 +131,7 @@ echo "pre-commit: converter tests"
 # these tests builds a torch extension at run time and torch finds the compiler with `where cl`,
 # which is not on PATH in a plain shell. The argument list stays here so there is one definition of
 # what this step runs.
-PYTEST_ARGS="tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/release/test_activity_predicate.py tests/release/test_reference_audit.py tests/release/test_archive_contents.py tests/release/test_model_build_and_env.py tests/bench/test_request_log_reader.py tests/bench/test_session_tools.py"
+PYTEST_ARGS="tests/convert tests/artifact tests/release/test_doc_links.py tests/release/test_text_encoding.py tests/release/test_calibration_corpus.py tests/release/test_test_mutation.py tests/release/test_subprocess_encoding.py tests/release/test_test_baseline_cache.py tests/release/test_lane_figures.py tests/release/test_retired_names.py tests/release/test_local_paths.py tests/release/test_activity_predicate.py tests/release/test_reference_audit.py tests/release/test_archive_contents.py tests/release/test_model_build_and_env.py tests/bench/test_request_log_reader.py tests/bench/test_session_tools.py"
 if [ -n "${WINDIR:-}" ] && [ -f tools/scripts/precommit_pytest.cmd ]; then
     NINFER_PYTHON="$PY" cmd //c "tools\\scripts\\precommit_pytest.cmd $PYTEST_ARGS -q"
 else
