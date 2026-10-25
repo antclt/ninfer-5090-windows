@@ -117,7 +117,6 @@ struct PhysicalReclaim {
             }
         }
 
-        constexpr auto none = std::numeric_limits<std::uint32_t>::max();
         for (std::uint16_t pool = 0; pool < pools.size(); ++pool) {
             const auto& storage = pools[pool];
             if (!storage.histories) continue;
@@ -179,7 +178,7 @@ struct PhysicalReclaim {
                         if (owners.size() <= index) owners.resize(std::size_t(index) + 1);
                         auto& entry  = owners[index];
                         entry.handle = page;
-                        if (entry.holders == none)
+                        if (entry.holders == detail::kReclaimNone)
                             entry.holders = set;
                         else {
                             const auto key       = (std::uint64_t(entry.holders) << 32) | set;
@@ -203,7 +202,7 @@ struct PhysicalReclaim {
             }
             for (std::uint32_t i = 0; i < owners.size(); ++i) {
                 const auto& entry = owners[i];
-                if (entry.holders == none || !permitted(holder_sets[entry.holders])) continue;
+                if (entry.holders == detail::kReclaimNone || !permitted(holder_sets[entry.holders])) continue;
                 auto& group = cohorts[holder_sets[entry.holders]];
                 if (group.pages.size() < pools.size()) group.pages.resize(pools.size());
                 const bool released = i < releasable.size() && releasable[i];

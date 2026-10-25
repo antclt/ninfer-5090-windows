@@ -57,7 +57,7 @@ union alignas(16) MaterializeNvfp4Storage {
 template <int Rows, int Columns, int BlockK, int ColumnWarps>
 __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mma_nvfp4_kernel(
     const __nv_bfloat16* hidden, const int* positions, const int* counts,
-    const std::int64_t* slots,
+    const std::int64_t* offsets,
     DeviceLayers layers, float* key_scratch, int width, int batch, int min_count, int max_count) {
     constexpr int kBlockRows = Rows, kBlockK = BlockK;
     constexpr int kBlockColumns = Columns;
@@ -267,7 +267,7 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
         if (count < min_count || count > max_count || column % width >= count) continue;
         if constexpr (Rows == 128) {
             if (!value) {
-                store_key_head(storage.scores[local], layer, positions, slots, column, width,
+                store_key_head(storage.scores[local], layer, positions, offsets, column, width,
                                row_begin / 128);
                 continue;
             }
@@ -281,7 +281,7 @@ __global__ __launch_bounds__(Rows / 16 * ColumnWarps * 32, 1) void context_kv_mm
             } else {
                 // Must use store_value() from epilogue.cuh to honour layer.value_slot_stride
                 // and kv::cyclic_offset (ADR-0013); flat offset arithmetic corrupts V-cache.
-                store_value(row, column, slots[request], positions, layer, result);
+                store_value(row, column, offsets[request], positions, layer, result);
             }
         }
     }

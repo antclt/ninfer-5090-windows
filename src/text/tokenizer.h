@@ -10,6 +10,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -214,7 +215,7 @@ private:
     static constexpr std::size_t kEncodeCacheEntries = 4;
     // prepare() runs on httplib worker threads, so a miss on contention is a full encode rather
     // than a correctness question.
-    mutable std::mutex encode_cache_mutex_;
+    mutable std::shared_mutex encode_cache_mutex_;
     mutable std::vector<EncodeCacheEntry> encode_cache_;
     mutable std::atomic<std::size_t> encode_cache_splices_   = 0;
     mutable std::atomic<std::size_t> encode_cache_fallbacks_ = 0;

@@ -10,7 +10,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <numeric>
+#include <shared_mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -877,7 +879,7 @@ std::optional<BoundaryEncodedText>
 Tokenizer::splice_from_cache(std::string_view text, std::span<const std::size_t> byte_boundaries,
                              EncodeOptions options,
                              std::span<const text::ByteSpan> literal_spans) const {
-    std::lock_guard<std::mutex> guard(encode_cache_mutex_);
+    std::shared_lock<std::shared_mutex> guard(encode_cache_mutex_);
     for (const EncodeCacheEntry& entry : encode_cache_) {
         if (entry.options.max_tokens != options.max_tokens) { continue; }
         if (entry.text.empty()) { continue; }
@@ -1054,8 +1056,7 @@ void Tokenizer::remember_encode(std::string_view text, std::span<const std::size
     entry.literal_spans.assign(literal_spans.begin(), literal_spans.end());
     entry.input_ids = encoded.input_ids;
     entry.results   = encoded.boundaries;
-    std::lock_guard<std::mutex> guard(encode_cache_mutex_);
-    encode_cache_.insert(encode_cache_.begin(), std::move(entry));
+    std::unique_lock<std::shared_mutex> guard(encode_cache_mutex_);
     if (encode_cache_.size() > kEncodeCacheEntries) { encode_cache_.resize(kEncodeCacheEntries); }
 }
 
@@ -1284,7 +1285,7 @@ Tokenizer::Tokenizer(const Tokenizer& other)
       added_token_candidates_(other.added_token_candidates_),
       encode_cache_splices_(other.encode_cache_splices_.load()),
       encode_cache_fallbacks_(other.encode_cache_fallbacks_.load()) {
-    std::lock_guard<std::mutex> guard(other.encode_cache_mutex_);
+    std::shared_lock<std::shared_mutex> guard(other.encode_cache_mutex_);
     encode_cache_ = other.encode_cache_;
 }
 
@@ -1305,8 +1306,8 @@ Tokenizer::Tokenizer(Tokenizer&& other) noexcept
 
 Tokenizer& Tokenizer::operator=(const Tokenizer& other) {
     if (this != &other) {
-        std::lock_guard<std::mutex> g1(encode_cache_mutex_);
-        std::lock_guard<std::mutex> g2(other.encode_cache_mutex_);
+        std::unique_lock<std::shared_mutex> g1(encode_cache_mutex_);
+        std::shared_lock<std::shared_mutex> g2(other.encode_cache_mutex_);
         decoded_token_bytes_ = other.decoded_token_bytes_;
         valid_token_ids_ = other.valid_token_ids_;
         special_token_ids_ = other.special_token_ids_;
