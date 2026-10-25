@@ -63,7 +63,7 @@ names = [flag for flag, _ in flags]
 expect(names[0] == "--vision", "the per-profile flags come first")
 expect(names[1:3] == ["--spec mtp", "--draft-tokens 4"],
        "the backend and its depth follow, each carrying its value in one token")
-expect(names.index("--port") < names.index("--kv-capacity"),
+expect(names.index("--port") < names.index("--context-capacity"),
        "the bound flags precede the invariant ones")
 expect(names[-len(INVARIANT_FLAGS):] == [flag for flag, _ in INVARIANT_FLAGS],
        "every invariant flag is rendered last, in its declared order")
