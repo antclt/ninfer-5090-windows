@@ -1282,9 +1282,10 @@ Tokenizer::Tokenizer(const Tokenizer& other)
       byte_token_ids_(other.byte_token_ids_),
       added_tokens_(other.added_tokens_),
       added_token_candidates_(other.added_token_candidates_),
-      encode_cache_(other.encode_cache_),
       encode_cache_splices_(other.encode_cache_splices_.load()),
       encode_cache_fallbacks_(other.encode_cache_fallbacks_.load()) {
+    std::lock_guard<std::mutex> guard(other.encode_cache_mutex_);
+    encode_cache_ = other.encode_cache_;
 }
 
 Tokenizer::Tokenizer(Tokenizer&& other) noexcept
@@ -1304,6 +1305,8 @@ Tokenizer::Tokenizer(Tokenizer&& other) noexcept
 
 Tokenizer& Tokenizer::operator=(const Tokenizer& other) {
     if (this != &other) {
+        std::lock_guard<std::mutex> g1(encode_cache_mutex_);
+        std::lock_guard<std::mutex> g2(other.encode_cache_mutex_);
         decoded_token_bytes_ = other.decoded_token_bytes_;
         valid_token_ids_ = other.valid_token_ids_;
         special_token_ids_ = other.special_token_ids_;
