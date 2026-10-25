@@ -1267,7 +1267,7 @@
       "status": "M",
       "disposition": "product",
       "review": "product",
-      "reason": "ADR-0010 incremental prompt encoding re-homed from the deleted src/models/common/qwen/frontend/tokenizer.cpp onto ninfer::text::Tokenizer (upstream consolidated tokenization into the shared class)."
+      "reason": "ADR-0010 incremental prompt encoding re-homed from the deleted src/models/common/qwen/frontend/tokenizer.cpp onto ninfer::text::Tokenizer (upstream consolidated tokenization into the shared class). GAP: no test currently exercises encode_cache_splices()/encode_cache_fallbacks() (the port original protector ninfer_qwen3_5_frontend_test was deleted upstream). Add a regression test at the consolidated tokenizer seam in a follow-up."
     },
     "src/text/tokenizer.h": {
       "status": "M",
