@@ -189,6 +189,12 @@
       "review": "product",
       "reason": "Cited in the diff -- port: this port. Open it before changing this path."
     },
+    "docs/designs/unified-context-pool.md": {
+      "status": "M",
+      "disposition": "unknown",
+      "review": "windows",
+      "reason": "Port-side link fix: the upstream doc references docs/performance/qwen3.8-27b.md, which the port does not ship; repointed to docs/performance/lanes.md."
+    },
     "docs/maintainer/build-system.md": {
       "status": "M",
       "disposition": "windows",
@@ -544,12 +550,6 @@
       "reason": "Port change, two defects from the c-review detect pass. (1) The AVIOContext's 32 KiB read buffer was never freed: the FFmpeg header this build compiles against says it must be freed with av_free(), and the pointer is lost once avio_context_free nulls the context. One Decoder is built per image part and two to six per video part, so it leaked unbounded over distinct media -- and MSVC has no LeakSanitizer to see it. (2) Four container-derived double-to-int conversions were unguarded; this toolchain yields INT_MIN rather than saturating, so a crafted frame rate made the frame count the minimum instead of the maximum (192x fewer vision tokens) and a huge duration produced a wrong diagnosis. All four clamp first now."
     },
     "src/models/common/bindings.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "",
-      "reason": ""
-    },
-    "src/models/common/context/directory/history.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "",

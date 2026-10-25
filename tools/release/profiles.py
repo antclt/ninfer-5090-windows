@@ -323,7 +323,7 @@ PROFILES: list[dict[str, Any]] = [
     dict(file="start_nvidia_v3_mtp4_vision.bat", port=8093, art=NVIDIA, device_state_slots=1,
          label="NVIDIA ModelOpt + MTP4 + Vision", model_id="qwen3.8-27b-nvidia-v3-mtp4-vision",
          spec="mtp", draft=4, vision=True, lm_head=True, ctx=262144, kv_dtype="k8v4",
-         tok=173.3, acc="47.7%", runtime="9.96 GiB", free="3.45 GiB",
+         tok=173.3, acc="45.4%", runtime="9.96 GiB", free="3.45 GiB",
          note="KV format moved fp8 -> k8v4 on 2026-10-13, decided on the served-length code cell (k8v4 145.7 against fp8 136.3, +6.5% against a 2.4% spread, six interleaved rounds); the disclosed costs are 11.0% of the short code cell and 6.6% of long Chinese, and the code cell's acceptance reads 47.7% where the previous fp8 measurement read 52.2%. Depth 4 measured fastest of 2-5 here, and the largest correction in the table: d5 read "
               "228.3 on the 2026-09-17 records, which the warmup transient accounts for almost "
               "entirely, and measures 167.8 with it excluded. Depth 4 against depth 5 is 223.4 "
@@ -368,7 +368,7 @@ PROFILES: list[dict[str, Any]] = [
 # `causal_partition_target`'s flat 2*SM budget was wrong: that governs the small-width families, whose
 # buffers are tens of MiB, not the tiled prefill family that dominates.
 INVARIANT_FLAGS: list[tuple[str, str | None]] = [
-    ("--kv-capacity", "auto"),
+    ("--context-capacity", "auto"),
     # kv-dtype used to sit here and is a per-profile flag now (varying_flags, rendered from each
     # row's kv_dtype). It moved on 2026-10-09, after the A/B the previous comment here described: a
     # global k8v4 was refused because the effect is artifact-dependent, and one lane measured a gain
@@ -555,8 +555,7 @@ def ordered_flags(profile: dict[str, Any]) -> list[tuple[str, str | None]]:
     out.extend([("--host", "127.0.0.1"),
                 ("--port", str(profile["port"])),
                 ("--model-id", profile["model_id"]),
-                ("--max-context", str(profile["ctx"])),
-                ("--extra-state-slots", str(profile["device_state_slots"]))])
+                ("--max-context", str(profile["ctx"]))])
     out.extend(INVARIANT_FLAGS)
     return out
 
@@ -662,7 +661,7 @@ def cli_args(profile: dict[str, Any]) -> list[str]:
     # class the profile consistency gate exists to catch. kv-dtype is per-profile and comes from
     # the row.
     for flag, value in INVARIANT_FLAGS:
-        if flag in ("--kv-capacity", "--prefill-chunk") and value is not None:
+        if flag in ("--context-capacity", "--prefill-chunk") and value is not None:
             out.extend([flag, value])
     out.extend(["--kv-dtype", profile["kv_dtype"]])
     return out

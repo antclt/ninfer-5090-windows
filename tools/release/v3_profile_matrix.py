@@ -607,9 +607,9 @@ def build_args(art: str, spec: str, draft: int, vision: bool, max_context: int,
             a += ["--proposal-head", "optimized"]
     if vision:
         a += ["--vision"]
-    a += ["--kv-capacity", kv_capacity, "--kv-dtype", kv_dtype]
+    a += ["--context-capacity", kv_capacity, "--kv-dtype", kv_dtype]
     for flag, value in INVARIANT_FLAGS:
-        if flag == "--kv-capacity":
+        if flag == "--context-capacity":
             continue  # already emitted above, from the caller's value
         if value == "%TEMPLATE%":
             # This path composes the shipped flags itself instead of going through launcher_args, so

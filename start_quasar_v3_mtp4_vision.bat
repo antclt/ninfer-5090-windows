@@ -151,8 +151,7 @@ if not errorlevel 1 (
   --port 8087 ^
   --model-id qwen3.8-27b-quasar-v3-mtp4-vision ^
   --max-context 262144 ^
-  --extra-state-slots 1 ^
-  --kv-capacity auto ^
+  --context-capacity auto ^
   --prefill-chunk 8192 ^
   --max-concurrency 1 ^
   --host-cache-capacity 8192MiB ^

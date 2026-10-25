@@ -1013,7 +1013,7 @@ GLM 本阶段只定义 BF16/FP8 latent，不把现有 GQA codec 的支持范围�
 5090 的 Flash Next 另使用现有 expert offload，不能把 73.854 GiB 全部列为 Device 权重。
 
 已有运行证据：27B 的 5090 FP8 KV、ordinary/MTP/DFlash2 见
-[服务测量](../performance/qwen3.8-27b.md)；35B 5090 的一份 MTP3/Vision/BF16 启动记录中，
+[服务测量](../performance/lanes.md)；35B 5090 的一份 MTP3/Vision/BF16 启动记录中，
 Device 权重为 20.691 GiB（full proposal head），workspace 为 0.404 GiB。
 Flash Next 的单/双 Spark 启动记录证明现有执行路径可运行；本设计尚未运行新池。
 

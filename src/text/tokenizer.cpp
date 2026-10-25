@@ -1272,4 +1272,70 @@ bool Tokenizer::has_exact_token_domain(std::size_t size) const noexcept {
                valid_token_ids_.end();
 }
 
+Tokenizer::Tokenizer(const Tokenizer& other)
+    : decoded_token_bytes_(other.decoded_token_bytes_),
+      valid_token_ids_(other.valid_token_ids_),
+      special_token_ids_(other.special_token_ids_),
+      pipeline_(other.pipeline_),
+      whole_token_ids_(other.whole_token_ids_),
+      bpe_merge_rules_(other.bpe_merge_rules_),
+      byte_token_ids_(other.byte_token_ids_),
+      added_tokens_(other.added_tokens_),
+      added_token_candidates_(other.added_token_candidates_),
+      encode_cache_(other.encode_cache_),
+      encode_cache_splices_(other.encode_cache_splices_.load()),
+      encode_cache_fallbacks_(other.encode_cache_fallbacks_.load()) {
+}
+
+Tokenizer::Tokenizer(Tokenizer&& other) noexcept
+    : decoded_token_bytes_(std::move(other.decoded_token_bytes_)),
+      valid_token_ids_(std::move(other.valid_token_ids_)),
+      special_token_ids_(std::move(other.special_token_ids_)),
+      pipeline_(std::move(other.pipeline_)),
+      whole_token_ids_(std::move(other.whole_token_ids_)),
+      bpe_merge_rules_(std::move(other.bpe_merge_rules_)),
+      byte_token_ids_(other.byte_token_ids_),
+      added_tokens_(std::move(other.added_tokens_)),
+      added_token_candidates_(std::move(other.added_token_candidates_)),
+      encode_cache_(std::move(other.encode_cache_)),
+      encode_cache_splices_(other.encode_cache_splices_.load()),
+      encode_cache_fallbacks_(other.encode_cache_fallbacks_.load()) {
+}
+
+Tokenizer& Tokenizer::operator=(const Tokenizer& other) {
+    if (this != &other) {
+        decoded_token_bytes_ = other.decoded_token_bytes_;
+        valid_token_ids_ = other.valid_token_ids_;
+        special_token_ids_ = other.special_token_ids_;
+        pipeline_ = other.pipeline_;
+        whole_token_ids_ = other.whole_token_ids_;
+        bpe_merge_rules_ = other.bpe_merge_rules_;
+        byte_token_ids_ = other.byte_token_ids_;
+        added_tokens_ = other.added_tokens_;
+        added_token_candidates_ = other.added_token_candidates_;
+        encode_cache_ = other.encode_cache_;
+        encode_cache_splices_.store(other.encode_cache_splices_.load());
+        encode_cache_fallbacks_.store(other.encode_cache_fallbacks_.load());
+    }
+    return *this;
+}
+
+Tokenizer& Tokenizer::operator=(Tokenizer&& other) noexcept {
+    if (this != &other) {
+        decoded_token_bytes_ = std::move(other.decoded_token_bytes_);
+        valid_token_ids_ = std::move(other.valid_token_ids_);
+        special_token_ids_ = std::move(other.special_token_ids_);
+        pipeline_ = std::move(other.pipeline_);
+        whole_token_ids_ = std::move(other.whole_token_ids_);
+        bpe_merge_rules_ = std::move(other.bpe_merge_rules_);
+        byte_token_ids_ = other.byte_token_ids_;
+        added_tokens_ = std::move(other.added_tokens_);
+        added_token_candidates_ = std::move(other.added_token_candidates_);
+        encode_cache_ = std::move(other.encode_cache_);
+        encode_cache_splices_.store(other.encode_cache_splices_.load());
+        encode_cache_fallbacks_.store(other.encode_cache_fallbacks_.load());
+    }
+    return *this;
+}
+
 } // namespace ninfer::text

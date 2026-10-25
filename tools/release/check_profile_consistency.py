@@ -263,7 +263,7 @@ def main() -> int:
         probe = matrix_module.build_args("quasar", "dflash2", 9, True, 262144, "probe.jsonl",
                                          greedy=True, lm_head=True, kv_dtype="fp8")
         probe_flags = {token for token in probe if token.startswith("--")}
-        for flag in ("--kv-capacity", "--kv-dtype", "--spec", "--draft-tokens",
+        for flag in ("--context-capacity", "--kv-dtype", "--spec", "--draft-tokens",
                      "--max-context", "--vision", "--proposal-head"):
             check(f"the probe emits {flag} even though it varies it", flag in probe_flags)
         # And the other half of the same class: a flag that leaves the invariant list entirely is
@@ -273,7 +273,7 @@ def main() -> int:
         # default is the value every launcher ships (1); that omission is noted rather than fixed here.
         launcher_profile = next(p for p in PROFILES if p["file"] == "start_quasar_v3_dflash2_vision.bat")
         launcher_flags = {token for token in launcher_args(launcher_profile) if token.startswith("--")}
-        varied = {"--kv-capacity", "--kv-dtype", "--spec", "--draft-tokens", "--max-context",
+        varied = {"--context-capacity", "--kv-dtype", "--spec", "--draft-tokens", "--max-context",
                   "--proposal-head", "--vision", "--host", "--port", "--model-id",
                   "--extra-state-slots"}
         missing = launcher_flags - probe_flags - varied
@@ -344,7 +344,7 @@ def main() -> int:
     check("QUASAR_ARGS matches the CLI flag set", tokens == cli_args(mtp4),
           f"{len(tokens)} tokens against {len(cli_args(mtp4))} generated")
     for flag in ("--vision", "--proposal-head", "--prefill-chunk", "--max-context",
-                 "--kv-capacity", "--kv-dtype"):
+                 "--context-capacity", "--kv-dtype"):
         check(f"QUASAR_ARGS passes {flag}", flag in tokens)
     for flag in ("--host", "--port", "--model-id", "--max-concurrency",
                  "--host-cache-capacity", "--pending-timeout"):

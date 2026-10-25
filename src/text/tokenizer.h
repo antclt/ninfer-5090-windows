@@ -150,6 +150,10 @@ struct BoundaryEncodedText {
 class Tokenizer {
 public:
     explicit Tokenizer(TokenizerResources resources);
+    Tokenizer(const Tokenizer& other);
+    Tokenizer(Tokenizer&& other) noexcept;
+    Tokenizer& operator=(const Tokenizer& other);
+    Tokenizer& operator=(Tokenizer&& other) noexcept;
 
     std::vector<int> encode(std::string_view text, EncodeOptions options = {}) const;
     // Literal spans suppress added-token recognition without splitting normalization/BPE runs.

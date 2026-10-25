@@ -33,7 +33,7 @@ domain — see the per-domain breakdown in `docs/perplexity-baseline.md`.
 | `start_swift_v3_dflash2_vision.bat` | Swift 1.5 | DFlash2 | nvfp4swift15 | 7 | fp8 | 262,144 | 319.3 | 50.9% |
 | `start_swift_v3_mtp4_vision.bat` | Swift 1.5 | MTP4 | nvfp4swift15 | 5 | k8v4 | 262,144 | 216.1 | 58.0% |
 | `start_nvidia_v3_dflash2_vision.bat` | NVIDIA ModelOpt | DFlash2 | nvfp4nvidia | 9 | fp8 | 262,144 | 314.1 | 44.9% |
-| `start_nvidia_v3_mtp4_vision.bat` | NVIDIA ModelOpt | MTP4 | nvfp4nvidia | 4 | k8v4 | 262,144 | 173.3 | 47.7% |
+| `start_nvidia_v3_mtp4_vision.bat` | NVIDIA ModelOpt | MTP4 | nvfp4nvidia | 4 | k8v4 | 262,144 | 173.3 | 45.4% |
 
 Prefill tok/s and acceptance are from `tools/release/profiles.py` (measured
 2026-10-08, interleaved window, three rounds, default `code` cell). These are

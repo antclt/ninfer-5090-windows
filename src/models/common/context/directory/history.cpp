@@ -1595,7 +1595,7 @@ PageId& HistoryDirectory::directory_slot(History& history, std::uint32_t index) 
     for (;;) {
         if (!*node)
             *node = allocate_node(history);
-        else if (node->use_count() != 1U)
+        else if (!node->unique())
             *node = allocate_node(history, node->get());
         if (width == kChunkPages) return (*node)->pages[index];
         width /= 2;

@@ -151,7 +151,7 @@ ships, and every profile reaches the full native context. **Three lanes ship `--
 | `start_swift_v3_dflash2_vision.bat` | Swift15 | DFlash2 (7) | yes | 262,144 | **319 tok/s** | 50.9% |
 | `start_swift_v3_mtp4_vision.bat` | Swift15 | MTP (5) | yes | 262,144 | 216 tok/s | 58.0% |
 | `start_nvidia_v3_dflash2_vision.bat` | NVFP4-nvidia | DFlash2 (9) | yes | 262,144 | **314 tok/s** | 44.9% |
-| `start_nvidia_v3_mtp4_vision.bat` | NVFP4-nvidia | MTP (4) | yes | 262,144 | 173 tok/s | 47.7% |
+| `start_nvidia_v3_mtp4_vision.bat` | NVFP4-nvidia | MTP (4) | yes | 262,144 | 173 tok/s | 45.4% |
 
 Context ceilings are measured, not assumed. The engine refuses a profile whose minimum Engine
 runtime reservation plus its 1 GiB automatic headroom does not fit in what remains after
