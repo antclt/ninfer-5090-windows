@@ -104,9 +104,6 @@ int prepare_verify_case(int k, int batch) {
 struct AcceptExpected {
     std::vector<std::int32_t> sampled;
     std::int32_t num_sampled;
-    std::int32_t accepted;
-    std::int32_t length;
-    std::int32_t token;
 };
 
 constexpr int kSparsePhysicalRows = 248320;
@@ -307,9 +304,7 @@ struct SparseAcceptSuite {
     struct SparseExpected {
         std::vector<std::int32_t> licensed_tokens;
         std::vector<std::int32_t> licensed_counts;
-        std::vector<std::int32_t> accepted;
         std::vector<std::int32_t> lengths;
-        std::vector<std::int32_t> anchors;
     };
 
     SparseExpected sparse_accept_oracle(const std::vector<std::uint16_t>& logits,
@@ -323,9 +318,7 @@ struct SparseAcceptSuite {
         SparseExpected expected{
             .licensed_tokens = std::vector<std::int32_t>(static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 0),
             .licensed_counts = std::vector<std::int32_t>(kSparseBatch),
-            .accepted        = std::vector<std::int32_t>(kSparseBatch),
             .lengths         = initial_lengths,
-            .anchors         = std::vector<std::int32_t>(kSparseBatch),
         };
         for (int row = 0; row < kSparseBatch; ++row) {
             const int extent = std::clamp(extents[static_cast<std::size_t>(row)], 0, kSparseDrafts);
@@ -381,9 +374,6 @@ struct SparseAcceptSuite {
             }
             expected.licensed_tokens[row_base + accepted_count]     = terminal_token;
             expected.licensed_counts[static_cast<std::size_t>(row)] = accepted_count + 1;
-            expected.accepted[static_cast<std::size_t>(row)]        = accepted_count;
-            expected.lengths[static_cast<std::size_t>(row)] += accepted_count + 1;
-            expected.anchors[static_cast<std::size_t>(row)] = terminal_token;
         }
         return expected;
     }
@@ -393,7 +383,6 @@ struct SparseAcceptSuite {
         const std::vector<std::uint16_t>& logits, const std::vector<std::int32_t>& drafts,
         const std::vector<std::int32_t>& candidate_ids, const std::vector<float>& proposal_q,
         const std::vector<std::int32_t>& extents, const std::vector<std::int32_t>& initial_lengths,
-        const std::vector<std::int32_t>& initial_anchors,
         const std::vector<ops::SamplingConfig>& host_configs,
         const std::vector<std::int32_t>& token_counts,
         ops::SpeculativeAcceptExecutionEnvelope envelope) {
@@ -426,15 +415,11 @@ struct SparseAcceptSuite {
         DeviceBuffer d_configs = to_device(device_configs);
 
         GuardedDeviceBuffer d_lengths(kSparseBatch * sizeof(std::int32_t));
-        GuardedDeviceBuffer d_anchors(kSparseBatch * sizeof(std::int32_t));
         GuardedDeviceBuffer d_licensed(static_cast<std::size_t>(kSparseColumns) * kSparseBatch * sizeof(std::int32_t));
         GuardedDeviceBuffer d_licensed_counts(kSparseBatch * sizeof(std::int32_t));
-        GuardedDeviceBuffer d_accepted(kSparseBatch * sizeof(std::int32_t));
         initialize(d_lengths, initial_lengths);
-        initialize(d_anchors, initial_anchors);
         d_licensed.fill(0xcd);
         d_licensed_counts.fill(0xef);
-        d_accepted.fill(0xab);
 
         Tensor target_tensor(d_target_tokens.span(), DType::I32, {kSparseColumns, kSparseBatch});
         Tensor logits_tensor(d_logits.span(), DType::BF16,
@@ -446,10 +431,8 @@ struct SparseAcceptSuite {
                         {kSparseCandidates, kSparseDrafts, kSparseBatch});
         Tensor extent_tensor(d_extents.span(), DType::I32, {kSparseBatch});
         Tensor lengths_tensor(d_lengths.span(), DType::I32, {kSparseBatch});
-        Tensor anchors_tensor(d_anchors.span(), DType::I32, {kSparseBatch});
         Tensor licensed_tensor(d_licensed.span(), DType::I32, {kSparseColumns, kSparseBatch});
         Tensor licensed_counts_tensor(d_licensed_counts.span(), DType::I32, {kSparseBatch});
-        Tensor accepted_tensor(d_accepted.span(), DType::I32, {kSparseBatch});
         const std::size_t workspace_bytes =
             ops::speculative_accept_sparse_drafts_workspace_capacity_bytes(
                 kSparseTokenDomain, envelope, kSparseDrafts, kSparseDrafts, kSparseBatch,
@@ -459,8 +442,8 @@ struct SparseAcceptSuite {
         const auto launch = [&](CudaExecutionView cuda) {
             ops::speculative_accept_sparse_drafts(
                 target_tensor, logits_tensor, drafts_tensor, candidate_tensor, q_tensor,
-                extent_tensor, lengths_tensor, anchors_tensor, licensed_tensor,
-                licensed_counts_tensor, accepted_tensor, kSparseTokenDomain,
+                extent_tensor, lengths_tensor, licensed_tensor,
+                licensed_counts_tensor, kSparseTokenDomain,
                 static_cast<const ops::SamplingConfig*>(d_configs.data()), envelope, workspace,
                 cuda);
         };
@@ -474,12 +457,8 @@ struct SparseAcceptSuite {
             checks += verify_exact((label + phase + " licensed counts").c_str(),
                                    read<std::int32_t>(d_licensed_counts, kSparseBatch),
                                    wanted.licensed_counts);
-            checks += verify_exact((label + phase + " accepted drafts").c_str(),
-                                   read<std::int32_t>(d_accepted, kSparseBatch), wanted.accepted);
-            checks += verify_exact((label + phase + " provisional lengths").c_str(),
+            checks += verify_exact((label + phase + " positions unchanged").c_str(),
                                    read<std::int32_t>(d_lengths, kSparseBatch), wanted.lengths);
-            checks += verify_exact((label + phase + " provisional anchors").c_str(),
-                                   read<std::int32_t>(d_anchors, kSparseBatch), wanted.anchors);
             return checks;
         };
         int failures = check_result(expected, " eager");
@@ -540,7 +519,6 @@ struct SparseAcceptSuite {
                     const auto& current_logits = change_inputs ? replay_logits : logits;
                     const auto& current_q      = change_inputs ? replay_q : proposal_q;
                     initialize(d_lengths, next_lengths);
-                    initialize(d_anchors, initial_anchors);
                     d_extents.copy_from_host(next_extents.data(),
                                              next_extents.size() * sizeof(int));
                     cuda_synchronize();
@@ -589,10 +567,8 @@ struct SparseAcceptSuite {
                                  from_device<std::int32_t>(d_token_counts, token_counts.size()),
                                  token_counts);
         failures += d_lengths.verify_guards((label + " lengths guards").c_str());
-        failures += d_anchors.verify_guards((label + " anchors guards").c_str());
         failures += d_licensed.verify_guards((label + " licensed guards").c_str());
         failures += d_licensed_counts.verify_guards((label + " licensed-count guards").c_str());
-        failures += d_accepted.verify_guards((label + " accepted guards").c_str());
         return failures;
     }
 
@@ -603,7 +579,7 @@ struct SparseAcceptSuite {
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
         std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
-            extents(kSparseBatch), lengths(kSparseBatch), anchors(kSparseBatch, -1);
+            extents(kSparseBatch), lengths(kSparseBatch);
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
         std::vector<int> history(kSparseTokenDomain * kSparseBatch, 3);
@@ -640,7 +616,7 @@ struct SparseAcceptSuite {
         return execute_sparse_accept_case("sparse greedy K=" + std::to_string(kSparseDrafts) +
                                               " B=" + std::to_string(kSparseBatch),
                                           targets, logits, drafts, ids, q, extents, lengths,
-                                          anchors, configs, history, {!general});
+                                          configs, history, {!general});
     }
 
     int generated_general_case() {
@@ -650,7 +626,7 @@ struct SparseAcceptSuite {
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
         std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
-            extents(kSparseBatch), lengths(kSparseBatch), anchors(kSparseBatch, -1);
+            extents(kSparseBatch), lengths(kSparseBatch);
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
         std::vector<int> history(kSparseTokenDomain * kSparseBatch, 0);
@@ -706,15 +682,14 @@ struct SparseAcceptSuite {
         return execute_sparse_accept_case("sparse general K=" + std::to_string(kSparseDrafts) +
                                               " B=" + std::to_string(kSparseBatch),
                                           targets, logits, drafts, ids, q, extents, lengths,
-                                          anchors, configs, history, {false});
+                                          configs, history, {false});
     }
 
     int grammar_mask_case() {
         std::vector<int> targets(static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 42),
             drafts(static_cast<std::size_t>(kSparseDrafts) * kSparseBatch),
             ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
-            extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 70),
-            anchors(kSparseBatch, 0);
+            extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 70);
         std::vector<std::uint16_t> logits(static_cast<std::size_t>(kSparsePhysicalRows) *
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(12.0f));
@@ -744,7 +719,7 @@ struct SparseAcceptSuite {
         }
         // p(a)=p(b)=.5, q(a)=q(x)=.5: a accepts, invalid x corrects to b with probability 1.
         return execute_sparse_accept_case("sparse grammar mask", targets, logits, drafts, ids, q,
-                                          extents, lengths, anchors, configs, history, {false});
+                                          extents, lengths, configs, history, {false});
     }
 
     int repeated_history_case(bool stochastic) {
@@ -754,8 +729,7 @@ struct SparseAcceptSuite {
                                               kSparseColumns * kSparseBatch,
                                           f32_to_bf16(-20.0f));
         std::vector<int> ids(static_cast<std::size_t>(kSparseCandidates) * kSparseDrafts * kSparseBatch),
-            extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 7000),
-            anchors(kSparseBatch, -1);
+            extents(kSparseBatch, kSparseDrafts), lengths(kSparseBatch, 7000);
         std::vector<float> q(ids.size(), 0.0f);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
         std::vector<int> history(kSparseTokenDomain * kSparseBatch, 0);
@@ -779,7 +753,7 @@ struct SparseAcceptSuite {
         return execute_sparse_accept_case(
             "sparse repeated-history K=" + std::to_string(kSparseDrafts) +
                 (stochastic ? " stochastic" : " greedy"),
-            targets, logits, drafts, ids, q, extents, lengths, anchors, configs, history, {false});
+            targets, logits, drafts, ids, q, extents, lengths, configs, history, {false});
     }
 
     // Isolates the two halves of the sparse accept path, because a single comparison against the
@@ -908,10 +882,8 @@ struct SparseAcceptSuite {
             static_cast<std::size_t>(kSparseColumns) * kSparseBatch, 0));
         DeviceBuffer d_extents       = to_device(std::vector<std::int32_t>{0});
         GuardedDeviceBuffer d_lengths(sizeof(std::int32_t));
-        GuardedDeviceBuffer d_anchors(sizeof(std::int32_t));
         GuardedDeviceBuffer d_licensed(kSparseColumns * sizeof(std::int32_t));
         GuardedDeviceBuffer d_licensed_counts(sizeof(std::int32_t));
-        GuardedDeviceBuffer d_accepted(sizeof(std::int32_t));
 
         Tensor targets_tensor(d_targets.span(), DType::I32, {kSparseColumns, kSparseBatch});
         Tensor logits_tensor(d_logits.span(), DType::BF16,
@@ -923,10 +895,8 @@ struct SparseAcceptSuite {
                         {kSparseCandidates, kSparseDrafts, kSparseBatch});
         Tensor extent_tensor(d_extents.span(), DType::I32, {kSparseBatch});
         Tensor lengths_tensor(d_lengths.span(), DType::I32, {kSparseBatch});
-        Tensor anchors_tensor(d_anchors.span(), DType::I32, {kSparseBatch});
         Tensor licensed_tensor(d_licensed.span(), DType::I32, {kSparseColumns, kSparseBatch});
         Tensor licensed_counts_tensor(d_licensed_counts.span(), DType::I32, {kSparseBatch});
-        Tensor accepted_tensor(d_accepted.span(), DType::I32, {kSparseBatch});
         const ops::SpeculativeAcceptExecutionEnvelope envelope{false};
 
         int failures = 0;
@@ -948,17 +918,18 @@ struct SparseAcceptSuite {
                                       cudaMemcpyHostToDevice),
                            "seed");
                 initialize(d_lengths, lengths);
-                initialize(d_anchors, anchors);
                 ops::speculative_accept_sparse_drafts(
                     targets_tensor, logits_tensor, drafts_tensor, candidate_tensor, q_tensor,
-                    extent_tensor, lengths_tensor, anchors_tensor, licensed_tensor,
-                    licensed_counts_tensor, accepted_tensor, kSparseTokenDomain,
+                    extent_tensor, lengths_tensor, licensed_tensor,
+                    licensed_counts_tensor, kSparseTokenDomain,
                     static_cast<const ops::SamplingConfig*>(d_configs.data()), envelope, arena,
                     ninfer::test::cuda_environment().default_execution);
                 cuda_synchronize();
                 const std::vector<std::int32_t> got = read<std::int32_t>(d_licensed, 2);
+                const std::int32_t got_count        = read<std::int32_t>(d_licensed_counts, 1)[0];
                 ++counts[static_cast<std::size_t>(got[0])];
-                acceptances += read<std::int32_t>(d_accepted, 1)[0];
+                const int accepted_this_trial = got_count - 1;
+                acceptances += accepted_this_trial;
                 if (trial == 0) {
                     // One exact per-decision comparison against the host oracle, for the same seed
                     // and draft, asserted rather than printed. The aggregate chi2 below can only
@@ -972,12 +943,12 @@ struct SparseAcceptSuite {
                                              trial_config, token_counts);
                     const bool agree = got[0] == wanted.licensed_tokens[0] &&
                                        got[1] == wanted.licensed_tokens[1] &&
-                                       read<std::int32_t>(d_accepted, 1)[0] == wanted.accepted[0];
+                                       got_count == wanted.licensed_counts[0];
                     std::printf("  isolation extent=%d seed=%llu device=[%d,%d] accepted=%d"
                                 " oracle=[%d,%d] accepted=%d %s\n",
                                 extent, static_cast<unsigned long long>(host.seed), got[0], got[1],
-                                read<std::int32_t>(d_accepted, 1)[0], wanted.licensed_tokens[0],
-                                wanted.licensed_tokens[1], wanted.accepted[0],
+                                accepted_this_trial, wanted.licensed_tokens[0],
+                                wanted.licensed_tokens[1], wanted.licensed_counts[0] - 1,
                                 agree ? "match" : "DIFFER");
                     if (!agree) {
                         std::cerr << "isolation extent=" << extent
@@ -1049,7 +1020,6 @@ struct SparseAcceptSuite {
         std::vector<std::int32_t> extents{2, 1, 1, kSparseDrafts, 0, 3, 2, 4};
         for (auto& extent : extents) extent = std::min(extent, kSparseDrafts);
         std::vector<std::int32_t> lengths(kSparseBatch);
-        std::vector<std::int32_t> anchors(kSparseBatch, -1);
         std::vector<ops::SamplingConfig> configs(kSparseBatch);
         std::vector<std::int32_t> token_counts(
             static_cast<std::size_t>(kSparseTokenDomain) * kSparseBatch, 0);
@@ -1134,20 +1104,17 @@ struct SparseAcceptSuite {
 
         return execute_sparse_accept_case(
             "sparse speculative general mixed B=8", targets, logits, drafts, candidate_ids,
-            proposal_q, extents, lengths, anchors, configs, token_counts,
+            proposal_q, extents, lengths, configs, token_counts,
             ops::SpeculativeAcceptExecutionEnvelope{.all_rows_greedy_without_penalties = false});
     }
 };
 
 AcceptExpected accept_state_oracle(const std::vector<std::int32_t>& drafts, std::int32_t accepted,
-                                   std::int32_t terminal_token, std::int32_t initial_length) {
+                                   std::int32_t terminal_token) {
     const int k = static_cast<int>(drafts.size());
     AcceptExpected expected{
         .sampled     = std::vector<std::int32_t>(static_cast<std::size_t>(k + 1), 0),
         .num_sampled = accepted + 1,
-        .accepted    = accepted,
-        .length      = initial_length + accepted + 1,
-        .token       = terminal_token,
     };
     for (int i = 0; i < accepted; ++i) {
         expected.sampled[static_cast<std::size_t>(i)] = drafts[static_cast<std::size_t>(i)];
@@ -1172,33 +1139,27 @@ int execute_accept_case(const std::string& label, const std::vector<std::int32_t
     const auto config_before = from_device<std::uint8_t>(d_config, sizeof(ops::SamplingConfig));
 
     GuardedDeviceBuffer d_length(sizeof(std::int32_t));
-    GuardedDeviceBuffer d_token(sizeof(std::int32_t));
     GuardedDeviceBuffer d_sampled(static_cast<std::size_t>(k + 1) * sizeof(std::int32_t));
     GuardedDeviceBuffer d_num(sizeof(std::int32_t));
-    GuardedDeviceBuffer d_accepted(sizeof(std::int32_t));
     DeviceBuffer d_extent = to_device<std::int32_t>({k});
     initialize(d_length, std::vector<std::int32_t>{initial_length});
-    initialize(d_token, std::vector<std::int32_t>{-1234567});
     d_sampled.fill(0x9d);
     initialize(d_num, std::vector<std::int32_t>{-11});
-    initialize(d_accepted, std::vector<std::int32_t>{-13});
 
     Tensor targets(d_targets.span(), DType::I32, {k + 1});
     Tensor logits(d_logits.span(), DType::BF16, {physical_rows, k + 1});
     Tensor draft_tensor(d_drafts.span(), DType::I32, {k});
     Tensor extent(d_extent.span(), DType::I32, {1});
     Tensor length(d_length.span(), DType::I32, {1});
-    Tensor token(d_token.span(), DType::I32, {1});
     Tensor sampled(d_sampled.span(), DType::I32, {k + 1});
     Tensor num_sampled(d_num.span(), DType::I32, {1});
-    Tensor accepted(d_accepted.span(), DType::I32, {1});
     const std::size_t workspace_bytes =
         ops::speculative_accept_greedy_drafts_workspace_capacity_bytes(token_domain, k, k, 1, 1);
     ninfer::DeviceBuffer workspace_storage(ninfer::test::cuda_environment().context.device(),
                                            std::max<std::size_t>(256, workspace_bytes));
     MemoryArena workspace(workspace_storage.span());
     ops::speculative_accept_greedy_drafts(
-        targets, logits, draft_tensor, extent, length, token, sampled, num_sampled, accepted,
+        targets, logits, draft_tensor, extent, length, sampled, num_sampled,
         token_domain, static_cast<const ops::SamplingConfig*>(d_config.data()), workspace,
         ninfer::test::cuda_environment().default_execution);
     cuda_synchronize();
@@ -1207,12 +1168,8 @@ int execute_accept_case(const std::string& label, const std::vector<std::int32_t
                                 expected.sampled);
     failures += verify_exact((label + " num sampled").c_str(), read<std::int32_t>(d_num, 1),
                              {expected.num_sampled});
-    failures += verify_exact((label + " accepted").c_str(), read<std::int32_t>(d_accepted, 1),
-                             {expected.accepted});
-    failures += verify_exact((label + " length").c_str(), read<std::int32_t>(d_length, 1),
-                             {expected.length});
-    failures +=
-        verify_exact((label + " token").c_str(), read<std::int32_t>(d_token, 1), {expected.token});
+    failures += verify_exact((label + " positions unchanged").c_str(), read<std::int32_t>(d_length, 1),
+                             {initial_length});
 
     failures +=
         verify_exact((label + " target tokens unchanged").c_str(),
@@ -1226,18 +1183,13 @@ int execute_accept_case(const std::string& label, const std::vector<std::int32_t
                              config_before);
 
     auto expected_counts = initial_token_counts;
-    for (int i = 0; i < expected.num_sampled; ++i) {
-        ++expected_counts[static_cast<std::size_t>(expected.sampled[static_cast<std::size_t>(i)])];
-    }
     failures +=
         verify_exact((label + " token counts").c_str(),
                      from_device<std::int32_t>(d_counts, expected_counts.size()), expected_counts);
 
     failures += d_length.verify_guards((label + " length guards").c_str());
-    failures += d_token.verify_guards((label + " token guards").c_str());
     failures += d_sampled.verify_guards((label + " sampled guards").c_str());
     failures += d_num.verify_guards((label + " num guards").c_str());
-    failures += d_accepted.verify_guards((label + " accepted guards").c_str());
     if (workspace.used() != 0 || workspace.peak_used() != workspace_bytes) {
         std::cerr << label << ": workspace query/execution high-water mismatch\n";
         ++failures;
@@ -1257,8 +1209,8 @@ int greedy_accept_case(int k, int accepted_count, int token_domain = 64) {
             targets[static_cast<std::size_t>(accepted_count)] + 1;
     }
     const std::int32_t initial_length = 200 + k;
-    const auto expected               = accept_state_oracle(
-        drafts, accepted_count, targets[static_cast<std::size_t>(accepted_count)], initial_length);
+    const auto expected =
+        accept_state_oracle(drafts, accepted_count, targets[static_cast<std::size_t>(accepted_count)]);
     std::vector<std::uint16_t> logits(static_cast<std::size_t>(token_domain) * (k + 1));
     for (std::size_t i = 0; i < logits.size(); ++i) {
         logits[i] = static_cast<std::uint16_t>(0x3f00u + (i % 127u));
@@ -1295,7 +1247,7 @@ int deterministic_sampling_case() {
     for (std::size_t i = 0; i < logits.size(); ++i) logits_bits[i] = f32_to_bf16(logits[i]);
 
     const std::int32_t initial_length = 4093;
-    const auto expected = accept_state_oracle(drafts, accepted, correction, initial_length);
+    const auto expected = accept_state_oracle(drafts, accepted, correction);
     std::vector<std::int32_t> token_counts(token_domain, 0);
     token_counts[static_cast<std::size_t>(drafts[0])]  = 3;
     token_counts[static_cast<std::size_t>(drafts[1])]  = 5;
@@ -1328,7 +1280,7 @@ int grammar_onehot_case(int domain, float temperature) {
     ops::SamplingConfig config;
     config.temperature  = temperature;
     config.mask         = {static_cast<const std::uint32_t*>(device_masks.data()), words};
-    const auto expected = accept_state_oracle(drafts, 2, 51, 73);
+    const auto expected = accept_state_oracle(drafts, 2, 51);
     return execute_accept_case("one-hot grammar mask", targets, logits, domain + 2, drafts, 73,
                                domain, config, std::vector<int>(domain, 0), expected);
 }
@@ -1351,7 +1303,7 @@ int greedy_penalty_case(int token_domain) {
     config.temperature      = 0.0F;
     config.presence_penalty = 1.0F;
     const std::vector<std::int32_t> counts(static_cast<std::size_t>(token_domain), 0);
-    const auto expected = accept_state_oracle(drafts, 1, 4, 100);
+    const auto expected = accept_state_oracle(drafts, 1, 4);
     return execute_accept_case(
         "speculative greedy penalty token-domain=" + std::to_string(token_domain), raw_targets,
         bits, token_domain, drafts, 100, token_domain, config, counts, expected);
@@ -1379,16 +1331,16 @@ int batched_sampling_workspace_stride_case() {
 
     DeviceBuffer d_targets = to_device(winners);
     DeviceBuffer d_logits  = to_device(logits);
-    DeviceBuffer d_drafts  = to_device(drafts);
+    std::vector<int> steps(drafts.size());
+    for (int row = 0; row < batch; ++row)
+        for (int col = 0; col < k; ++col) steps[col * batch + row] = drafts[row * k + col];
+    DeviceBuffer d_drafts  = to_device(steps);
     DeviceBuffer d_extents = to_device<std::int32_t>({k, k});
     DeviceBuffer d_lengths = to_device<std::int32_t>({100, 200});
-    DeviceBuffer d_anchors = to_device<std::int32_t>({-1, -1});
     DeviceBuffer d_licensed(ninfer::test::cuda_environment().context.device(),
                             static_cast<std::size_t>(columns) * batch * sizeof(std::int32_t));
     DeviceBuffer d_counts(ninfer::test::cuda_environment().context.device(),
                           static_cast<std::size_t>(batch) * sizeof(std::int32_t));
-    DeviceBuffer d_accepted(ninfer::test::cuda_environment().context.device(),
-                            static_cast<std::size_t>(batch) * sizeof(std::int32_t));
 
     ops::SamplingConfig config{};
     config.temperature = 1.0f;
@@ -1398,13 +1350,11 @@ int batched_sampling_workspace_stride_case() {
 
     Tensor targets(d_targets.span(), DType::I32, {columns, batch});
     Tensor logits_tensor(d_logits.span(), DType::BF16, {physical_rows, columns, batch});
-    Tensor draft_tensor(d_drafts.span(), DType::I32, {k, batch});
+    auto draft_tensor = Tensor(d_drafts.span(), DType::I32, {batch, k}).permute({1, 0, 2, 3});
     Tensor extents(d_extents.span(), DType::I32, {batch});
     Tensor lengths(d_lengths.span(), DType::I32, {batch});
-    Tensor anchors(d_anchors.span(), DType::I32, {batch});
     Tensor licensed(d_licensed.span(), DType::I32, {columns, batch});
     Tensor counts(d_counts.span(), DType::I32, {batch});
-    Tensor accepted(d_accepted.span(), DType::I32, {batch});
     const std::size_t workspace_bytes =
         ops::speculative_accept_greedy_drafts_workspace_capacity_bytes(token_domain, k, k, batch,
                                                                        batch);
@@ -1412,8 +1362,8 @@ int batched_sampling_workspace_stride_case() {
                                            workspace_bytes);
     MemoryArena workspace(workspace_storage.span());
     ops::speculative_accept_greedy_drafts(
-        targets, logits_tensor, draft_tensor, extents, lengths, anchors, licensed, counts, accepted,
-        token_domain, static_cast<const ops::SamplingConfig*>(d_configs.data()), workspace,
+        targets, logits_tensor, draft_tensor, extents, lengths, licensed, counts, token_domain,
+        static_cast<const ops::SamplingConfig*>(d_configs.data()), workspace,
         ninfer::test::cuda_environment().default_execution);
     cuda_synchronize();
 
@@ -1422,12 +1372,8 @@ int batched_sampling_workspace_stride_case() {
                                 {10, 20, 0, 0, 30, 31, 32, 33});
     failures += verify_exact("speculative sampling B=2 counts",
                              from_device<std::int32_t>(d_counts, batch), {2, 4});
-    failures += verify_exact("speculative sampling B=2 accepted",
-                             from_device<std::int32_t>(d_accepted, batch), {1, 3});
     failures += verify_exact("speculative sampling B=2 lengths",
-                             from_device<std::int32_t>(d_lengths, batch), {102, 204});
-    failures += verify_exact("speculative sampling B=2 anchors",
-                             from_device<std::int32_t>(d_anchors, batch), {20, 33});
+                             from_device<std::int32_t>(d_lengths, batch), {100, 200});
     return failures;
 }
 

@@ -1101,6 +1101,12 @@
       "review": "windows",
       "reason": "Windows/MSVC C++ conformance necessity: adds the C++ template disambiguator on jobs.template build<1, Partition>(a) because jobs has dependent type IndexerJobs<MaxQueries> in indexer_partition_kernel, and nvcc + MSVC otherwise parses '<' as operator< (error: no operator \">\" matches these operands)."
     },
+    "src/ops/softmax_attention/qsa/tail_extract.cu": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Windows MSVC/NVCC conformance: add explicit static_cast<std::int64_t> in StateColumns uniform initialization to prevent invalid narrowing conversion from unsigned long long (std::size_t) to signed long long (std::int64_t)."
+    },
     "src/product/CMakeLists.txt": {
       "status": "M",
       "disposition": "unknown",
@@ -1636,12 +1642,6 @@
       "reason": ""
     },
     "tests/ops/sequence/ragged_prefix.cpp": {
-      "status": "M",
-      "disposition": "unknown",
-      "review": "",
-      "reason": ""
-    },
-    "tests/ops/sequence/shifted_prefix.cpp": {
       "status": "M",
       "disposition": "unknown",
       "review": "",

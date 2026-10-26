@@ -51,6 +51,7 @@ public:
         return field(index).tensor(byte_offset(record));
     }
 
+    // Copies finish before returning, including when the consumer uses a nonblocking stream.
     void upload() const { copy(true); }
 
     void copy_back() const { copy(false); }
@@ -117,6 +118,8 @@ private:
                                       cudaMemcpyDefault));
             }
         }
+        // Windows CUDA necessity: synchronize device after asynchronous D2D cudaMemcpy
+        // to eliminate host verification race against non-blocking compute streams.
         CUDA_CHECK(cudaDeviceSynchronize());
     }
 
