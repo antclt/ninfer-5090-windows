@@ -1,4 +1,20 @@
-# NInfer Windows v1.2.1 (RTX 5090)
+# NInfer Windows v1.2.2 (RTX 5090)
+
+## What changed in 1.2.2
+
+A stability and feature synchronization release following `v1.2.1`, integrating upstream updates and completing decoupled speculative decoding dataflow:
+
+- **Upstream Synchronization (3 commits)**: Merged upstream `Neroued/ninfer@dev` (`1b6c7232`, `d4a78e03`, `996d9214`):
+  - **Decoupled Speculative Accept Dataflow**: Speculative acceptance kernels (`speculative_accept_sparse_drafts` and `speculative_accept_dense_drafts`) now write out decoupled `licensed_tokens` and `licensed_counts` ($A + 1$) without mutating `token_counts` or context state in-place, giving model callers (`qwen3_5`, `qwen4_exp`, `glm5next`) explicit control over sequence state commit and rollback.
+  - **Paired BF16 Linear Projection Kernel**: Added fused dual-projection kernel (`src/ops/linear/pair/bf16/launch.cu`) optimizing adjacent linear projections under BF16.
+  - **Unified State Fields Indexing**: Added zero-copy `gather_state_fields` and `scatter_state_fields` CUDA kernels (`src/ops/indexing/state_fields.cu`) for sequence state boundary transitions.
+  - **Distributed Rank Telemetry**: Added host-side high-resolution timing markers and rank boundary synchronization measurement in `src/runtime/executor/measurement.cpp`.
+- **Universal Windows 1ms Timer Resolution**: Implemented RAII `WindowsTimerResolution` scope (`timeBeginPeriod(1)`) in `Engine::Impl`, eliminating Windows default 15.6ms timer quantums during streaming token generation and background task polling.
+- **Tokenizer Cache Splice Recovery**: Enhanced prefix caching recovery in `tests/text/test_tokenizer_cache_splice.cpp` to correctly handle prompt splice boundaries.
+- **MSVC 14.51 / NVCC Portability**: Resolved C++ uniform initialization narrowing conversion errors in QSA `tail_extract.cu` under MSVC 19.44 / NVCC 13.3.
+- **Release Audit & Packaging**: All 14 fast pre-commit gates, documentation links, citation audits, and test baselines pass; zero-dependency PE header import verification enforced.
+
+---
 
 ## What changed in 1.2.1
 
