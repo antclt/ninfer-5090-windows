@@ -84,7 +84,8 @@ ninfer::EngineOptions reporter_engine_options(const char* artifact) {
     // quota expressed, so the root keeps the share of the pool this case was built around.
     const auto plan          = ninfer::test::qwen3_5::context_capacity_plan(options);
     options.context_capacity = ninfer::ContextCapacityPolicy::explicit_capacity(
-        ninfer::test::qwen3_5::checkpoint_capacity_bytes(plan, 1, kKvCapacity));
+        std::max(ninfer::test::qwen3_5::checkpoint_capacity_bytes(plan, 1, kKvCapacity),
+                 plan.minimum_capacity().device_bytes));
     return options;
 }
 

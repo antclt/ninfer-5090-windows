@@ -6,7 +6,7 @@
 #include "models/qwen4_exp/state/state_image.h"
 #include "models/qwen4_exp/state/kv_cache.h"
 #include "models/common/moe/schedule.h"
-#include "models/qwen4_exp/parallel/execution.h"
+#include "models/common/parallel_execution.h"
 
 namespace ninfer::models::qwen4_exp::execution {
 
@@ -27,7 +27,7 @@ public:
     void consume_ple(const Tensor& embedding);
 
     // GPU bodies share the same activation frame in eager execution and graph capture.
-    void stem(std::optional<VisualEmbeddingView> = {});
+    void stem(std::optional<models::vision::EmbeddingView> = {});
     [[nodiscard]] bool advance_layer(std::uint32_t layer);
     void mixer(std::uint32_t layer);
     void local_mixer(std::uint32_t layer);

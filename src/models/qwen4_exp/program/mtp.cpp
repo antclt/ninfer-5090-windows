@@ -113,8 +113,7 @@ void RankProgramImpl::draft_forward(std::uint32_t step, std::int32_t batch, std:
     execution::project_head(sample, parameters.mtp->head, logits, resources.workspace, cuda);
     auto ids = device_tensor(frame.draft_steps[step + 1].ids).slice(0, 0, batch);
     if (parallel)
-        vocabulary_draft(logits, ids,
-                         device_tensor(frame.draft_steps[step].valid_columns).slice(0, 0, batch));
+        vocabulary_draft(logits, ids);
     else
         ops::argmax(logits, ids, parameters.profile->public_tokens, cuda);
 }
@@ -132,7 +131,7 @@ void RankProgramImpl::save_draft(std::uint32_t step, std::int32_t batch) {
 
 void RankProgramImpl::align_mtp(std::span<const WorkRow> rows, std::uint32_t tokens,
                                 const Tensor& previous, const Tensor& conditioning,
-                                std::optional<execution::VisualEmbeddingView> visual) {
+                                std::optional<models::vision::EmbeddingView> visual) {
     const auto& frame   = *resources.plan.persistent.buffers.mtp;
     const auto batch    = static_cast<std::int32_t>(rows.size());
     const auto channels = dimension(parameters.profile->config.text.residual_width());
@@ -149,33 +148,13 @@ void RankProgramImpl::align_mtp(std::span<const WorkRow> rows, std::uint32_t tok
     if (tokens == skip) visual.reset();
     const auto metadata = mtp_inputs(frame.history, rows, width, {inputs.data(), rows.size()});
     if (visual && skip) {
-        // A root skips the unconditioned first embedding in its MTP history.
-        const auto& input = *binding(rows.front().member.residency).vision_input;
-        const auto& plan  = input.plan;
-        const auto item   = std::find_if(plan.uses.begin(), plan.uses.end(), [&](const auto& use) {
-            return use.begin < std::uint64_t(first) + tokens && use.end > first;
-        });
-        if (item == plan.uses.end())
-            throw std::logic_error("MTP visual embedding has no input item");
-        const auto& control = plan.control->items[item->control_index];
-        const auto slice    = qwen::visual_embedding_slice(
-            control.scatter_indices, input.prompt_tokens, first + skip, tokens - skip);
-        if (slice.empty()) {
-            visual.reset();
-        } else {
-            const auto& region = *frame.history.visual_indices;
-            auto host = resources.mtp_ingress().subspan(region.region.offset - frame.ingress.offset,
-                                                        slice.size() * sizeof(std::int32_t));
-            std::copy(slice.destination_columns.begin(), slice.destination_columns.end(),
-                      static_cast<std::int32_t*>(host.data));
-            auto indices = device_tensor(region).slice(0, 0, slice.size());
-            copy_bytes_async({indices.data, indices.bytes(), cuda.device()}, host, cuda);
-            const auto prior = qwen::visual_embedding_slice(control.scatter_indices,
-                                                            input.prompt_tokens, first, tokens);
-            visual           = execution::VisualEmbeddingView{
-                visual->features.slice(1, slice.source_begin - prior.source_begin, slice.size()),
-                indices};
-        }
+        const auto& forward = std::get<ForwardWork>(compute->request.work.operation);
+        if (!forward.visual) throw std::logic_error("MTP visual history has no window mapping");
+        const auto& region = *frame.history.visual_indices;
+        auto host = resources.mtp_ingress().subspan(region.region.offset - frame.ingress.offset,
+                                                    region.region.bytes);
+        visual =
+            visual_view(*forward.visual->window.plan, first + skip, tokens - skip, region, host);
     }
     execution::mtp_history(parameters.profile->config.text, parameters.profile->local.qsa,
                            *parameters.mtp, aligned, metadata,
@@ -195,11 +174,7 @@ void RankProgramImpl::align_mtp(std::span<const WorkRow> rows, std::uint32_t tok
 
 void RankProgramImpl::accept_forward(std::int32_t batch) {
     if (parallel) {
-        vocabulary_accept(
-            batch, std::all_of(compute->rows.begin(), compute->rows.end(),
-                               [](const auto& row) { return !(row.sampling.temperature > 0); })
-                       ? 1
-                       : 20);
+        vocabulary_accept(batch);
         return;
     }
     const auto& buffers   = resources.plan.persistent.buffers;
@@ -277,7 +252,7 @@ void RankProgramImpl::prepare_mtp() {
         copy_bytes_async({saved.data, saved.bytes(), cuda.device()},
                          {previous.data, previous.bytes(), cuda.device()}, cuda);
     }
-    const auto steps = *std::max_element(round.extents.begin(), round.extents.end());
+    const auto steps = k;
     std::vector<execution::BatchView> calls;
     calls.reserve(steps);
     for (std::uint32_t step = 0; step < steps; ++step) {
@@ -317,7 +292,7 @@ void RankProgramImpl::prepare_mtp() {
     ops::prepare_verify_ids(row_tensor(frame.anchors), drafts, row_tensor(frame.extents),
                             f.batch.ids, cuda);
     if (!host_ple) {
-        copy_verify_inputs(batch, false);
+        copy_verify_inputs(batch);
         prepare_device_ple(f.batch);
     }
     prepare_main();

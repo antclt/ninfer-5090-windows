@@ -3,7 +3,7 @@
 #include "models/qwen4_exp/program/planning.h"
 #include "models/qwen4_exp/session/planning.h"
 #include "models/qwen4_exp/work.h"
-#include "models/qwen4_exp/parallel/execution.h"
+#include "models/common/parallel_execution.h"
 
 namespace ninfer::models::qwen4_exp {
 namespace execution {
@@ -42,6 +42,7 @@ public:
     [[nodiscard]] std::optional<GraphMemorySummary> graph_memory_observation() const;
     [[nodiscard]] RankMemoryBudget resource_budget() const;
     void reset_measurement_peaks() noexcept;
+    [[nodiscard]] MemorySpan input_storage();
 
 private:
     std::unique_ptr<detail::RankProgramImpl> impl_;

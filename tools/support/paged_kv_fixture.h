@@ -126,6 +126,7 @@ private:
                 CUDA_CHECK(cudaMemcpy2D(dense_plane, width, record_plane, stride_, width, pages_,
                                         cudaMemcpyDefault));
         }
+        CUDA_CHECK(cudaDeviceSynchronize());
     }
 
     KVPageLayout layout_;

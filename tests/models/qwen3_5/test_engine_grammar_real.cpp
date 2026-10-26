@@ -320,6 +320,7 @@ int main(int argc, char** argv) {
                 "schema fields missing");
         auto json_thinking                      = json_request;
         json_thinking.execution.thinking.budget = 2;
+        json_thinking.execution.sampling.temperature = 0;
         record(schema, engine.generate(engine.prepare(prompt(true)), json_thinking));
         auto numeric_prefix = prompt();
         numeric_prefix.context_cache.session_key.reset();

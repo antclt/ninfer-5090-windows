@@ -25,11 +25,13 @@ TextRun::TextRun(const Parameters& p, TextExecution execution, BatchView batch, 
         throw std::invalid_argument("invalid Qwen4Exp sequence/step window");
 }
 
-void TextRun::stem(std::optional<VisualEmbeddingView> visual) {
+void TextRun::stem(std::optional<models::vision::EmbeddingView> visual) {
     const auto& p = parameters_.text;
     ops::embedding(batch_.ids.view({batch_.tokens * batch_.batch}), p.embedding, roots_.input,
                    cuda_);
-    if (visual) ops::scatter(visual->features, visual->columns, roots_.input, cuda_);
+    if (visual)
+        for (const auto& slice : visual->slices)
+            ops::scatter(slice.features, slice.columns, roots_.input, cuda_);
     ops::hc_expand_norm(roots_.input, p.layers.front().attention_hc.norm,
                         parameters_.profile->config.text.norm_epsilon, roots_.residual,
                         roots_.normalized, cuda_);

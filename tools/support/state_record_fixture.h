@@ -117,6 +117,7 @@ private:
                                       cudaMemcpyDefault));
             }
         }
+        CUDA_CHECK(cudaDeviceSynchronize());
     }
 
     std::vector<Tensor> dense_;

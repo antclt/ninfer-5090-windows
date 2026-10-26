@@ -507,6 +507,14 @@ int exercise_host_restore(const char* artifact) {
         return 1;
     }
 
+    const std::vector<ninfer::TokenId> filler_input(256, 1234);
+    const ninfer::GenerationResult filler =
+        engine.generate(engine.prepare_tokens(filler_input), options(5, true));
+    if (filler.prompt.prompt_tokens != 256 || filler.generated_token_ids.size() != 5) {
+        std::cerr << "Host-restore filler request did not complete\n";
+        return 1;
+    }
+
     auto continuation = retained_input;
     // Match only the prompt checkpoint: a deeper generation point may retain Device state.
     continuation.push_back(retained.generated_token_ids.front() == 198 ? 5834 : 198);
@@ -1841,15 +1849,12 @@ int verify_loaded_product(const ninfer::Engine& engine) {
     if (memory.allocations.device_weights_bytes == 0 ||
 
         memory.allocations.persistent_device_bytes == 0 ||
-
         memory.allocations.workspace_device_bytes == 0 || vision == nullptr ||
-        vision->aggregate_prompt_tokens != 4096 || vision->max_item_tokens != 4096 ||
-        vision->general_capacity_bytes == 0 || vision->encode_required_bytes == 0 ||
-        vision->handoff_offset_bytes > memory.allocations.workspace_device_bytes ||
-        vision->handoff_capacity_bytes == 0 ||
-        vision->handoff_capacity_bytes >
-            memory.allocations.workspace_device_bytes - vision->handoff_offset_bytes ||
-        vision->handoff_active_bytes != 0 ||
+        vision->max_window_features == 0 || vision->max_window_features > 4096 ||
+        vision->encoder_workspace_bytes == 0 || vision->output_capacity_bytes == 0 ||
+        vision->encoder_workspace_bytes + vision->output_capacity_bytes > vision->budget_bytes ||
+        vision->output_capacity_bytes > memory.allocations.persistent_device_bytes ||
+        vision->output_active_bytes != 0 ||
         !engine.startup_report().ranks.at(0).graphs.has_value()) {
         std::cerr << "Engine construction has incomplete materialized backing\n";
         return 1;

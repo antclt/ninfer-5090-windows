@@ -415,9 +415,9 @@ def main():
                         for item in source["added_tokens"][2:]
                     }
                 (root / "tokenizer.json").write_text(
-                    json.dumps(stored, ensure_ascii=False)
+                    json.dumps(stored, ensure_ascii=False), encoding="utf-8"
                 )
-                (root / "tokenizer_config.json").write_text(json.dumps(config))
+                (root / "tokenizer_config.json").write_text(json.dumps(config), encoding="utf-8")
                 reference = Reference(source)
                 inputs = cases(source)
                 run_probe(

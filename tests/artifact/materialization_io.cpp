@@ -177,6 +177,10 @@ cudaError_t CUDARTAPI cudaStreamSynchronize(cudaStream_t stream) {
 namespace ninfer::test {
 
 void materialization_alignment_checks(std::optional<CudaExecutionView> execution) {
+#if defined(_MSC_VER)
+    std::cerr << "SKIP: direct-I/O alignment injection is unavailable on MSVC (no statx interposition)\n";
+    return;
+#else
     using namespace artifact;
     using namespace artifact_fixture;
     {
@@ -217,12 +221,12 @@ void materialization_alignment_checks(std::optional<CudaExecutionView> execution
             fixture.payload[i] = std::byte((i * 17 + i / 73) % 251);
         fixture.root = {{"components", {{"text", {{"config", Json::object()}}}}},
                         {"objects", Json::array({{{"id", "large"},
-                                                  {"kind", "tensor"},
-                                                  {"shape", {bytes / 2}},
-                                                  {"format", "bf16"},
-                                                  {"layout", "contiguous_le_v1"},
-                                                  {"offset", 0},
-                                                  {"bytes", bytes}}})},
+                                                   {"kind", "tensor"},
+                                                   {"shape", {bytes / 2}},
+                                                   {"format", "bf16"},
+                                                   {"layout", "contiguous_le_v1"},
+                                                   {"offset", 0},
+                                                   {"bytes", bytes}}})},
                         {"bindings", {{"large", {{"object", "large"}}}}},
                         {"uses", Json::array()},
                         {"files", Json::array({{{"path", nullptr}, {"payload_bytes", bytes}}})}};
@@ -237,6 +241,7 @@ void materialization_alignment_checks(std::optional<CudaExecutionView> execution
         require(backing.stats().peak_staging_bytes <= 8192 && backing.stats().read_bytes == bytes,
                 "Host interior was staged or boundary reads were duplicated");
     }
+#endif
 }
 
 void materialization_cuda_errors(DeviceContext& device) {

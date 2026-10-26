@@ -8,7 +8,8 @@
 #include "models/qwen4_exp/program/graphs.h"
 #include "models/qwen4_exp/execution/text.h"
 #include "models/qwen4_exp/execution/mtp.h"
-#include "models/common/qwen/vision/prefill.h"
+#include "models/common/qwen/vision/vision.h"
+#include "models/common/vocabulary.h"
 #include "ninfer/ops/sampling.h"
 
 #include <deque>
@@ -19,12 +20,6 @@ class DeviceGraphs;
 
 struct ResidentBinding {
     runtime::ExecutionMember member;
-    std::shared_ptr<const qwen::VisionExecutionInput> vision_input;
-    std::unique_ptr<qwen::VisionPrefillExecution> vision;
-    std::uint64_t observed_vision_ns = 0;
-    bool distributed_vision_ready    = false;
-    std::vector<std::uint32_t> feature_offsets;
-    std::optional<CudaEventTimer> vision_timer;
 };
 
 struct MtpInputRow {
@@ -65,11 +60,12 @@ struct ComputeFrame {
     TextGraph* graph = nullptr;
     execution::BatchView batch;
     Tensor sample, conditioning, previous_conditioning;
-    std::optional<execution::VisualEmbeddingView> visual;
+    std::optional<models::vision::EmbeddingView> visual;
     std::optional<runtime::DecisionInput> decision;
     bool decision_requested = false, sequence = false;
+    bool release_vision = false;
     bool first_sample = false, timer_started = false;
-    bool graph_decided = false, graph_main = false;
+    bool graph_main = false;
     std::vector<std::uint32_t> draft_visible;
     std::uint32_t tokens = 0, visible = 0, layer = 0;
     std::uint32_t score_at = 0, score_count = 0;
@@ -126,9 +122,10 @@ public:
     void install_sampling(bool speculative);
     void upload_main(std::span<const WorkRow>, std::uint32_t tokens);
     void align_mtp(std::span<const WorkRow>, std::uint32_t tokens, const Tensor& previous,
-                   const Tensor& conditioning, std::optional<execution::VisualEmbeddingView>);
+                   const Tensor& conditioning, std::optional<models::vision::EmbeddingView>);
     void commit_verify(const Commit&);
-    void execute_mtp_commit(std::int32_t batch, bool rebuild_history);
+    void execute_mtp_commit(std::int32_t batch, bool rebuild_history,
+                            DecodeGraphSection* = nullptr);
     [[nodiscard]] execution::MtpRun draft_run(std::uint32_t step, std::int32_t batch,
                                               std::uint32_t visible);
     void draft_forward(std::uint32_t step, std::int32_t batch, std::uint32_t visible,
@@ -136,11 +133,12 @@ public:
     void save_draft(std::uint32_t step, std::int32_t batch);
     void sample_forward(std::int32_t batch, bool first_token);
     void accept_forward(std::int32_t batch);
-    void vocabulary_sample(std::int32_t batch, bool first_token, std::int32_t candidates);
-    void vocabulary_draft(const Tensor& logits, Tensor& ids, const Tensor& valid);
-    void vocabulary_accept(std::int32_t batch, std::int32_t candidates);
+    [[nodiscard]] DistributedVocabulary vocabulary();
+    void vocabulary_sample(std::int32_t batch, bool first_token);
+    void vocabulary_draft(const Tensor& logits, Tensor& ids);
+    void vocabulary_accept(std::int32_t batch);
     void copy_sample_result(std::int32_t batch, bool verify);
-    void copy_verify_inputs(std::int32_t batch, bool capture);
+    void copy_verify_inputs(std::int32_t batch, DecodeGraphSection* = nullptr);
     [[nodiscard]] execution::BatchView mtp_inputs(const MtpBatchLayout&, std::span<const WorkRow>,
                                                   std::uint32_t tokens,
                                                   std::span<const MtpInputRow>);
@@ -149,14 +147,14 @@ public:
     [[nodiscard]] Tensor host_tensor(const TensorRegion&);
     [[nodiscard]] Tensor packed_tensor(const TensorRegion&, std::initializer_list<std::int32_t>);
     [[nodiscard]] ResidentBinding& binding(runtime::ResidencyId);
-    [[nodiscard]] std::optional<execution::VisualEmbeddingView>
-    prepare_vision(ResidentBinding&, std::uint32_t begin, std::uint32_t tokens);
-    [[nodiscard]] qwen::VisionChunk prepare_parallel_vision(ResidentBinding&, std::uint32_t begin,
-                                                            std::uint32_t tokens);
-    std::optional<std::uint64_t> collect_vision_timing(ResidentBinding&,
-                                                       std::uint32_t committed_frontier);
+    [[nodiscard]] std::optional<models::vision::EmbeddingView>
+    prepare_vision(const std::optional<qwen::VisionWork>&, std::uint32_t begin,
+                   std::uint32_t tokens);
+    [[nodiscard]] std::optional<models::vision::EmbeddingView>
+    visual_view(const vision::WindowPlan&, std::uint32_t begin, std::uint32_t tokens,
+                const TensorRegion& indices, MemorySpan host);
+    std::optional<std::uint64_t> collect_vision_timing(const ResidentBinding&);
     void retire_vision(ResidentBinding&) noexcept;
-    [[nodiscard]] std::size_t active_vision_bytes() const noexcept;
     [[nodiscard]] RankMemoryUsage observe_resources() const;
     [[nodiscard]] RankExecutionObservation retirement_observation() const noexcept;
     void reset_measurement_peaks() noexcept;
@@ -178,8 +176,6 @@ public:
     CudaEventTimer prefill_timer;
     runtime::ExecutionGpuTimer gpu_timer;
     CudaCompletionEvent compute_done, context_done;
-    qwen::VisionHandoffState vision_handoff;
-    std::size_t vision_handoff_peak_bytes = 0, vision_workspace_peak_bytes = 0;
     std::array<std::optional<ResidentBinding>, kMaximumConcurrency> bindings;
     std::optional<ComputeFrame> compute;
     std::optional<ContextFrame> context;

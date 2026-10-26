@@ -7,6 +7,7 @@ add_library(ninfer_model_loading STATIC
   common/bindings.cpp
   common/parallel.cpp
   common/parallel_weights.cpp
+  common/vision/resources.cpp
   common/weights.cpp
   common/moe/weights.cpp
   qwen4_exp/ple/parameters.cpp
@@ -32,6 +33,7 @@ add_library(ninfer_model_control STATIC
   common/frontend/image_transform.cpp
   glm5next/frontend/processor.cpp
   common/frontend/media_cache.cpp
+  common/vision/window.cpp
   common/frontend/digest.cpp
   common/context/directory.cpp
   common/context/directory/records.cpp
@@ -49,12 +51,17 @@ target_include_directories(ninfer_model_control SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/xgrammar/3rdparty/picojson)
 
 if(NINFER_ENABLE_DISTRIBUTED)
-  target_sources(ninfer_model_control PRIVATE common/context/wire.cpp)
+  target_sources(ninfer_model_control PRIVATE common/context/wire.cpp common/vision/input.cpp
+    common/parallel_wire.cpp)
   target_link_libraries(ninfer_model_control PRIVATE ninfer_distributed_wire)
 endif()
 
 # Rank-owned storage, mathematical execution and graph preparation.
 add_library(ninfer_model_execution STATIC
+  common/graph.cpp
+  common/vocabulary.cpp
+  common/vision/execution.cpp
+  common/parallel_execution.cpp
   common/context/storage.cpp
   common/context/transfer.cpp
   common/moe/execution.cpp
@@ -83,6 +90,9 @@ include(glm5next/loading_sources.cmake)
 include(common/qwen/sources.cmake)
 include(qwen3_5/execution_sources.cmake)
 include(qwen4_exp/execution_sources.cmake)
+include(glm5next/execution_sources.cmake)
 include(qwen3_5/program_sources.cmake)
 include(qwen3_5/session_sources.cmake)
 include(qwen4_exp/session_sources.cmake)
+
+include(glm5next/session_sources.cmake)

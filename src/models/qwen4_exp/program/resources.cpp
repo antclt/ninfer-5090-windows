@@ -30,6 +30,7 @@ Resources::Resources(const execution::Parameters& p, ExecutionPlan input, Device
         host_context_ = PinnedHostBuffer(plan.host_context_bytes);
         phase.complete(plan.host_context_bytes, plan.host_context_bytes);
     }
+    if (plan.workspace.vision) vision.emplace(device, *plan.workspace.vision);
     const auto backing = persistent_.span();
     states             = std::make_unique<StateViews>(context_.span(), plan.persistent.state);
     main               = std::make_unique<QsaCache>(context_.span(), backing, plan.persistent.main);
@@ -92,6 +93,10 @@ Resources::Resources(const execution::Parameters& p, ExecutionPlan input, Device
         for (auto& config : configs) config.temperature = 0;
         copy_bytes(raw->region.bind(backing),
                    {configs.data(), configs.size() * sizeof(configs.front()), Device::cpu()},
+                   device.execution_view());
+        const std::vector<std::int32_t> columns(plan.shape.max_concurrency, 1);
+        copy_bytes(plan.persistent.buffers.proposal_columns->region.bind(backing),
+                   {columns.data(), columns.size() * sizeof(columns.front()), Device::cpu()},
                    device.execution_view());
     }
     device.synchronize();
