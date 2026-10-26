@@ -195,13 +195,37 @@ def fetch_gauges(base: str, timeout: float = 10.0) -> dict[str, float]:
     for line in text.splitlines():
         if not line.startswith("ninfer_") or " " not in line:
             continue
-        name, _, value = line.partition(" ")
-        short = name[len("ninfer_"):]
+        token, _, val_str = line.partition(" ")
+        try:
+            val = float(val_str)
+        except ValueError:
+            continue
+        short = token[len("ninfer_"):]
         if short in wanted:
-            try:
-                gauges[short] = float(value)
-            except ValueError:
-                continue
+            gauges[short] = val
+            continue
+        if "{" in short and short.endswith("}"):
+            name, _, label_str = short[:-1].partition("{")
+            labels: dict[str, str] = {}
+            for part in label_str.split(","):
+                if "=" in part:
+                    k, _, v = part.partition("=")
+                    labels[k.strip()] = v.strip().strip('"')
+            if name == "context_kv_page_groups":
+                gauges["context_kv_page_groups"] = gauges.get("context_kv_page_groups", 0.0) + val
+                gauges["device_kv_used_pages"] = gauges["context_kv_page_groups"]
+            elif name == "context_pool_bytes":
+                domain = labels.get("domain")
+                kind = labels.get("kind")
+                if domain == "host" and kind == "live":
+                    gauges["host_context_used_bytes"] = val
+                elif domain == "host" and kind == "capacity":
+                    gauges["host_context_capacity_bytes"] = val
+                elif domain == "device" and kind == "live":
+                    gauges["context_pool_bytes"] = val
+            elif name == "context_pool_peak_bytes":
+                if labels.get("domain") == "host":
+                    gauges["host_context_peak_bytes"] = val
     return gauges
 
 

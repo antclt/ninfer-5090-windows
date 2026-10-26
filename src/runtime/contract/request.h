@@ -40,16 +40,6 @@ struct OutputDecision {
     [[nodiscard]] bool finished() const noexcept { return finish_reason != FinishReason::None; }
 };
 
-// Non-owning cancellation observation used while the worker advances a context transaction. The
-// request record owns the flag for longer than Program can retain this view.
-struct CancellationFlagView {
-    const std::atomic<bool>* flag = nullptr;
-
-    [[nodiscard]] bool requested() const noexcept {
-        return flag != nullptr && flag->load(std::memory_order_acquire);
-    }
-};
-
 struct RequestPlanSummary {
     std::uint32_t prompt_tokens           = 0;
     std::uint32_t requested_output_tokens = 0;

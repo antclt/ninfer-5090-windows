@@ -1155,6 +1155,12 @@
       "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test. Upstream links ninfer_ops PRIVATE to ninfer_engine, which works on Linux because shared-library symbol resolution differs. On Windows/MSVC, ninfer-serve.exe (which links ninfer_engine PUBLIC) needs ninfer_ops.lib in its link line to resolve __imp__ references from ninfer_engine static objects to the ninfer_ops DLL. Moving ninfer_ops to PUBLIC propagates the import library.",
       "reason": "Moved ninfer_ops from PRIVATE to PUBLIC in ninfer_engine's link libraries so that ninfer-serve.exe (which consumes ninfer_engine PUBLIC) gets ninfer_ops.lib in its link line. Without this, ninfer-serve.exe fails with 16 unresolved externals (nvfp4 TMA kernel launchers defined in ninfer_ops_non_rdc, linked PRIVATE into ninfer_ops). Also added WINDOWS_EXPORT_ALL_SYMBOLS ON to ninfer_ops so the DLL exports those symbols."
     },
+    "src/runtime/contract/request.h": {
+      "status": "M",
+      "disposition": "refactor",
+      "review": "product",
+      "reason": "Remove unused CancellationFlagView struct left behind by upstream context cancellation refactoring."
+    },
     "src/runtime/contract/resources.h": {
       "status": "M",
       "disposition": "windows",
