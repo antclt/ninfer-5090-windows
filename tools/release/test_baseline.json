@@ -1,6 +1,6 @@
 {
-  "recorded": "2026-10-25",
-  "suite_size": 192,
+  "recorded": "2026-10-26",
+  "suite_size": 193,
   "known_failures": {
     "ninfer_qwen3_5_dflash_real_test": {
       "case": "dflash real route",
@@ -109,6 +109,11 @@
       "date": "2026-10-25",
       "count": 20,
       "note": "upstream dev integrations (7 commits: 08ee5cff..afa8f641) add GLM5Next execution/resources, vision window, KDA, KPool and context refactoring: 22 added (ninfer_glm5next_* [13 tests], ninfer_vision_window_test, ninfer_kda_input_proj_test, ninfer_kda_replay_test, ninfer_kpool_tail_extract_test, ninfer_context_capacity_test, ninfer_context_conversion_test, ninfer_context_pool_test, ninfer_placement_policy_test, ninfer_tokenizer_oracle_test), 2 removed/renamed (ninfer_context_allocation_test, ninfer_kv_capacity_test). Suite size 172 -> 192."
+    },
+    {
+      "date": "2026-10-26",
+      "count": 1,
+      "note": "ninfer_tokenizer_cache_splice_test: regression test closing ADR-0010 gap (port_delta_baseline.json:1282); tests prompt tokenization cache hit / exact repeat caching and incremental multi-turn prefix splicing with added tokens."
     }
   ]
 }

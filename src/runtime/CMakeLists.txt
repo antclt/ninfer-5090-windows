@@ -30,6 +30,9 @@ target_link_libraries(ninfer_engine
     ninfer_runtime_support
     ninfer_text
     ninfer_media_decode)
+if(WIN32)
+  target_link_libraries(ninfer_engine PUBLIC winmm)
+endif()
 add_library(ninfer::engine ALIAS ninfer_engine)
 
 if(NINFER_ENABLE_DISTRIBUTED)

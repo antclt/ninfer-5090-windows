@@ -1,6 +1,6 @@
 {
   "against": "upstream/dev",
-  "recorded": "2026-10-25",
+  "recorded": "2026-10-26",
   "note": "Every upstream-owned path the port diverges from, and why. Filed by review. check_port_delta.py --check fails when a path is added here without a commit recording it, and equally when an entry no longer diverges -- a stale entry is worse than none, because it hides the next real change under an expected one.",
   "paths": {
     ".codex/hooks.json": {
@@ -1151,7 +1151,7 @@
     },
     "src/runtime/CMakeLists.txt": {
       "status": "M",
-      "disposition": "unknown",
+      "disposition": "windows",
       "review": "a native-Windows port fix, not independently reviewed; evidence is the build in build-test. Upstream links ninfer_ops PRIVATE to ninfer_engine, which works on Linux because shared-library symbol resolution differs. On Windows/MSVC, ninfer-serve.exe (which links ninfer_engine PUBLIC) needs ninfer_ops.lib in its link line to resolve __imp__ references from ninfer_engine static objects to the ninfer_ops DLL. Moving ninfer_ops to PUBLIC propagates the import library.",
       "reason": "Moved ninfer_ops from PRIVATE to PUBLIC in ninfer_engine's link libraries so that ninfer-serve.exe (which consumes ninfer_engine PUBLIC) gets ninfer_ops.lib in its link line. Without this, ninfer-serve.exe fails with 16 unresolved externals (nvfp4 TMA kernel launchers defined in ninfer_ops_non_rdc, linked PRIVATE into ninfer_ops). Also added WINDOWS_EXPORT_ALL_SYMBOLS ON to ninfer_ops so the DLL exports those symbols."
     },
@@ -1184,6 +1184,12 @@
       "disposition": "windows",
       "review": "windows",
       "reason": "Windows necessity: MSVC has no __int128, so core/uint128.h provides the type -- a real 128-bit builtin under GCC and a two-word struct with the needed operators under MSVC. Here it replaces upstream's cast in a comparison whose product overflows 64 bits. Pinned by the port-delta baseline and protected by src/core/uint128.h's own tests. Second (2026-10-12): release_unreferenced returned by throwing when Native refused to release an unreferenced checkpoint, and its callers are noexcept engine paths, so a pinned checkpoint released through one terminated the process -- no report, no stack, and the catch-all cleanup that errors out the other in-flight requests never ran. It now returns instead. Deferring the release the way reclaim does was rejected: prune does not retry release_unreferenced, so a deferred release would never be completed and the checkpoint would leak. Found by the c-review detect pass."
+    },
+    "src/runtime/engine/engine.cpp": {
+      "status": "M",
+      "disposition": "windows",
+      "review": "windows",
+      "reason": "Port change: Windows process timer period raised to 1 ms (timeBeginPeriod(1)) during Engine lifetime so queue_cv_.wait_for(1ms) resolves in 1 ms instead of default 15.625 ms system timer quanta across all Engine consumers (CLI, serve, perplexity, and tests)."
     },
     "src/runtime/engine/prepared_startup.inl": {
       "status": "M",
@@ -1279,7 +1285,7 @@
       "status": "M",
       "disposition": "product",
       "review": "product",
-      "reason": "ADR-0010 incremental prompt encoding re-homed from the deleted src/models/common/qwen/frontend/tokenizer.cpp onto ninfer::text::Tokenizer (upstream consolidated tokenization into the shared class). GAP: no test currently exercises encode_cache_splices()/encode_cache_fallbacks() (the port original protector ninfer_qwen3_5_frontend_test was deleted upstream). Add a regression test at the consolidated tokenizer seam in a follow-up."
+      "reason": "ADR-0010 incremental prompt encoding re-homed from the deleted src/models/common/qwen/frontend/tokenizer.cpp onto ninfer::text::Tokenizer (upstream consolidated tokenization into the shared class). Verified by ninfer_tokenizer_cache_splice_test exercising exact repeat caching and incremental turn splicing."
     },
     "src/text/tokenizer.h": {
       "status": "M",
@@ -1802,6 +1808,12 @@
       "disposition": "unknown",
       "review": "windows",
       "reason": "Subprocess call states encoding='utf-8'. Upstream's new file spawns its probe with text=True and no encoding, so Python takes the locale encoding -- UTF-8 on the maintainer's Linux host, cp1252 on Windows -- and this payload is not ASCII by construction. Windows necessity, found by check_subprocess_encoding.py, the gate that exists because upstream wrote the same defect twice before. No assertion changed."
+    },
+    "tests/text/tests.cmake": {
+      "status": "M",
+      "disposition": "product",
+      "review": "product",
+      "reason": "Added registration for ninfer_tokenizer_cache_splice_test, testing prompt tokenization caching and multi-turn cache splicing (ADR-0010)."
     },
     "tests/text/tokenizer_oracle.py": {
       "status": "M",

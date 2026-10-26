@@ -94,10 +94,6 @@
     "tools/README.md": {
       "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)"
     },
-    "tools/bench/first_request_loop.cmd": {
-      "C:\\vllm-env\\": "documented tooling interpreter location (C:\\vllm-env)",
-      "C:\\AI\\": "documented tooling interpreter location (C:\\vllm-env)"
-    },
     "tools/bench/lane_fingerprint.py": {
       "C:\\AI\\": "tool default artifact/tooling path on the author's machine (C:\\AI)"
     },

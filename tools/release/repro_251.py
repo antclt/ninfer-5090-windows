@@ -97,8 +97,7 @@ def start_serve(args: argparse.Namespace) -> tuple[subprocess.Popen[bytes], Path
         "--host", "127.0.0.1",
         "--port", str(args.port),
         "--max-context", str(args.max_context),
-        "--kv-capacity", args.kv_capacity,
-        "--extra-state-slots", str(args.device_state_slots),
+        "--context-capacity", args.context_capacity,
         "--host-cache-capacity", f"{args.host_context_mib}MiB",
         "--max-concurrency", "1",
         "--kv-dtype", "fp8",
@@ -159,8 +158,7 @@ def main() -> int:
     ap.add_argument("--artifact", help="artifact for the lane this harness starts")
     ap.add_argument("--port", type=int, default=8086)
     ap.add_argument("--max-context", type=int, default=262144)
-    ap.add_argument("--kv-capacity", default="auto", help="as the shipped lanes pass it")
-    ap.add_argument("--device-state-slots", type=int, default=1)
+    ap.add_argument("--context-capacity", default="auto", help="as the shipped lanes pass it")
     ap.add_argument("--host-context-mib", default="8192", help="as the shipped lanes pass it")
     ap.add_argument("--extra", default="", help="further lane flags, space separated")
     ap.add_argument("--startup-timeout", type=float, default=600.0)

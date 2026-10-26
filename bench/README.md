@@ -143,36 +143,29 @@ primes the decode graphs before warmups and measured repetitions.
 ## CLI
 
 ```text
-ninfer_bench --weights <artifact.ninfer>
-          [--corpus <ids-path>]
-          [-p, --n-prompt <list>]
-          [-n, --n-gen <list>]
-          [-pg, --prompt-gen <P,G;P,G...>]
-          [-r, --repetitions <n>] [--warmup <n>]
+ninfer_bench <artifact.ninfer>
+          [--prompt <text> | --messages <file>]
           [--concurrency <1..8>]
-          [--grammar-file <path> | --json-schema-file <path> | --json-object | --regex <pattern> | --choice <text> ...]
-          [--mixed-constraints]
-          [--max-ctx <tokens>] [--prefill-chunk <tokens>]
+          [--max-tokens <n>]
+          [--repetitions <n>] [--warmup <n>]
+          [--max-context <tokens>] [--prefill-chunk <tokens>]
           [--kv-dtype <bf16|int8|fp8|nvfp4|k8v4>]
-          [--spec <mtp|dflash|dflash2> --draft-tokens <n>] [--lm-head-draft]
+          [--spec <mtp|dflash|dflash2> --draft-tokens <n>] [--proposal-head <full|optimized>]
           [--device <id>] [--no-cuda-graph] [--profile-measured]
-          [-o, --output <table|json|csv>] [--output-file <path>]
+          [--output <table|json|csv>] [--output-file <path>]
 ```
-
-With no `-p`, `-n`, or `-pg`, the matrix is `pp512` and `tg128`.
-`--prefill-chunk` accepts a positive multiple of 128. When omitted, Engine uses 1024 for resident
-models or 4096 for CPU expert offload.
 
 Example:
 
 ```bash
 ./build/rtx5090-dev/bench/ninfer_bench \
-  --weights out/qwen3_6_27b.ninfer \
-  -p 512,2048 -n 128 -pg '2048,128' -r 5 --warmup 1
+  out/qwen3_6_27b.ninfer \
+  --prompt "Write a quicksort in C++" \
+  --concurrency 1 --max-tokens 128 -r 3 --warmup 1
 ```
 
 Select a backend with `--spec mtp|dflash|dflash2 --draft-tokens K` (MTP K=1..5, DFlash/DFlash2
-K=1..15); `--lm-head-draft` selects the optimized proposal head. CUDA Graph decode is
+K=1..15); `--proposal-head optimized` selects the optimized proposal head. CUDA Graph decode is
 enabled by default.
 
 `--profile-measured` is a benchmark-only profiler boundary. It requires exactly one selected test

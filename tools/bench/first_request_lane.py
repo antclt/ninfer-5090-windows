@@ -8,8 +8,8 @@ launches, while the cache engaged on requests 2..8 (a replay, 39 hit tokens). Th
 is a configuration comparison and not a first-request effect; ADR-0002 already covers it. So this
 harness is retained as the instrument that settles it, not because the answer was surprising.
 
-The bench cannot answer the question. tools/bench/first_request_report.py reads two ninfer_bench runs
-and reports no difference (172.31 against 173.65), because the bench drives the Engine directly and
+The bench cannot answer the question: ninfer_bench runs read two sequential runs
+and report no difference (172.31 against 173.65), because the bench drives the Engine directly and
 never has a warm prefix cache to be cold against. The 261.7 figure came from a serving lane, so the
 serving lane is what has to be measured.
 

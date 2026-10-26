@@ -862,6 +862,9 @@ BoundaryEncodedText Tokenizer::encode_with_boundaries(
         try {
             if (std::optional<BoundaryEncodedText> spliced =
                     splice_from_cache(text, byte_boundaries, options, literal_spans)) {
+                if (spliced->input_ids.size() < options.max_tokens) {
+                    remember_encode(text, byte_boundaries, options, literal_spans, *spliced);
+                }
                 return std::move(*spliced);
             }
         } catch (const std::exception&) {
@@ -1057,6 +1060,7 @@ void Tokenizer::remember_encode(std::string_view text, std::span<const std::size
     entry.input_ids = encoded.input_ids;
     entry.results   = encoded.boundaries;
     std::unique_lock<std::shared_mutex> guard(encode_cache_mutex_);
+    encode_cache_.insert(encode_cache_.begin(), std::move(entry));
     if (encode_cache_.size() > kEncodeCacheEntries) { encode_cache_.resize(kEncodeCacheEntries); }
 }
 

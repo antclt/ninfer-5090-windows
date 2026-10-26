@@ -152,8 +152,6 @@ def run_arm(artifact: Path, port: int, blocks: list[str], args: argparse.Namespa
         if "--proposal-head" in lane_flags:
             idx = lane_flags.index("--proposal-head")
             del lane_flags[idx:idx + 2]
-        elif "--lm-head-draft" in lane_flags:
-            lane_flags.remove("--lm-head-draft")
     set_flag(lane_flags, "--chat-template", str(args.template))
     flags = lane_flags
     if result_path.is_file():

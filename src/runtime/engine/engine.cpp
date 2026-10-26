@@ -9,6 +9,17 @@
 #include "runtime/engine/engine_core.h"
 #include "runtime/engine/startup.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <timeapi.h>
+#endif
+
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -202,7 +213,19 @@ public:
         finalize_phase.complete();
     }
 
-    ~Impl() noexcept { core.emplace<std::monostate>(); }
+    ~Impl() noexcept {
+        core.emplace<std::monostate>();
+    }
+
+#ifdef _WIN32
+    struct WindowsTimerResolution {
+        WindowsTimerResolution() noexcept { ::timeBeginPeriod(1); }
+        ~WindowsTimerResolution() noexcept { ::timeEndPeriod(1); }
+        WindowsTimerResolution(const WindowsTimerResolution&) = delete;
+        WindowsTimerResolution& operator=(const WindowsTimerResolution&) = delete;
+    };
+    WindowsTimerResolution timer_resolution;
+#endif
 
     std::shared_ptr<const void> frontend_domain;
     EngineOptions options;
