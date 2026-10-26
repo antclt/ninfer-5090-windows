@@ -176,9 +176,9 @@ load, graph construction, and warmup do not enter topology counts.
 For a DFlash2 companion artifact:
 
 ```bash
-./build/rtx5090-dev/bench/ninfer_bench --weights out/qwen3_8_27b_nvfp4.ninfer \
-  -pg '2048,128' --spec dflash2 --draft-tokens 7 --lm-head-draft \
-  --max-ctx 4096 --kv-dtype bf16 --warmup 1 -r 3
+./build/rtx5090-dev/bench/ninfer_bench out/qwen3_8_27b_nvfp4.ninfer \
+  --spec dflash2 --draft-tokens 7 --proposal-head optimized \
+  --max-context 4096 --kv-dtype bf16 --warmup 1 -r 3
 ```
 
 `--concurrency` submits that many prepared requests per repetition. `--grammar-file`,

@@ -190,9 +190,9 @@ more correct.
 Server (launcher):
 
 ```
---default-thinking-budget 4096      # keep; raising it costs 5x time for no measured gain
+--thinking-budget 4096              # keep; raising it costs 5x time for no measured gain
 --spec dflash2 --draft-tokens 7     # fastest decode, and xhigh generates a lot of tokens
---lm-head-draft
+--proposal-head optimized
 --vision
 --max-context 262144
 --kv-dtype fp8
@@ -509,9 +509,8 @@ where you feel it.
 
 Queuing is only harmless if the queued request's context survives the wait. Each subagent is a
 distinct conversation, so its state must be retained or it re-prefills when it runs. That is what
-the launchers' `--host-context-mib 8192` is for: a shared quota of pinned host RAM for retained
-conversation state, which covers a main session plus several subagents. The device keeps one extra
-state (`--device-state-slots 1`).
+the launchers' `--host-cache-capacity 8192MiB` (formerly `--host-context-mib 8192`) is for: a shared quota of pinned host RAM for retained
+conversation state, which covers a main session plus several subagents.
 
 Raise it when you want subagents to run *concurrently* rather than queue, and lower the context
 ceiling at the same time, because each active lane needs its own state: `--max-concurrency 4` at

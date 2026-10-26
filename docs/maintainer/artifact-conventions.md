@@ -182,7 +182,7 @@ that were replaced, kept as the boundary evidence.
 Vision is a column because it decides a row: the FP8-imported Swift MTP build serves the full context
 with vision off and stops at 240,000 with it on. Both Swift lanes ship vision on, so 240,000 is their
 ceiling for that build. Measured by `ceiling` mode, which renders the launcher's own configuration —
-`--device-state-slots 1`, `--prefill-chunk 8192` and the context-cache set included, which together
+`--prefill-chunk 8192` and the context-cache set included, which together
 reserve about 1.4 GiB more than the bare flags and are what put that build over the line.
 
 So the envelope for the full native context at `fp8` KV **with vision on** sits between 17.1 GiB (in)
@@ -194,7 +194,7 @@ the ceiling with `--kv-dtype nvfp4` and pay the quality cost in section 5.
 
 The same 3 GiB also shows up as resident KV, at different serving flags — so it is a second
 measurement, not a second expression of the row above. Started identically with
-`--kv-dtype int8 --kv-capacity auto --max-context 252928 --max-concurrency 2`, the re-encoded Swift
+`--kv-dtype int8 --context-capacity auto --max-context 252928 --max-concurrency 2`, the re-encoded Swift
 artifact reports **367,296 tokens** of KV capacity at 13.2 GiB runtime and the FP8-importing build it
 replaced **283,712 tokens** at 10.4 GiB: **83,584 more resident tokens** for a download 3 GB smaller.
 The flags were the same, so the difference is the artifact.
@@ -209,15 +209,14 @@ draft.
 |---|---|
 | lanes | `dflash2` (draft 7) and `mtp` (draft 4 or 5) |
 | vision | on |
-| `--lm-head-draft` | on |
-| `--device-state-slots` | 1 |
+| `--proposal-head` | `optimized` |
 | `--max-context` | 262,144 |
 | model id | `qwen3.8-27b-<artifact>-v3-<spec>-vision` |
 | port | one per profile, from `profiles.py` |
 
-Shared by every lane, in `INVARIANT_FLAGS`: `--kv-capacity auto`, `--kv-dtype fp8`,
-`--prefill-chunk 8192`, `--max-concurrency 1`, `--host-context-mib 8192`, `--preserve-thinking`,
-`--default-thinking-budget 4096`, `--pending-timeout-ms 600000`, and the explicit `--chat-template`.
+Shared by every lane, in `INVARIANT_FLAGS`: `--context-capacity auto`, `--kv-dtype fp8`,
+`--prefill-chunk 8192`, `--max-concurrency 1`, `--host-cache-capacity 8192MiB`, `--preserve-thinking`,
+`--thinking-budget 4096`, `--pending-timeout 600s`, and the explicit `--chat-template`.
 Upstream b9114396 replaced the five context-cache bounds this list used to name
 (`--host-state-slots`, `--host-kv-mib`, `--max-shared-prefixes`, `--max-private-continuations`,
 `--max-long-anchors-per-continuation`) and `--context-cache-policy` with that one quota; the new

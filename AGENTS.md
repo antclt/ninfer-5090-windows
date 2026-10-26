@@ -141,8 +141,8 @@ the suite the release gate runs, `build-asan/` for the host-only sanitizer tests
 for the standalone bench binaries.
 
 The shipped surface is governed by `tools/release/profiles.py`. There are eight lanes: four
-artifacts × {MTP, DFlash2}, each with its own measured draft number, KV dtype and `--lm-head-draft`
-setting, all at 262,144 context with vision. The generated launchers at the repository root render
+artifacts × {MTP, DFlash2}, each with its own measured draft number, KV dtype and
+`--proposal-head` setting (formerly `--lm-head-draft`), all at 262,144 context with vision. The generated launchers at the repository root render
 from that module, so profile values come from there and nowhere else.
 
 Select model artifacts by explicit path — never glob order, modification time, or unqualified

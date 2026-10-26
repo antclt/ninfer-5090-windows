@@ -37,7 +37,7 @@ only the artifact's MTP head; DFlash2 needs a companion module and proposes deep
 **acceptance** — the fraction of proposed tokens the target commits. It does not predict
 throughput: tokens committed per round matters more, so depth is chosen on measured decode rate.
 
-**proposal head** — the optimised head the `--lm-head-draft` flag selects. Its value differs per
+**proposal head** — the optimised head the `--proposal-head optimized` (formerly `--lm-head-draft`) flag selects. Its value differs per
 profile, and it can cost headroom as well as buy speed.
 
 ## Memory
@@ -53,7 +53,7 @@ is what bounds a ceiling.
 trades precision for room.
 
 **prefix cache** — retention of prepared context so a later request reuses it instead of
-re-prefilling. Retention is bounded by one shared **Host quota** (`--host-context-mib`), which
+re-prefilling. Retention is bounded by one shared **Host quota** (`--host-cache-capacity <size>MiB`, formerly `--host-context-mib`), which
 upstream b9114396 put in place of the separate shared-prefix, private-continuation and anchor
 budgets this glossary used to name. That quota, not the host pool's size, is what limits it.
 

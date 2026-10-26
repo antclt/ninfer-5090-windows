@@ -120,5 +120,5 @@ against 257.2/257.9 and 35.9 % without it, so clearing it would have been a 25-2
 comparison was between two full fingerprints two hours apart — the "measure A and then B and you have
 measured the window" failure this repo records — and it is the reason the decision is taken from
 interleaved runs. The head-side lever is closed by the engine regardless (`linear_topk` resolves the
-shortlist path at Q4 only, `src/ops/linear_topk/linear_topk.cpp:35-49`). Both arms are in this
+shortlist path at Q4 only, `src/ops/linear/topk/linear_topk.cpp:49-52`). Both arms are in this
 record, and the per-profile record this ADR asks for now covers all eight lanes.

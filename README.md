@@ -204,7 +204,7 @@ no error or degradation signal anywhere; the bounds gave **5/5 at 99.1%**. Those
 pre-`b9114396` cache and are kept as the record of why a bounded quota is set at all — the current
 cache has its own accounting and no equivalent re-derivation has been published.
 
-The quota costs nothing measurable in the profile it was measured on (QUASAR DFlash2 with Vision at 262,144). `--kv-capacity auto` sizes each pool from the VRAM left after weights, so every profile's capacity is its own measured ceiling, not a shared number.
+The quota costs nothing measurable in the profile it was measured on (QUASAR DFlash2 with Vision at 262,144). `--context-capacity auto` sizes each pool from the VRAM left after weights, so every profile's capacity is its own measured ceiling, not a shared number.
 The failure mode is silent, so it is worth setting even when a single repeated prompt
 appears to cache perfectly — a lone resident prefix masks it.
 
@@ -296,7 +296,7 @@ The product boundary remains intentionally small:
 - parsed tool calls are returned to the client; NInfer does not execute tools;
 - the in-tree C++ headers are not distributed as an installed SDK.
 
-`--max-context` is each sequence's logical limit. `--kv-capacity` sizes the shared Main Text KV pool
+`--max-context` is each sequence's logical limit. `--context-capacity` (formerly `--kv-capacity`) sizes the shared Main Text KV pool
 used by active requests and retained prefixes; `auto` resolves the largest legal capacity at
 startup from the memory remaining after weights. Both explicit and automatic modes use 1 GiB of
 startup planning headroom. Explicit capacities remain fixed for the process lifetime.

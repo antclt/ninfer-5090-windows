@@ -179,7 +179,7 @@ the candidate before any of them is incremented.
 
 **It does not apply to this measurement, and the code says why rather than the run merely failing to
 reproduce it.** `max_shared_prefixes` defaults to `max(concurrency, 4)`
-(`model_instance.cpp:115-116`, `kMaximumExplicitPromptCacheMarkers` = 4), while the 7-candidate
+(`include/ninfer/types.h:27`, `kMaximumExplicitPromptCacheMarkers` = 4), while the 7-candidate
 ceiling is `4 explicit + 3 engine-automatic` (`frontend.cpp:495`). Those 3 are gated on
 `allow_engine_automatic_shared_prefixes`, and **both serving protocols force it false** —
 `openai_common.cpp:177` and `anthropic_messages_request.cpp:980`. So on either protocol a request
